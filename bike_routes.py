@@ -15,40 +15,49 @@ Dependencies:
     pip install .    # or: pip install osmnx networkx numpy matplotlib scipy
 """
 
+import hashlib
+import json
+import os
+import pickle
+import time
+
+import matplotlib.colors as mcolors
+import matplotlib.pyplot as plt
+import networkx as nx
 import numpy as np
 import osmnx as ox
-import networkx as nx
-import matplotlib.pyplot as plt
-import matplotlib.colors as mcolors
 from matplotlib.cm import ScalarMappable
 from matplotlib.collections import LineCollection
 from matplotlib.lines import Line2D
 from scipy.spatial import cKDTree
-import os
-import hashlib
-import json
-import pickle
-import time
 
 # -- Config: Processing --------------------------------------------------------
 
 RIDES_FOLDER = "rides"
-SAMPLE_SIZE = None              # set to e.g. 100 for quick preview, None for all rides
+SAMPLE_SIZE = None  # set to e.g. 100 for quick preview, None for all rides
+RIDE_FILES = None  # set to e.g. ["2024-06-19_13-35-52_-0400.csv"] to process specific rides
 RESAMPLE_SPACING_M = 20
 NETWORK_TYPES = ["bike", "drive", "walk"]
 SNAP_TOLERANCE_M = 80
 MAX_ROUTING_DISTANCE_M = 2500
-MAX_GPS_GAP_M = 300           # split ride into segments at raw GPS gaps larger than this
-HEADING_PENALTY = 0.15        # metres of snap penalty per degree of edge-heading mismatch
-LOOP_WINDOW = 6               # remove short loops (A->...->A) within this many nodes
-LOOP_MAX_DETOUR_M = 50        # only remove loops where detour nodes are within this distance of anchor
+MAX_GPS_GAP_M = 300  # split ride into segments at raw GPS gaps larger than this
+HEADING_PENALTY = 0.15  # metres of snap penalty per degree of edge-heading mismatch
+LOOP_WINDOW = 6  # remove short loops (A->...->A) within this many nodes
+LOOP_MAX_DETOUR_M = 50  # only remove loops where detour nodes are within this distance of anchor
 
 # Highway-type snap bias (metres added to edge score; negative = prefer)
 HW_PENALTY = {
-    "cycleway": -5, "path": -2, "track": -1,
-    "footway": 8, "steps": 40, "pedestrian": 5,
-    "service": 3, "motorway": 10, "motorway_link": 5,
-    "trunk": 2, "trunk_link": 2,
+    "cycleway": -5,
+    "path": -2,
+    "track": -1,
+    "footway": 8,
+    "steps": 40,
+    "pedestrian": 5,
+    "service": 3,
+    "motorway": 10,
+    "motorway_link": 5,
+    "trunk": 2,
+    "trunk_link": 2,
 }
 
 # Rides whose median coordinate falls outside this bbox are skipped entirely.
@@ -61,17 +70,18 @@ COLORMAP = "plasma"
 LINE_WIDTH_MIN = 0.4
 LINE_WIDTH_MAX = 6.0
 OUTPUT_PATH_UNWEIGHTED = "bike_routes_coverage.png"
-OUTPUT_PATH_WEIGHTED   = "bike_routes_frequency.png"
+OUTPUT_PATH_WEIGHTED = "bike_routes_frequency.png"
 
 # -- Config: Cache paths -------------------------------------------------------
 
-GRAPH_CACHE_PATH  = "osm_graph_cache.pkl"
-STATE_CACHE_PATH  = "state.pkl"
+GRAPH_CACHE_PATH = "osm_graph_cache.pkl"
+STATE_CACHE_PATH = "state.pkl"
 RENDER_CACHE_PATH = "render_cache.pkl"
-ROUTE_CACHE_PATH  = "route_cache.pkl"
+ROUTE_CACHE_PATH = "route_cache.pkl"
 
 
 # -- Cache management ----------------------------------------------------------
+
 
 def _processing_config():
     """Params that affect map-matching results (change triggers full reprocess)."""
@@ -90,9 +100,7 @@ def _processing_config():
 
 
 def _config_hash():
-    return hashlib.sha1(
-        json.dumps(_processing_config(), sort_keys=True).encode()
-    ).hexdigest()
+    return hashlib.sha1(json.dumps(_processing_config(), sort_keys=True).encode()).hexdigest()
 
 
 def _empty_state():
@@ -154,6 +162,7 @@ def _save_route_cache(route_cache):
 
 # -- Data processing -----------------------------------------------------------
 
+
 def haversine_m(lat1, lon1, lat2, lon2):
     """Distance in metres between WGS-84 points (scalar or array)."""
     R = 6_371_000
@@ -168,8 +177,7 @@ def resample_ride_by_distance(coords, spacing_m):
     """Resample (N,2) [lat,lon] array to ~spacing_m metre intervals."""
     if len(coords) < 2:
         return coords
-    seg_dists = haversine_m(coords[:-1, 0], coords[:-1, 1],
-                            coords[1:, 0], coords[1:, 1])
+    seg_dists = haversine_m(coords[:-1, 0], coords[:-1, 1], coords[1:, 0], coords[1:, 1])
     dists = np.empty(len(coords))
     dists[0] = 0.0
     np.cumsum(seg_dists, out=dists[1:])
@@ -177,18 +185,19 @@ def resample_ride_by_distance(coords, spacing_m):
     if total < spacing_m:
         return coords[[0, -1]]
     targets = np.arange(0, total, spacing_m)
-    return np.column_stack([
-        np.interp(targets, dists, coords[:, 0]),
-        np.interp(targets, dists, coords[:, 1]),
-    ])
+    return np.column_stack(
+        [
+            np.interp(targets, dists, coords[:, 0]),
+            np.interp(targets, dists, coords[:, 1]),
+        ]
+    )
 
 
 def _split_at_gaps(coords, max_gap_m):
     """Split (N,2) [lat,lon] into sub-arrays wherever consecutive points exceed max_gap_m."""
     if len(coords) < 2:
         return [coords]
-    dists = haversine_m(coords[:-1, 0], coords[:-1, 1],
-                        coords[1:, 0], coords[1:, 1])
+    dists = haversine_m(coords[:-1, 0], coords[:-1, 1], coords[1:, 0], coords[1:, 1])
     gap_idx = np.where(dists > max_gap_m)[0] + 1
     if len(gap_idx) == 0:
         return [coords]
@@ -227,6 +236,7 @@ def _load_and_resample(filenames):
 
 
 # -- Graph management ----------------------------------------------------------
+
 
 def _compute_bbox(all_pts):
     """Bounding box from ride coordinates with IQR outlier removal + NYC clamp."""
@@ -312,6 +322,7 @@ def _load_graph(new_rides, state):
 
 # -- Map-matching --------------------------------------------------------------
 
+
 def _path_to_edges(G, path_nodes, max_dist):
     """Convert path nodes to canonical edge tuples in a single pass.
     Returns edge list or None if cumulative length exceeds max_dist."""
@@ -349,10 +360,7 @@ def _build_snap_tree(G):
     edge_hw = {}
     for u, v, data in G.edges(data=True):
         hw = data.get("highway", "")
-        if isinstance(hw, list):
-            p = min(HW_PENALTY.get(h, 0) for h in hw)
-        else:
-            p = HW_PENALTY.get(hw, 0)
+        p = min(HW_PENALTY.get(h, 0) for h in hw) if isinstance(hw, list) else HW_PENALTY.get(hw, 0)
         for key in ((u, v), (v, u)):
             if key not in edge_hw or p < edge_hw[key]:
                 edge_hw[key] = p
@@ -394,8 +402,20 @@ def _build_snap_tree(G):
     return tree, tree_nids, mean_lat_rad, real_xs, real_ys, node_idx, adj, edge_hw
 
 
-def _map_match_ride(G, coords, snap_tol, route_cache, snap_tree, tree_node_ids,
-                    mean_lat_rad, node_xs, node_ys, node_idx_map, adj, edge_hw):
+def _map_match_ride(
+    G,
+    coords,
+    snap_tol,
+    route_cache,
+    snap_tree,
+    tree_node_ids,
+    mean_lat_rad,
+    node_xs,
+    node_ys,
+    node_idx_map,
+    adj,
+    edge_hw,
+):
     """Snap points to nearest OSM edges, route between them. Returns (edges, skipped_count)."""
     lats, lons = coords[:, 0], coords[:, 1]
     R = 6_371_000
@@ -500,7 +520,7 @@ def _map_match_ride(G, coords, snap_tol, route_cache, snap_tree, tree_node_ids,
                 if ar is not None:
                     ax, ay = node_xs[ar], node_ys[ar]
                     too_far = False
-                    for mn in cleaned[k + 1:]:
+                    for mn in cleaned[k + 1 :]:
                         mr = node_idx_map.get(int(mn))
                         if mr is not None:
                             dx = node_xs[mr] - ax
@@ -509,9 +529,9 @@ def _map_match_ride(G, coords, snap_tol, route_cache, snap_tree, tree_node_ids,
                                 too_far = True
                                 break
                     if not too_far:
-                        del cleaned[k + 1:]
+                        del cleaned[k + 1 :]
                 else:
-                    del cleaned[k + 1:]
+                    del cleaned[k + 1 :]
                 break
         if not found_loop:
             cleaned.append(node)
@@ -537,8 +557,10 @@ def _map_match_ride(G, coords, snap_tol, route_cache, snap_tree, tree_node_ids,
             pairs.append(route_cache[canon])
         else:
             straight = haversine_m(
-                G.nodes[u]["y"], G.nodes[u]["x"],
-                G.nodes[v]["y"], G.nodes[v]["x"],
+                G.nodes[u]["y"],
+                G.nodes[u]["x"],
+                G.nodes[v]["y"],
+                G.nodes[v]["x"],
             )
             if straight > MAX_ROUTING_DISTANCE_M:
                 pairs.append(None)
@@ -570,6 +592,7 @@ def _map_match_ride(G, coords, snap_tol, route_cache, snap_tree, tree_node_ids,
 
 
 # -- Render data ---------------------------------------------------------------
+
 
 def _build_render_cache(G):
     """Extract canonical edge geometries from graph for rendering."""
@@ -607,6 +630,7 @@ def _get_render_data(G=None):
 
 
 # -- Rendering -----------------------------------------------------------------
+
 
 def _make_fig(skeleton_lines):
     """Create figure with OSM skeleton background."""
@@ -655,11 +679,17 @@ def _render(edge_geom, state):
     fig, ax = _make_fig(skeleton)
 
     lines = [edge_geom[k] for k in edge_counts if k in edge_geom]
-    lc = LineCollection(lines, colors=[cmap(1.0)], linewidths=LINE_WIDTH_MIN * 2,
-                        alpha=0.85, zorder=2)
+    lc = LineCollection(
+        lines, colors=[cmap(1.0)], linewidths=LINE_WIDTH_MIN * 2, alpha=0.85, zorder=2
+    )
     ax.add_collection(lc)
-    ax.set_title(f"NYC Bike Routes  *  {n_rides} rides ({dates})  *  Coverage",
-                 color="white", fontsize=16, fontweight="bold", pad=12)
+    ax.set_title(
+        f"NYC Bike Routes  *  {n_rides} rides ({dates})  *  Coverage",
+        color="white",
+        fontsize=16,
+        fontweight="bold",
+        pad=12,
+    )
     _save_fig(fig, OUTPUT_PATH_UNWEIGHTED)
 
     # -- Frequency map --
@@ -681,8 +711,7 @@ def _render(edge_geom, state):
         lines_u.append(edge_geom[edge_key])
         rgba = cmap(scale(count))
         colors_u.append((rgba[0], rgba[1], rgba[2], 0.25))
-    ax.add_collection(LineCollection(lines_u, colors=colors_u,
-                                     linewidths=LINE_WIDTH_MIN, zorder=2))
+    ax.add_collection(LineCollection(lines_u, colors=colors_u, linewidths=LINE_WIDTH_MIN, zorder=2))
 
     # Pass 2: overlay, rare -> frequent
     sorted_items = sorted(
@@ -695,12 +724,12 @@ def _render(edge_geom, state):
         lines_o.append(edge_geom[edge_key])
         rgba = cmap(s)
         colors_o.append((rgba[0], rgba[1], rgba[2], 0.9))
-    ax.add_collection(LineCollection(lines_o, colors=colors_o,
-                                     linewidths=LINE_WIDTH_MIN * 2, zorder=3))
+    ax.add_collection(
+        LineCollection(lines_o, colors=colors_o, linewidths=LINE_WIDTH_MIN * 2, zorder=3)
+    )
 
     # Colorbar
-    sm = ScalarMappable(cmap=cmap,
-                        norm=mcolors.PowerNorm(gamma=0.5, vmin=0, vmax=max_count))
+    sm = ScalarMappable(cmap=cmap, norm=mcolors.PowerNorm(gamma=0.5, vmin=0, vmax=max_count))
     sm.set_array([])
     cbar_ax = fig.add_axes([0.15, 0.06, 0.70, 0.015])
     cbar = fig.colorbar(sm, cax=cbar_ax, orientation="horizontal")
@@ -711,25 +740,47 @@ def _render(edge_geom, state):
 
     legend_elements = [
         Line2D([0], [0], color=cmap(scale(1)), linewidth=2, label="1 ride"),
-        Line2D([0], [0], color=cmap(scale(max(max_count // 4, 1))),
-               linewidth=2, label=f"~{max_count // 4} rides"),
-        Line2D([0], [0], color=cmap(scale(max_count // 2)),
-               linewidth=2, label=f"~{max_count // 2} rides"),
-        Line2D([0], [0], color=cmap(1.0), linewidth=2,
-               label=f"{max_count} rides"),
+        Line2D(
+            [0],
+            [0],
+            color=cmap(scale(max(max_count // 4, 1))),
+            linewidth=2,
+            label=f"~{max_count // 4} rides",
+        ),
+        Line2D(
+            [0],
+            [0],
+            color=cmap(scale(max_count // 2)),
+            linewidth=2,
+            label=f"~{max_count // 2} rides",
+        ),
+        Line2D([0], [0], color=cmap(1.0), linewidth=2, label=f"{max_count} rides"),
     ]
-    legend = ax.legend(handles=legend_elements, loc="lower right",
-                       framealpha=0.15, facecolor="#0d0d0d", edgecolor="#555",
-                       labelcolor="white", fontsize=9,
-                       title="Ride frequency", title_fontsize=9)
+    legend = ax.legend(
+        handles=legend_elements,
+        loc="lower right",
+        framealpha=0.15,
+        facecolor="#0d0d0d",
+        edgecolor="#555",
+        labelcolor="white",
+        fontsize=9,
+        title="Ride frequency",
+        title_fontsize=9,
+    )
     legend.get_title().set_color("white")
 
-    ax.set_title(f"NYC Bike Routes  *  {n_rides} rides ({dates})  *  Frequency",
-                 color="white", fontsize=16, fontweight="bold", pad=12)
+    ax.set_title(
+        f"NYC Bike Routes  *  {n_rides} rides ({dates})  *  Frequency",
+        color="white",
+        fontsize=16,
+        fontweight="bold",
+        pad=12,
+    )
     _save_fig(fig, OUTPUT_PATH_WEIGHTED)
 
 
 # -- Main pipeline -------------------------------------------------------------
+
 
 def main():
     t0 = time.time()
@@ -739,7 +790,10 @@ def main():
 
     # 2. Find new rides (exclude already-processed and already-skipped files)
     all_files = sorted(f for f in os.listdir(RIDES_FOLDER) if f.endswith(".csv"))
-    if SAMPLE_SIZE is not None:
+    if RIDE_FILES is not None:
+        ride_set = set(RIDE_FILES)
+        all_files = [f for f in all_files if f in ride_set]
+    elif SAMPLE_SIZE is not None:
         all_files = all_files[:SAMPLE_SIZE]
     known = state["processed_files"] | state.get("skipped_files", set())
     new_files = [f for f in all_files if f not in known]
@@ -749,8 +803,7 @@ def main():
     n_skipped = len(state.get("skipped_files", set()))
     n_new = len(new_files)
 
-    print(f"Rides: {n_total} total, {n_processed} NYC, "
-          f"{n_skipped} non-NYC, {n_new} new")
+    print(f"Rides: {n_total} total, {n_processed} NYC, {n_skipped} non-NYC, {n_new} new")
 
     if n_new <= 10 and n_new > 0:
         for f in new_files:
@@ -802,7 +855,9 @@ def main():
     G = _load_graph(new_rides, state)
 
     # 6. Build spatial index once for all rides
-    snap_tree, tree_node_ids, mean_lat_rad, node_xs, node_ys, node_idx_map, adj, edge_hw = _build_snap_tree(G)
+    snap_tree, tree_node_ids, mean_lat_rad, node_xs, node_ys, node_idx_map, adj, edge_hw = (
+        _build_snap_tree(G)
+    )
 
     # 7. Map-match new rides
     print("Map-matching...")
@@ -810,17 +865,26 @@ def main():
     print(f"  Route cache: {len(route_cache):,} entries loaded")
     total_skipped = 0
     for i, (fname, coords) in enumerate(new_rides, 1):
-        edges, skipped = _map_match_ride(G, coords, SNAP_TOLERANCE_M, route_cache,
-                                         snap_tree, tree_node_ids, mean_lat_rad,
-                                         node_xs, node_ys, node_idx_map, adj,
-                                         edge_hw)
+        edges, skipped = _map_match_ride(
+            G,
+            coords,
+            SNAP_TOLERANCE_M,
+            route_cache,
+            snap_tree,
+            tree_node_ids,
+            mean_lat_rad,
+            node_xs,
+            node_ys,
+            node_idx_map,
+            adj,
+            edge_hw,
+        )
         total_skipped += skipped
         for edge in set(edges):
             state["edge_counts"][edge] = state["edge_counts"].get(edge, 0) + 1
         state["processed_files"].add(fname)
         if i % 20 == 0 or i == len(new_rides):
-            print(f"  {i}/{len(new_rides)} rides "
-                  f"(route cache: {len(route_cache):,} entries)")
+            print(f"  {i}/{len(new_rides)} rides (route cache: {len(route_cache):,} entries)")
 
     if total_skipped:
         print(f"  Skipped {total_skipped:,} segments > {MAX_ROUTING_DISTANCE_M}m")
@@ -838,8 +902,7 @@ def main():
     # Summary
     elapsed = time.time() - t0
     print(f"\nDone in {elapsed:.1f}s")
-    print(f"  {len(state['processed_files'])} NYC rides "
-          f"({_date_range(state['processed_files'])})")
+    print(f"  {len(state['processed_files'])} NYC rides ({_date_range(state['processed_files'])})")
     print(f"  {len(state.get('skipped_files', set()))} non-NYC rides skipped")
     print(f"  {len(state['edge_counts']):,} unique edges")
 
