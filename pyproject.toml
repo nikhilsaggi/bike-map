@@ -1,0 +1,12 @@
+[project]
+name = "nyc-bike-map"
+version = "1.0.0"
+description = "Visualize personal bike ride data on the NYC street network"
+requires-python = ">=3.9"
+dependencies = [
+    "osmnx>=2.0",
+    "networkx>=3.0",
+    "numpy>=1.24",
+    "matplotlib>=3.6",
+    "scipy>=1.10",
+]
