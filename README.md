@@ -53,8 +53,6 @@ longitude,latitude,timestamp
 - One row per GPS fix, typically 1-second intervals
 - Longitude and latitude in decimal degrees (WGS-84)
 - Timestamp is used only for ordering (data should already be chronological)
-- Filename format: `YYYY-MM-DD_HH-MM-SS_UTC-OFFSET.csv` (used to extract
-  date ranges for map titles)
 
 ## Configuration
 
@@ -70,6 +68,27 @@ Key parameters at the top of `bike_routes.py`:
 | `HW_PENALTY` | (see code) | Per-highway-type snap bias (negative = prefer) |
 | `NETWORK_TYPES` | bike, drive, walk | OSM network types to fetch |
 | `SAMPLE_SIZE` | None | Limit number of rides processed (for testing) |
+
+## Map-Matching Techniques
+
+Raw GPS traces are noisy — points drift to sidewalks, parallel service roads,
+or the wrong side of an intersection. The pipeline uses several techniques to
+produce clean route matches:
+
+- **Edge-based snapping** — GPS points snap to the nearest *edge* (perpendicular
+  projection), not the nearest node, giving much more accurate placement.
+- **Heading-aware snapping** — edges misaligned with the GPS travel direction are
+  penalized (`HEADING_PENALTY` m/degree), preventing snaps to perpendicular
+  cross-streets.
+- **Highway-type preference** — `HW_PENALTY` biases snapping toward cycleways
+  and away from footways, service roads, and motorways.
+- **Edge densification** — virtual points are added every 150m along long edges
+  so GPS traces on bridges and highways can find the correct edge even when its
+  endpoints are far away.
+- **Distance-gated loop removal** — detects A→...→A loops within a sliding
+  window and collapses them, but only when all intermediate nodes stay within
+  `LOOP_MAX_DETOUR_M` of the anchor. This cleans up zigzag noise from parallel
+  footways without stripping legitimate forward-progress segments.
 
 ## Cache Files
 

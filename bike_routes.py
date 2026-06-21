@@ -205,11 +205,15 @@ def _split_at_gaps(coords, max_gap_m):
 
 
 def _is_nyc_ride(coords):
-    """True if the ride's median coordinate falls within NYC_BBOX."""
-    med_lat = np.median(coords[:, 0])
-    med_lon = np.median(coords[:, 1])
+    """True if any point in the ride falls within NYC_BBOX."""
     lat_min, lon_min, lat_max, lon_max = NYC_BBOX
-    return lat_min <= med_lat <= lat_max and lon_min <= med_lon <= lon_max
+    in_bbox = (
+        (coords[:, 0] >= lat_min)
+        & (coords[:, 0] <= lat_max)
+        & (coords[:, 1] >= lon_min)
+        & (coords[:, 1] <= lon_max)
+    )
+    return in_bbox.any()
 
 
 def _load_and_resample(filenames):
@@ -651,21 +655,10 @@ def _save_fig(fig, path):
     plt.close(fig)
 
 
-def _date_range(processed_files):
-    """Extract date range string from filenames like 2024-06-19_...csv."""
-    dates = sorted(f[:10] for f in processed_files if len(f) >= 10)
-    if not dates:
-        return ""
-    if dates[0] == dates[-1]:
-        return dates[0]
-    return f"{dates[0]} to {dates[-1]}"
-
 
 def _render(edge_geom, state):
     """Render both coverage and frequency maps."""
     edge_counts = state["edge_counts"]
-    n_rides = len(state["processed_files"])
-    dates = _date_range(state["processed_files"])
 
     if not edge_counts:
         print("No edges to render")
@@ -683,13 +676,6 @@ def _render(edge_geom, state):
         lines, colors=[cmap(1.0)], linewidths=LINE_WIDTH_MIN * 2, alpha=0.85, zorder=2
     )
     ax.add_collection(lc)
-    ax.set_title(
-        f"NYC Bike Routes  *  {n_rides} rides ({dates})  *  Coverage",
-        color="white",
-        fontsize=16,
-        fontweight="bold",
-        pad=12,
-    )
     _save_fig(fig, OUTPUT_PATH_UNWEIGHTED)
 
     # -- Frequency map --
@@ -769,13 +755,6 @@ def _render(edge_geom, state):
     )
     legend.get_title().set_color("white")
 
-    ax.set_title(
-        f"NYC Bike Routes  *  {n_rides} rides ({dates})  *  Frequency",
-        color="white",
-        fontsize=16,
-        fontweight="bold",
-        pad=12,
-    )
     _save_fig(fig, OUTPUT_PATH_WEIGHTED)
 
 
@@ -902,7 +881,7 @@ def main():
     # Summary
     elapsed = time.time() - t0
     print(f"\nDone in {elapsed:.1f}s")
-    print(f"  {len(state['processed_files'])} NYC rides ({_date_range(state['processed_files'])})")
+    print(f"  {len(state['processed_files'])} NYC rides")
     print(f"  {len(state.get('skipped_files', set()))} non-NYC rides skipped")
     print(f"  {len(state['edge_counts']):,} unique edges")
 
