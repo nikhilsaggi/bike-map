@@ -46,6 +46,7 @@ MAX_GPS_GAP_M = 300  # split ride into segments at raw GPS gaps larger than this
 HEADING_PENALTY = 0.15  # metres of snap penalty per degree of edge-heading mismatch
 LOOP_WINDOW = 6  # remove short loops (A->...->A) within this many nodes
 LOOP_MAX_DETOUR_M = 50  # only remove loops where detour nodes are within this distance of anchor
+DENSIFY_M = 150  # add virtual snap points on edges longer than this (metres)
 
 # Highway-type snap bias (metres added to edge score; negative = prefer)
 HW_PENALTY = {
@@ -62,7 +63,7 @@ HW_PENALTY = {
     "trunk_link": 2,
 }
 
-# Rides whose median coordinate falls outside this bbox are skipped entirely.
+# Rides with no coordinates inside this bbox are skipped entirely.
 NYC_BBOX = (40.49, -74.30, 41.0, -73.60)  # (lat_min, lon_min, lat_max, lon_max)
 
 # -- Config: Rendering ---------------------------------------------------------
@@ -239,7 +240,11 @@ def _load_and_resample(
     non_nyc = 0
     for f in filenames:
         path = Path(RIDES_FOLDER) / f
-        data = np.loadtxt(path, delimiter=",", skiprows=1, usecols=(0, 1))
+        try:
+            data = np.loadtxt(path, delimiter=",", skiprows=1, usecols=(0, 1))
+        except Exception as exc:
+            print(f"  Skipping {f}: {exc}")
+            continue
         if data.ndim == 1:
             data = data.reshape(1, 2)
         coords = data[:, ::-1]  # (lon, lat) -> (lat, lon)
@@ -352,12 +357,13 @@ def _path_to_edges(
     length = 0.0
     result = []
     for a, b in zip(path_nodes[:-1], path_nodes[1:]):
-        edge_data = G[a][b]
+        canon_u, canon_v = min(a, b), max(a, b)
+        edge_data = G[canon_u][canon_v] if G.has_edge(canon_u, canon_v) else G[a][b]
         key = min(edge_data, key=lambda k: edge_data[k].get("length", 0))
         length += edge_data[key].get("length", 0)
         if length > max_dist:
             return None
-        result.append((min(a, b), max(a, b), key))
+        result.append((canon_u, canon_v, key))
     return result
 
 
@@ -401,7 +407,6 @@ def _build_snap_tree(
             if key not in edge_hw or p < edge_hw[key]:
                 edge_hw[key] = p
 
-    DENSIFY_M = 150
     extra_x, extra_y, extra_nid = [], [], []
     seen = set()
     for u, v in G.edges():
@@ -577,8 +582,8 @@ def _map_match_ride(
         return [], 0
 
     # Phase 1: classify pairs
-    _PENDING: list[tuple[int, int, int]] = []
-    pairs: list[list[tuple[int, int, int]] | None] = []
+    _PENDING = object()
+    pairs: list[list[tuple[int, int, int]] | None | object] = []
     pending_idx = []
     origs, dests = [], []
 
