@@ -1,6 +1,5 @@
-"""
-Bike Route Frequency Map -- Incremental Pipeline
-=================================================
+"""Bike Route Frequency Map -- Incremental Pipeline.
+
 Designed for ongoing use: processes only new rides and renders from cached data.
 
 First run:  loads all rides, fetches OSM graph, processes everything (~10-25 min).
@@ -15,11 +14,14 @@ Dependencies:
     pip install .    # or: pip install osmnx networkx numpy matplotlib scipy
 """
 
+from __future__ import annotations
+
 import hashlib
 import json
-import os
 import pickle
 import time
+from pathlib import Path
+from typing import Any
 
 import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
@@ -74,17 +76,17 @@ OUTPUT_PATH_WEIGHTED = "bike_routes_frequency.png"
 
 # -- Config: Cache paths -------------------------------------------------------
 
-GRAPH_CACHE_PATH = "osm_graph_cache.pkl"
-STATE_CACHE_PATH = "state.pkl"
-RENDER_CACHE_PATH = "render_cache.pkl"
-ROUTE_CACHE_PATH = "route_cache.pkl"
+GRAPH_CACHE_PATH = Path("osm_graph_cache.pkl")
+STATE_CACHE_PATH = Path("state.pkl")
+RENDER_CACHE_PATH = Path("render_cache.pkl")
+ROUTE_CACHE_PATH = Path("route_cache.pkl")
 
 
 # -- Cache management ----------------------------------------------------------
 
 
-def _processing_config():
-    """Params that affect map-matching results (change triggers full reprocess)."""
+def _processing_config() -> dict[str, Any]:
+    """Return params that affect map-matching results (change triggers full reprocess)."""
     return {
         "snap_tolerance_m": SNAP_TOLERANCE_M,
         "max_routing_distance_m": MAX_ROUTING_DISTANCE_M,
@@ -99,11 +101,13 @@ def _processing_config():
     }
 
 
-def _config_hash():
+def _config_hash() -> str:
+    """Return a hash of the current processing config."""
     return hashlib.sha1(json.dumps(_processing_config(), sort_keys=True).encode()).hexdigest()
 
 
-def _empty_state():
+def _empty_state() -> dict[str, Any]:
+    """Return a fresh pipeline state dict."""
     return {
         "config_hash": _config_hash(),
         "config": _processing_config(),
@@ -114,12 +118,12 @@ def _empty_state():
     }
 
 
-def _load_state():
+def _load_state() -> dict[str, Any]:
     """Load cached state, invalidating if processing config changed."""
-    if not os.path.exists(STATE_CACHE_PATH):
+    if not STATE_CACHE_PATH.exists():
         return _empty_state()
 
-    with open(STATE_CACHE_PATH, "rb") as f:
+    with STATE_CACHE_PATH.open("rb") as f:
         state = pickle.load(f)
 
     if state.get("config_hash") == _config_hash():
@@ -129,42 +133,49 @@ def _load_state():
     if sorted(old_config.get("network_types", [])) != sorted(NETWORK_TYPES):
         print("Network types changed -- invalidating graph + render caches")
         for p in [GRAPH_CACHE_PATH, RENDER_CACHE_PATH, ROUTE_CACHE_PATH]:
-            if os.path.exists(p):
-                os.remove(p)
+            if p.exists():
+                p.unlink()
 
-    if os.path.exists(ROUTE_CACHE_PATH):
-        os.remove(ROUTE_CACHE_PATH)
+    if ROUTE_CACHE_PATH.exists():
+        ROUTE_CACHE_PATH.unlink()
     print("Processing config changed -- full reprocess required")
     return _empty_state()
 
 
-def _save_state(state):
+def _save_state(state: dict[str, Any]) -> None:
+    """Persist pipeline state to disk."""
     state["config_hash"] = _config_hash()
     state["config"] = _processing_config()
-    with open(STATE_CACHE_PATH, "wb") as f:
+    with STATE_CACHE_PATH.open("wb") as f:
         pickle.dump(state, f, protocol=pickle.HIGHEST_PROTOCOL)
 
 
-def _load_route_cache():
-    if not os.path.exists(ROUTE_CACHE_PATH):
+def _load_route_cache() -> dict[tuple[int, int], list[tuple[int, int, int]] | None]:
+    """Load cached shortest-path results between node pairs."""
+    if not ROUTE_CACHE_PATH.exists():
         return {}
     try:
-        with open(ROUTE_CACHE_PATH, "rb") as f:
+        with ROUTE_CACHE_PATH.open("rb") as f:
             return pickle.load(f)
     except Exception:
         return {}
 
 
-def _save_route_cache(route_cache):
-    with open(ROUTE_CACHE_PATH, "wb") as f:
+def _save_route_cache(
+    route_cache: dict[tuple[int, int], list[tuple[int, int, int]] | None],
+) -> None:
+    """Persist route cache to disk."""
+    with ROUTE_CACHE_PATH.open("wb") as f:
         pickle.dump(route_cache, f, protocol=pickle.HIGHEST_PROTOCOL)
 
 
 # -- Data processing -----------------------------------------------------------
 
 
-def haversine_m(lat1, lon1, lat2, lon2):
-    """Distance in metres between WGS-84 points (scalar or array)."""
+def haversine_m(
+    lat1: np.ndarray, lon1: np.ndarray, lat2: np.ndarray, lon2: np.ndarray
+) -> np.ndarray:
+    """Compute distance in metres between WGS-84 points (scalar or array)."""
     R = 6_371_000
     phi1, phi2 = np.radians(lat1), np.radians(lat2)
     dphi = np.radians(lat2 - lat1)
@@ -173,7 +184,7 @@ def haversine_m(lat1, lon1, lat2, lon2):
     return 2 * R * np.arcsin(np.sqrt(a))
 
 
-def resample_ride_by_distance(coords, spacing_m):
+def resample_ride_by_distance(coords: np.ndarray, spacing_m: float) -> np.ndarray:
     """Resample (N,2) [lat,lon] array to ~spacing_m metre intervals."""
     if len(coords) < 2:
         return coords
@@ -193,7 +204,7 @@ def resample_ride_by_distance(coords, spacing_m):
     )
 
 
-def _split_at_gaps(coords, max_gap_m):
+def _split_at_gaps(coords: np.ndarray, max_gap_m: float) -> list[np.ndarray]:
     """Split (N,2) [lat,lon] into sub-arrays wherever consecutive points exceed max_gap_m."""
     if len(coords) < 2:
         return [coords]
@@ -204,8 +215,8 @@ def _split_at_gaps(coords, max_gap_m):
     return np.split(coords, gap_idx)
 
 
-def _is_nyc_ride(coords):
-    """True if any point in the ride falls within NYC_BBOX."""
+def _is_nyc_ride(coords: np.ndarray) -> bool:
+    """Check if any point in the ride falls within NYC_BBOX."""
     lat_min, lon_min, lat_max, lon_max = NYC_BBOX
     in_bbox = (
         (coords[:, 0] >= lat_min)
@@ -216,14 +227,18 @@ def _is_nyc_ride(coords):
     return in_bbox.any()
 
 
-def _load_and_resample(filenames):
+def _load_and_resample(
+    filenames: list[str],
+) -> tuple[list[tuple[str, np.ndarray]], int]:
     """Load CSVs, filter to NYC, split at GPS gaps, and resample.
+
     Returns (nyc_rides, skipped_non_nyc) where nyc_rides is [(filename, coords)].
-    A single file may produce multiple entries if it has GPS gaps."""
+    A single file may produce multiple entries if it has GPS gaps.
+    """
     rides = []
     non_nyc = 0
     for f in filenames:
-        path = os.path.join(RIDES_FOLDER, f)
+        path = Path(RIDES_FOLDER) / f
         data = np.loadtxt(path, delimiter=",", skiprows=1, usecols=(0, 1))
         if data.ndim == 1:
             data = data.reshape(1, 2)
@@ -242,11 +257,11 @@ def _load_and_resample(filenames):
 # -- Graph management ----------------------------------------------------------
 
 
-def _compute_bbox(all_pts):
-    """Bounding box from ride coordinates with IQR outlier removal + NYC clamp."""
+def _compute_bbox(all_pts: np.ndarray) -> tuple[float, float, float, float]:
+    """Compute bounding box from ride coordinates with IQR outlier removal + NYC clamp."""
     lats, lons = all_pts[:, 0], all_pts[:, 1]
 
-    def iqr_bounds(arr, k=3.0):
+    def iqr_bounds(arr: np.ndarray, k: float = 3.0) -> tuple[float, float]:
         q1, q3 = np.percentile(arr, 25), np.percentile(arr, 75)
         iqr = q3 - q1
         return q1 - k * iqr, q3 + k * iqr
@@ -268,7 +283,7 @@ def _compute_bbox(all_pts):
     return (lon_min - buf, lat_min - buf, lon_max + buf, lat_max + buf)
 
 
-def _fetch_graph(bbox):
+def _fetch_graph(bbox: tuple[float, float, float, float]) -> nx.MultiDiGraph:
     """Fetch OSM networks for bbox, merge, and cache."""
     graphs = []
     for nt in NETWORK_TYPES:
@@ -282,17 +297,17 @@ def _fetch_graph(bbox):
     G = ox.add_edge_travel_times(G)
     print(f"  Merged: {G.number_of_nodes():,} nodes, {G.number_of_edges():,} edges")
 
-    with open(GRAPH_CACHE_PATH, "wb") as f:
+    with GRAPH_CACHE_PATH.open("wb") as f:
         pickle.dump(G, f, protocol=pickle.HIGHEST_PROTOCOL)
     print(f"  Cached to {GRAPH_CACHE_PATH}")
     return G
 
 
-def _load_graph(new_rides, state):
+def _load_graph(new_rides: list[tuple[str, np.ndarray]], state: dict[str, Any]) -> nx.MultiDiGraph:
     """Load graph from cache or fetch from OSM."""
-    if os.path.exists(GRAPH_CACHE_PATH):
+    if GRAPH_CACHE_PATH.exists():
         print(f"Loading graph from {GRAPH_CACHE_PATH}...")
-        with open(GRAPH_CACHE_PATH, "rb") as f:
+        with GRAPH_CACHE_PATH.open("rb") as f:
             G = pickle.load(f)
         print(f"  {G.number_of_nodes():,} nodes, {G.number_of_edges():,} edges")
         return G
@@ -318,8 +333,8 @@ def _load_graph(new_rides, state):
     state["graph_bbox"] = bbox
 
     for p in [RENDER_CACHE_PATH, ROUTE_CACHE_PATH]:
-        if os.path.exists(p):
-            os.remove(p)
+        if p.exists():
+            p.unlink()
 
     return _fetch_graph(bbox)
 
@@ -327,9 +342,13 @@ def _load_graph(new_rides, state):
 # -- Map-matching --------------------------------------------------------------
 
 
-def _path_to_edges(G, path_nodes, max_dist):
+def _path_to_edges(
+    G: nx.MultiDiGraph, path_nodes: list[int], max_dist: float
+) -> list[tuple[int, int, int]] | None:
     """Convert path nodes to canonical edge tuples in a single pass.
-    Returns edge list or None if cumulative length exceeds max_dist."""
+
+    Returns edge list or None if cumulative length exceeds max_dist.
+    """
     length = 0.0
     result = []
     for a, b in zip(path_nodes[:-1], path_nodes[1:]):
@@ -342,10 +361,23 @@ def _path_to_edges(G, path_nodes, max_dist):
     return result
 
 
-def _build_snap_tree(G):
+def _build_snap_tree(
+    G: nx.MultiDiGraph,
+) -> tuple[
+    cKDTree,
+    np.ndarray,
+    float,
+    np.ndarray,
+    np.ndarray,
+    dict[int, int],
+    dict[int, set[int]],
+    dict[tuple[int, int], float],
+]:
     """Build a cKDTree and adjacency data for edge-based snapping.
+
     Long edges (>150m) get virtual intermediate points so bridge/highway
-    GPS points can find the edge even when endpoints are far away."""
+    GPS points can find the edge even when endpoints are far away.
+    """
     node_data = list(G.nodes(data=True))
     node_ids = np.array([n[0] for n in node_data])
     lats = np.array([n[1]["y"] for n in node_data])
@@ -407,20 +439,20 @@ def _build_snap_tree(G):
 
 
 def _map_match_ride(
-    G,
-    coords,
-    snap_tol,
-    route_cache,
-    snap_tree,
-    tree_node_ids,
-    mean_lat_rad,
-    node_xs,
-    node_ys,
-    node_idx_map,
-    adj,
-    edge_hw,
-):
-    """Snap points to nearest OSM edges, route between them. Returns (edges, skipped_count)."""
+    G: nx.MultiDiGraph,
+    coords: np.ndarray,
+    snap_tol: float,
+    route_cache: dict[tuple[int, int], list[tuple[int, int, int]] | None],
+    snap_tree: cKDTree,
+    tree_node_ids: np.ndarray,
+    mean_lat_rad: float,
+    node_xs: np.ndarray,
+    node_ys: np.ndarray,
+    node_idx_map: dict[int, int],
+    adj: dict[int, set[int]],
+    edge_hw: dict[tuple[int, int], float],
+) -> tuple[list[tuple[int, int, int]], int]:
+    """Snap points to nearest OSM edges, route between them."""
     lats, lons = coords[:, 0], coords[:, 1]
     R = 6_371_000
     cos_mlr = np.cos(mean_lat_rad)
@@ -545,7 +577,8 @@ def _map_match_ride(
         return [], 0
 
     # Phase 1: classify pairs
-    pairs = []
+    _PENDING: list[tuple[int, int, int]] = []
+    pairs: list[list[tuple[int, int, int]] | None] = []
     pending_idx = []
     origs, dests = [], []
 
@@ -569,7 +602,7 @@ def _map_match_ride(
             if straight > MAX_ROUTING_DISTANCE_M:
                 pairs.append(None)
             else:
-                pairs.append("PENDING")
+                pairs.append(_PENDING)
                 pending_idx.append(i)
                 origs.append(u)
                 dests.append(v)
@@ -585,20 +618,22 @@ def _map_match_ride(
             pairs[idx] = result
 
     # Phase 3: assemble
-    edges = []
+    edges: list[tuple[int, int, int]] = []
     skipped = 0
     for r in pairs:
-        if r is not None:
-            edges.extend(r)
-        else:
+        if r is None:
             skipped += 1
+        elif r is not _PENDING:
+            edges.extend(r)
     return edges, skipped
 
 
 # -- Render data ---------------------------------------------------------------
 
 
-def _build_render_cache(G):
+def _build_render_cache(
+    G: nx.MultiDiGraph,
+) -> dict[tuple[int, int, int], list[tuple[float, float]]]:
     """Extract canonical edge geometries from graph for rendering."""
     print("Building render cache...")
     edge_geom = {}
@@ -615,16 +650,18 @@ def _build_render_cache(G):
                 (G.nodes[v]["x"], G.nodes[v]["y"]),
             ]
 
-    with open(RENDER_CACHE_PATH, "wb") as f:
+    with RENDER_CACHE_PATH.open("wb") as f:
         pickle.dump(edge_geom, f, protocol=pickle.HIGHEST_PROTOCOL)
     print(f"  Cached {len(edge_geom):,} edge geometries")
     return edge_geom
 
 
-def _get_render_data(G=None):
+def _get_render_data(
+    G: nx.MultiDiGraph | None = None,
+) -> dict[tuple[int, int, int], list[tuple[float, float]]] | None:
     """Load render cache, or build it from graph if missing."""
-    if os.path.exists(RENDER_CACHE_PATH):
-        with open(RENDER_CACHE_PATH, "rb") as f:
+    if RENDER_CACHE_PATH.exists():
+        with RENDER_CACHE_PATH.open("rb") as f:
             edge_geom = pickle.load(f)
         print(f"Loaded render cache ({len(edge_geom):,} edges)")
         return edge_geom
@@ -636,7 +673,9 @@ def _get_render_data(G=None):
 # -- Rendering -----------------------------------------------------------------
 
 
-def _make_fig(skeleton_lines):
+def _make_fig(
+    skeleton_lines: list[list[tuple[float, float]]],
+) -> tuple[plt.Figure, plt.Axes]:
     """Create figure with OSM skeleton background."""
     fig, ax = plt.subplots(figsize=FIG_SIZE, facecolor="#0d0d0d")
     ax.set_facecolor("#0d0d0d")
@@ -648,15 +687,18 @@ def _make_fig(skeleton_lines):
     return fig, ax
 
 
-def _save_fig(fig, path):
+def _save_fig(fig: plt.Figure, path: str) -> None:
+    """Save figure to disk and close it."""
     fig.subplots_adjust(bottom=0.10)
     fig.savefig(path, dpi=180, bbox_inches="tight", facecolor=fig.get_facecolor())
     print(f"  Saved -> {path}")
     plt.close(fig)
 
 
-
-def _render(edge_geom, state):
+def _render(
+    edge_geom: dict[tuple[int, int, int], list[tuple[float, float]]],
+    state: dict[str, Any],
+) -> None:
     """Render both coverage and frequency maps."""
     edge_counts = state["edge_counts"]
 
@@ -684,7 +726,7 @@ def _render(edge_geom, state):
     max_count = counts_arr.max()
     print(f"  Max edge count: {max_count}")
 
-    def scale(c):
+    def scale(c: float) -> np.floating:
         return np.sqrt(c) / np.sqrt(max_count)
 
     fig, ax = _make_fig(skeleton)
@@ -761,14 +803,15 @@ def _render(edge_geom, state):
 # -- Main pipeline -------------------------------------------------------------
 
 
-def main():
+def main() -> None:
+    """Run the full bike route pipeline."""
     t0 = time.time()
 
     # 1. Load state
     state = _load_state()
 
     # 2. Find new rides (exclude already-processed and already-skipped files)
-    all_files = sorted(f for f in os.listdir(RIDES_FOLDER) if f.endswith(".csv"))
+    all_files = sorted(f.name for f in Path(RIDES_FOLDER).iterdir() if f.suffix == ".csv")
     if RIDE_FILES is not None:
         ride_set = set(RIDE_FILES)
         all_files = [f for f in all_files if f in ride_set]
@@ -876,6 +919,7 @@ def main():
 
     # 9. Render
     edge_geom = _get_render_data(G)
+    assert edge_geom is not None
     _render(edge_geom, state)
 
     # Summary
