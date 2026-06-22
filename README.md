@@ -11,20 +11,17 @@ zoomable map and static heatmaps.
 ## Interactive Map
 
 The pipeline exports a compressed GeoJSON that powers an interactive
-[Leaflet](https://leafletjs.com/) map served via GitHub Pages — no backend
-needed. Features:
+[Leaflet](https://leafletjs.com/) map served via GitHub Pages. Features:
 
-- Plasma-gradient coloring by ride frequency (purple → yellow)
+- Coloring by ride frequency
 - Hover for ride count, click for the full list of ride dates
 - Stats panel with total rides, edges covered, and last-updated date
-- Dark CartoDB basemap tiles
 
 To view locally:
 
 ```bash
 python bike_routes.py          # generates docs/rides.geojson.gz
 python -m http.server 8000 --directory docs
-# open http://localhost:8000
 ```
 
 ## How It Works
@@ -36,9 +33,8 @@ python -m http.server 8000 --directory docs
 5. Routes between matched nodes, accumulates edge traversal counts
 6. Exports GeoJSON (gzipped) for the interactive map + renders static PNGs
 
-All intermediate results are cached. First run takes ~10-25 minutes
-(OSM download + full processing). Subsequent runs process only new rides
-(~1-2 minutes).
+All intermediate results are cached. First run takes longer
+(OSM download + full processing). Subsequent runs process only new rides.
 
 ## Setup
 
