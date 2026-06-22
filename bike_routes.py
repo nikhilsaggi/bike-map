@@ -16,10 +16,12 @@ Dependencies:
 
 from __future__ import annotations
 
+import gzip
 import hashlib
 import json
 import pickle
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -74,6 +76,7 @@ LINE_WIDTH_MIN = 0.4
 LINE_WIDTH_MAX = 6.0
 OUTPUT_PATH_UNWEIGHTED = "bike_routes_coverage.png"
 OUTPUT_PATH_WEIGHTED = "bike_routes_frequency.png"
+GEOJSON_OUTPUT_PATH = Path("docs/rides.geojson.gz")
 
 # -- Config: Cache paths -------------------------------------------------------
 
@@ -115,6 +118,7 @@ def _empty_state() -> dict[str, Any]:
         "processed_files": set(),
         "skipped_files": set(),
         "edge_counts": {},
+        "edge_rides": {},
         "graph_bbox": None,
     }
 
@@ -805,6 +809,64 @@ def _render(
     _save_fig(fig, OUTPUT_PATH_WEIGHTED)
 
 
+# -- GeoJSON export ------------------------------------------------------------
+
+
+def _export_geojson(
+    edge_geom: dict[tuple[int, int, int], list[tuple[float, float]]],
+    state: dict[str, Any],
+) -> None:
+    """Export ridden edges as GeoJSON for the interactive Leaflet map."""
+    edge_counts = state["edge_counts"]
+    if not edge_counts:
+        return
+
+    edge_rides: dict[tuple[int, int, int], list[str]] = state.get("edge_rides", {})
+
+    features = []
+    max_count = 0
+    for edge_key, count in edge_counts.items():
+        if edge_key not in edge_geom:
+            continue
+        coords = [(round(lon, 6), round(lat, 6)) for lon, lat in edge_geom[edge_key]]
+        max_count = max(max_count, count)
+        dates = sorted({f[:10] for f in edge_rides.get(edge_key, [])})
+        props: dict[str, Any] = {"ride_count": count}
+        if dates:
+            props["ride_dates"] = dates
+        features.append(
+            {
+                "type": "Feature",
+                "geometry": {"type": "LineString", "coordinates": coords},
+                "properties": props,
+            }
+        )
+
+    features.sort(key=lambda f: f["properties"]["ride_count"])
+
+    geojson = {
+        "type": "FeatureCollection",
+        "properties": {
+            "total_rides": len(state["processed_files"]),
+            "total_edges": len(features),
+            "max_count": max_count,
+            "updated": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+        },
+        "features": features,
+    }
+
+    GEOJSON_OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    raw = json.dumps(geojson, separators=(",", ":")).encode()
+    with gzip.open(GEOJSON_OUTPUT_PATH, "wb", compresslevel=9) as f:
+        f.write(raw)
+
+    raw_mb = len(raw) / 1_048_576
+    gz_mb = GEOJSON_OUTPUT_PATH.stat().st_size / 1_048_576
+    print(
+        f"  Exported {len(features):,} edges to {GEOJSON_OUTPUT_PATH} ({raw_mb:.1f} MB -> {gz_mb:.1f} MB gzipped)"
+    )
+
+
 # -- Main pipeline -------------------------------------------------------------
 
 
@@ -848,6 +910,7 @@ def main() -> None:
             G = _load_graph([], state)
             edge_geom = _build_render_cache(G)
         _render(edge_geom, state)
+        _export_geojson(edge_geom, state)
 
         print(f"\nDone in {time.time() - t0:.1f}s (no new rides)")
         return
@@ -872,6 +935,7 @@ def main() -> None:
                 G = _load_graph([], state)
                 edge_geom = _build_render_cache(G)
             _render(edge_geom, state)
+            _export_geojson(edge_geom, state)
         print(f"\nDone in {time.time() - t0:.1f}s")
         return
 
@@ -907,8 +971,10 @@ def main() -> None:
             edge_hw,
         )
         total_skipped += skipped
+        edge_rides = state.setdefault("edge_rides", {})
         for edge in set(edges):
             state["edge_counts"][edge] = state["edge_counts"].get(edge, 0) + 1
+            edge_rides.setdefault(edge, []).append(fname)
         state["processed_files"].add(fname)
         if i % 20 == 0 or i == len(new_rides):
             print(f"  {i}/{len(new_rides)} rides (route cache: {len(route_cache):,} entries)")
@@ -926,6 +992,7 @@ def main() -> None:
     edge_geom = _get_render_data(G)
     assert edge_geom is not None
     _render(edge_geom, state)
+    _export_geojson(edge_geom, state)
 
     # Summary
     elapsed = time.time() - t0

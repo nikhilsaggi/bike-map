@@ -1,10 +1,28 @@
 # NYC Bike Route Map
 
 Visualizes personal bike ride data on the NYC street network. Processes GPS
-ride logs, matches them to OpenStreetMap streets, and renders frequency and
-coverage heatmaps.
+ride logs, matches them to OpenStreetMap streets, and renders an interactive
+zoomable map and static heatmaps.
+
+**[View the live map](https://nikhilsaggi.github.io/bike-map/)**
 
 ![Frequency map](sample_output/bike_routes_frequency.png)
+
+## Interactive Map
+
+The pipeline exports a compressed GeoJSON that powers an interactive
+[Leaflet](https://leafletjs.com/) map served via GitHub Pages. Features:
+
+- Coloring by ride frequency
+- Hover for ride count, click for the full list of ride dates
+- Stats panel with total rides, edges covered, and last-updated date
+
+To view locally:
+
+```bash
+python bike_routes.py          # generates docs/rides.geojson.gz
+python -m http.server 8000 --directory docs
+```
 
 ## How It Works
 
@@ -13,11 +31,10 @@ coverage heatmaps.
 3. Fetches and merges OpenStreetMap bike/drive/walk street networks
 4. Map-matches GPS traces to street edges using heading-aware spatial snapping
 5. Routes between matched nodes, accumulates edge traversal counts
-6. Renders coverage and frequency maps with matplotlib
+6. Exports GeoJSON (gzipped) for the interactive map + renders static PNGs
 
-All intermediate results are cached. First run takes ~10-25 minutes
-(OSM download + full processing). Subsequent runs process only new rides
-(~1-2 minutes).
+All intermediate results are cached. First run takes longer
+(OSM download + full processing). Subsequent runs process only new rides.
 
 ## Setup
 
@@ -29,15 +46,22 @@ Requires Python 3.9+.
 
 ## Usage
 
-1. Place GPS ride CSVs in the `rides/` folder
-2. Run the pipeline:
+1. Place GPS ride CSVs in the `rides/` folder (or GPX files in `incoming/`)
+2. If using GPX files, convert them first:
+
+```bash
+python gpx_to_csv.py incoming/ rides/
+```
+
+3. Run the pipeline:
 
 ```bash
 python bike_routes.py
 ```
 
-3. Output images are saved to `bike_routes_coverage.png` and
-   `bike_routes_frequency.png`
+4. Outputs:
+   - `docs/rides.geojson.gz` — interactive map data
+   - `bike_routes_coverage.png` and `bike_routes_frequency.png` — static images
 
 ### Ride CSV Format
 
@@ -89,6 +113,23 @@ produce clean route matches:
   window and collapses them, but only when all intermediate nodes stay within
   `LOOP_MAX_DETOUR_M` of the anchor. This cleans up zigzag noise from parallel
   footways without stripping legitimate forward-progress segments.
+
+## Auto-Updating via GitHub Actions
+
+A GitHub Actions workflow (`.github/workflows/update-map.yml`) can
+automatically sync new rides from Dropbox and update the map weekly:
+
+1. **Dropbox**: Create an app at [developers.dropbox.com](https://www.dropbox.com/developers)
+   and save GPX files to `Apps/bike-rides/`
+2. **GitHub Secrets**: Add `DROPBOX_APP_KEY`, `DROPBOX_APP_SECRET`, and
+   `DROPBOX_REFRESH_TOKEN` as repository Actions secrets
+3. **GitHub Pages**: Enable in repo Settings → Pages → main branch → `/docs`
+4. **iOS Shortcut** (optional): Create a Personal Automation that saves the
+   workout GPX to `Apps/bike-rides/` in Dropbox when a cycling workout ends
+
+The workflow runs every Monday at 9am UTC and can be triggered manually from
+the Actions tab. It syncs GPX files via rclone, converts to CSV, runs the
+pipeline, and commits the updated GeoJSON.
 
 ## Cache Files
 

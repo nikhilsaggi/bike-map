@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NYC Bike Routes</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0d0d0d; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+  #map { width: 100vw; height: 100vh; }
+
+  #stats {
+    position: absolute; top: 12px; right: 12px; z-index: 1000;
+    background: rgba(13, 13, 13, 0.88); color: #ccc; padding: 12px 16px;
+    border-radius: 8px; font-size: 13px; line-height: 1.6;
+    border: 1px solid #333; backdrop-filter: blur(6px);
+  }
+  #stats strong { color: #fff; }
+  #stats .label { color: #888; }
+
+  #legend {
+    position: absolute; bottom: 28px; left: 12px; z-index: 1000;
+    background: rgba(13, 13, 13, 0.88); color: #ccc; padding: 12px 16px;
+    border-radius: 8px; font-size: 12px; border: 1px solid #333;
+    backdrop-filter: blur(6px);
+  }
+  #legend .title { font-weight: 600; color: #fff; margin-bottom: 8px; }
+  #legend .bar {
+    width: 180px; height: 12px; border-radius: 3px; margin-bottom: 4px;
+  }
+  #legend .labels { display: flex; justify-content: space-between; font-size: 11px; color: #888; }
+
+  .ride-popup .leaflet-popup-content-wrapper {
+    background: rgba(13, 13, 13, 0.92); color: #fff; border-radius: 8px;
+    border: 1px solid #444; backdrop-filter: blur(6px);
+  }
+  .ride-popup .leaflet-popup-tip { background: rgba(13, 13, 13, 0.92); }
+  .ride-popup .leaflet-popup-close-button { color: #888; }
+  .ride-popup .leaflet-popup-close-button:hover { color: #fff; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div id="stats">
+  <div><span class="label">Rides:</span> <strong id="stat-rides">—</strong></div>
+  <div><span class="label">Edges:</span> <strong id="stat-edges">—</strong></div>
+  <div><span class="label">Updated:</span> <strong id="stat-updated">—</strong></div>
+</div>
+
+<div id="legend">
+  <div class="title">Ride frequency</div>
+  <div class="bar" id="legend-bar"></div>
+  <div class="labels"><span>1</span><span id="legend-max">—</span></div>
+</div>
+
+<script>
+const map = L.map('map', {
+  center: [40.735, -73.96],
+  zoom: 13,
+  zoomControl: true,
+  attributionControl: true,
+  preferCanvas: true,
+  renderer: L.canvas(),
+});
+
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
+  subdomains: 'abcd',
+  maxZoom: 19,
+}).addTo(map);
+
+// Plasma-style color stops (purple -> blue -> orange -> yellow)
+const PLASMA = [
+  [0.0,  [13, 8, 135]],
+  [0.15, [74, 3, 168]],
+  [0.3,  [131, 3, 163]],
+  [0.45, [180, 34, 130]],
+  [0.6,  [220, 75, 85]],
+  [0.75, [246, 128, 38]],
+  [0.9,  [252, 194, 2]],
+  [1.0,  [240, 249, 33]],
+];
+
+function plasmaColor(t) {
+  t = Math.max(0, Math.min(1, t));
+  for (let i = 0; i < PLASMA.length - 1; i++) {
+    const [t0, c0] = PLASMA[i];
+    const [t1, c1] = PLASMA[i + 1];
+    if (t <= t1) {
+      const f = (t - t0) / (t1 - t0);
+      const r = Math.round(c0[0] + f * (c1[0] - c0[0]));
+      const g = Math.round(c0[1] + f * (c1[1] - c0[1]));
+      const b = Math.round(c0[2] + f * (c1[2] - c0[2]));
+      return `rgb(${r},${g},${b})`;
+    }
+  }
+  const last = PLASMA[PLASMA.length - 1][1];
+  return `rgb(${last[0]},${last[1]},${last[2]})`;
+}
+
+function buildGradientCSS() {
+  const stops = PLASMA.map(([t, c]) => `rgb(${c[0]},${c[1]},${c[2]}) ${t * 100}%`);
+  return `linear-gradient(to right, ${stops.join(', ')})`;
+}
+document.getElementById('legend-bar').style.background = buildGradientCSS();
+
+fetch('rides.geojson.gz')
+  .then(r => {
+    const ds = new DecompressionStream('gzip');
+    const decompressed = r.body.pipeThrough(ds);
+    return new Response(decompressed).json();
+  })
+  .then(data => {
+    const totalRides = data.properties?.total_rides ?? '—';
+    const totalEdges = data.properties?.total_edges ?? '—';
+    const updated = data.properties?.updated ?? '—';
+    const maxCount = data.properties?.max_count ?? 1;
+
+    document.getElementById('stat-rides').textContent = totalRides.toLocaleString();
+    document.getElementById('stat-edges').textContent = totalEdges.toLocaleString();
+    document.getElementById('stat-updated').textContent = updated;
+    document.getElementById('legend-max').textContent = maxCount;
+
+    const sqrtMax = Math.sqrt(maxCount);
+
+    L.geoJSON(data, {
+      style: feature => {
+        const count = feature.properties.ride_count || 1;
+        const t = Math.sqrt(count) / sqrtMax;
+        const weight = 1.5 + t * 4;
+        return {
+          color: plasmaColor(t),
+          weight: weight,
+          opacity: 0.85,
+          lineJoin: 'round',
+          lineCap: 'round',
+        };
+      },
+      onEachFeature: (feature, layer) => {
+        const count = feature.properties.ride_count || 0;
+        layer.bindTooltip(`${count} ride${count !== 1 ? 's' : ''}`, {
+          sticky: true,
+          className: 'ride-tooltip',
+        });
+        const dates = feature.properties.ride_dates;
+        if (dates && dates.length) {
+          const header = `<strong>${count} ride${count !== 1 ? 's' : ''}</strong>`;
+          const list = dates.map(d => `<div style="color:#ccc;font-size:12px">${d}</div>`).join('');
+          layer.bindPopup(`<div style="max-height:200px;overflow-y:auto">${header}${list}</div>`, {
+            className: 'ride-popup',
+          });
+        }
+      },
+    }).addTo(map);
+  })
+  .catch(err => {
+    document.getElementById('stat-rides').textContent = 'Error loading data';
+    console.error('Failed to load rides.geojson:', err);
+  });
+</script>
+</body>
+</html>
