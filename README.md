@@ -4,6 +4,8 @@ Visualizes personal bike ride data on the NYC street network. Processes GPS
 ride logs, matches them to OpenStreetMap streets, and renders an interactive
 zoomable map and static heatmaps.
 
+**[View the live map](https://nikhilsaggi.github.io/bike-map/)**
+
 ![Frequency map](sample_output/bike_routes_frequency.png)
 
 ## Interactive Map
