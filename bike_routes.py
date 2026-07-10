@@ -269,13 +269,14 @@ def _load_and_resample(
 
 
 def _compute_bbox(all_pts: np.ndarray) -> tuple[float, float, float, float]:
-    """Compute bounding box from ride coordinates, clamped to NYC."""
+    """Compute bounding box from ride coordinates, clamped to NYC_BBOX."""
     lats, lons = all_pts[:, 0], all_pts[:, 1]
+    bbox_lat_min, bbox_lon_min, bbox_lat_max, bbox_lon_max = NYC_BBOX
 
-    lat_min = max(float(lats.min()), 40.538128)
-    lat_max = min(float(lats.max()), 40.95)
-    lon_min = max(float(lons.min()), -74.050255)
-    lon_max = min(float(lons.max()), -73.65)
+    lat_min = max(float(lats.min()), bbox_lat_min)
+    lat_max = min(float(lats.max()), bbox_lat_max)
+    lon_min = max(float(lons.min()), bbox_lon_min)
+    lon_max = min(float(lons.max()), bbox_lon_max)
 
     buf = 0.005
     return (lon_min - buf, lat_min - buf, lon_max + buf, lat_max + buf)
