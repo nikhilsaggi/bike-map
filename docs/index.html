@@ -31,6 +31,14 @@
     width: 180px; height: 12px; border-radius: 3px; margin-bottom: 4px;
   }
   #legend .labels { display: flex; justify-content: space-between; font-size: 11px; color: #888; }
+  #filter-row {
+    display: none; align-items: center; gap: 6px; margin-top: 10px;
+    font-size: 11px; color: #888;
+  }
+  #filter-row select {
+    background: #1a1a1a; color: #ccc; border: 1px solid #333; border-radius: 4px;
+    font-size: 11px; padding: 2px 4px;
+  }
 
   .ride-popup .leaflet-popup-content-wrapper {
     background: rgba(13, 13, 13, 0.92); color: #fff; border-radius: 8px;
@@ -54,6 +62,12 @@
   <div class="title">Ride frequency</div>
   <div class="bar" id="legend-bar"></div>
   <div class="labels"><span>1</span><span id="legend-max">—</span></div>
+  <div id="filter-row">
+    <span>Years</span>
+    <select id="year-from"></select>
+    <span>&ndash;</span>
+    <select id="year-to"></select>
+  </div>
 </div>
 
 <script>
@@ -107,6 +121,102 @@ function buildGradientCSS() {
 }
 document.getElementById('legend-bar').style.background = buildGradientCSS();
 
+// ride_dates on each feature are indices into the global dateList;
+// [filterLo, filterHi] selects the active index range.
+let dateList = [];
+let filterLo = 0;
+let filterHi = Infinity;
+let sqrtMax = 1;
+let geoLayer = null;
+
+function countInRange(idxs) {
+  if (filterLo === 0 && filterHi === Infinity) return idxs.length;
+  let n = 0;
+  for (const di of idxs) if (di >= filterLo && di <= filterHi) n++;
+  return n;
+}
+
+function styleFor(count) {
+  const t = 0.15 + 0.85 * Math.sqrt(count) / sqrtMax;
+  return {
+    color: plasmaColor(t),
+    weight: 1.5 + t * 4,
+    opacity: 0.85,
+    lineJoin: 'round',
+    lineCap: 'round',
+  };
+}
+
+function popupContent(idxs) {
+  const perDate = new Map();
+  let count = 0;
+  for (const di of idxs) {
+    if (di < filterLo || di > filterHi) continue;
+    count++;
+    const d = dateList[di] ?? String(di);
+    perDate.set(d, (perDate.get(d) || 0) + 1);
+  }
+  const header = `<strong>${count} ride${count !== 1 ? 's' : ''}</strong>`;
+  const list = [...perDate.entries()]
+    .map(([d, n]) => `<div style="color:#ccc;font-size:12px">${d}${n > 1 ? ` &times;${n}` : ''}</div>`)
+    .join('');
+  return `<div style="max-height:200px;overflow-y:auto">${header}${list}</div>`;
+}
+
+function applyFilter() {
+  let filteredMax = 1;
+  geoLayer.eachLayer(layer => {
+    const c = countInRange(layer.feature.properties.ride_dates || []);
+    layer._filteredCount = c;
+    if (c > filteredMax) filteredMax = c;
+  });
+  sqrtMax = Math.sqrt(filteredMax);
+  document.getElementById('legend-max').textContent = filteredMax;
+  geoLayer.eachLayer(layer => {
+    if (layer._filteredCount === 0) {
+      map.removeLayer(layer);
+    } else {
+      if (!map.hasLayer(layer)) layer.addTo(map);
+      layer.setStyle(styleFor(layer._filteredCount));
+    }
+  });
+}
+
+function initYearFilter() {
+  if (!dateList.length) return;
+  const yearMin = +dateList[0].slice(0, 4);
+  const yearMax = +dateList[dateList.length - 1].slice(0, 4);
+  if (yearMax <= yearMin) return;
+  const from = document.getElementById('year-from');
+  const to = document.getElementById('year-to');
+  for (let y = yearMin; y <= yearMax; y++) {
+    from.add(new Option(y, y));
+    to.add(new Option(y, y));
+  }
+  from.value = yearMin;
+  to.value = yearMax;
+  const onChange = () => {
+    let a = +from.value;
+    let b = +to.value;
+    if (a > b) [a, b] = [b, a];
+    if (a === yearMin && b === yearMax) {
+      filterLo = 0;
+      filterHi = Infinity;
+    } else {
+      filterLo = dateList.findIndex(d => d >= `${a}-01-01`);
+      if (filterLo === -1) filterLo = dateList.length;
+      filterHi = -1;
+      for (let i = dateList.length - 1; i >= 0; i--) {
+        if (dateList[i] <= `${b}-12-31`) { filterHi = i; break; }
+      }
+    }
+    applyFilter();
+  };
+  from.onchange = onChange;
+  to.onchange = onChange;
+  document.getElementById('filter-row').style.display = 'flex';
+}
+
 fetch('rides.geojson.gz')
   .then(r => {
     const ds = new DecompressionStream('gzip');
@@ -118,52 +228,33 @@ fetch('rides.geojson.gz')
     const totalEdges = data.properties?.total_edges ?? '—';
     const updated = data.properties?.updated ?? '—';
     const maxCount = data.properties?.max_count ?? 1;
-    // ride_dates on each feature are indices into this global date list
-    const dateList = data.properties?.dates ?? [];
+    dateList = data.properties?.dates ?? [];
 
     document.getElementById('stat-rides').textContent = totalRides.toLocaleString();
     document.getElementById('stat-edges').textContent = totalEdges.toLocaleString();
     document.getElementById('stat-updated').textContent = updated;
     document.getElementById('legend-max').textContent = maxCount;
 
-    const sqrtMax = Math.sqrt(maxCount);
+    sqrtMax = Math.sqrt(maxCount);
 
-    L.geoJSON(data, {
-      style: feature => {
-        const count = (feature.properties.ride_dates || []).length || 1;
-        const t = 0.15 + 0.85 * Math.sqrt(count) / sqrtMax;
-        const weight = 1.5 + t * 4;
-        return {
-          color: plasmaColor(t),
-          weight: weight,
-          opacity: 0.85,
-          lineJoin: 'round',
-          lineCap: 'round',
-        };
-      },
+    geoLayer = L.geoJSON(data, {
+      style: feature => styleFor((feature.properties.ride_dates || []).length || 1),
       onEachFeature: (feature, layer) => {
         const idxs = feature.properties.ride_dates || [];
-        const count = idxs.length;
-        layer.bindTooltip(`${count} ride${count !== 1 ? 's' : ''}`, {
+        layer.bindTooltip(() => {
+          const c = countInRange(idxs);
+          return `${c} ride${c !== 1 ? 's' : ''}`;
+        }, {
           sticky: true,
           className: 'ride-tooltip',
         });
-        if (count) {
-          const perDate = new Map();
-          for (const di of idxs) {
-            const d = dateList[di] ?? String(di);
-            perDate.set(d, (perDate.get(d) || 0) + 1);
-          }
-          const header = `<strong>${count} ride${count !== 1 ? 's' : ''}</strong>`;
-          const list = [...perDate.entries()]
-            .map(([d, n]) => `<div style="color:#ccc;font-size:12px">${d}${n > 1 ? ` &times;${n}` : ''}</div>`)
-            .join('');
-          layer.bindPopup(`<div style="max-height:200px;overflow-y:auto">${header}${list}</div>`, {
-            className: 'ride-popup',
-          });
+        if (idxs.length) {
+          layer.bindPopup(() => popupContent(idxs), { className: 'ride-popup' });
         }
       },
     }).addTo(map);
+
+    initYearFilter();
   })
   .catch(err => {
     document.getElementById('stat-rides').textContent = 'Error loading data';
