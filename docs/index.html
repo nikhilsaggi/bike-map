@@ -118,6 +118,8 @@ fetch('rides.geojson.gz')
     const totalEdges = data.properties?.total_edges ?? '—';
     const updated = data.properties?.updated ?? '—';
     const maxCount = data.properties?.max_count ?? 1;
+    // ride_dates on each feature are indices into this global date list
+    const dateList = data.properties?.dates ?? [];
 
     document.getElementById('stat-rides').textContent = totalRides.toLocaleString();
     document.getElementById('stat-edges').textContent = totalEdges.toLocaleString();
@@ -128,7 +130,7 @@ fetch('rides.geojson.gz')
 
     L.geoJSON(data, {
       style: feature => {
-        const count = feature.properties.ride_count || 1;
+        const count = (feature.properties.ride_dates || []).length || 1;
         const t = 0.15 + 0.85 * Math.sqrt(count) / sqrtMax;
         const weight = 1.5 + t * 4;
         return {
@@ -140,15 +142,22 @@ fetch('rides.geojson.gz')
         };
       },
       onEachFeature: (feature, layer) => {
-        const count = feature.properties.ride_count || 0;
+        const idxs = feature.properties.ride_dates || [];
+        const count = idxs.length;
         layer.bindTooltip(`${count} ride${count !== 1 ? 's' : ''}`, {
           sticky: true,
           className: 'ride-tooltip',
         });
-        const dates = feature.properties.ride_dates;
-        if (dates && dates.length) {
+        if (count) {
+          const perDate = new Map();
+          for (const di of idxs) {
+            const d = dateList[di] ?? String(di);
+            perDate.set(d, (perDate.get(d) || 0) + 1);
+          }
           const header = `<strong>${count} ride${count !== 1 ? 's' : ''}</strong>`;
-          const list = dates.map(d => `<div style="color:#ccc;font-size:12px">${d}</div>`).join('');
+          const list = [...perDate.entries()]
+            .map(([d, n]) => `<div style="color:#ccc;font-size:12px">${d}${n > 1 ? ` &times;${n}` : ''}</div>`)
+            .join('');
           layer.bindPopup(`<div style="max-height:200px;overflow-y:auto">${header}${list}</div>`, {
             className: 'ride-popup',
           });

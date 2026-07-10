@@ -1194,9 +1194,9 @@ def _merge_parallel_features(
     for f in survivors:
         rides = f["properties"].pop("_rides")
         f["properties"]["ride_count"] = len(rides)
-        dates = sorted({r[:10] for r in rides})
-        if dates:
-            f["properties"]["ride_dates"] = dates
+        # One date per ride (duplicates preserved) so clients can compute
+        # exact per-date-range counts.
+        f["properties"]["ride_dates"] = sorted(r[:10] for r in rides)
         out.append(f)
 
     print(
@@ -1308,12 +1308,24 @@ def _export_geojson(
     features.sort(key=lambda f: f["properties"]["ride_count"])
 
     max_count = max((f["properties"]["ride_count"] for f in features), default=0)
+
+    # Encode per-ride dates as indices into one global date list: repeated
+    # "YYYY-MM-DD" strings dominate the uncompressed payload otherwise.
+    # ride_count is dropped from features since it equals len(ride_dates).
+    all_dates = sorted({d for f in features for d in f["properties"]["ride_dates"]})
+    date_idx = {d: i for i, d in enumerate(all_dates)}
+    for f in features:
+        props = f["properties"]
+        props["ride_dates"] = [date_idx[d] for d in props["ride_dates"]]
+        del props["ride_count"]
+
     geojson = {
         "type": "FeatureCollection",
         "properties": {
             "total_rides": len(state["processed_files"]),
             "total_edges": len(features),
             "max_count": max_count,
+            "dates": all_dates,
             "updated": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
         },
         "features": features,
