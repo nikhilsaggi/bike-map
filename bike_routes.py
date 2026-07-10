@@ -23,6 +23,8 @@ import math
 import os
 import pickle
 import time
+from collections import ChainMap
+from concurrent.futures import ProcessPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -51,6 +53,8 @@ HEADING_PENALTY = 0.15  # metres of snap penalty per degree of edge-heading mism
 LOOP_WINDOW = 6  # remove short loops (A->...->A) within this many nodes
 LOOP_MAX_DETOUR_M = 50  # only remove loops where detour nodes are within this distance of anchor
 DENSIFY_M = 150  # add virtual snap points on edges longer than this (metres)
+MATCH_PARALLEL_MIN_RIDES = 50  # match on worker processes when this many new rides
+MATCH_CHUNK_SIZE = 20  # rides per parallel work unit
 
 # Highway-type snap bias (metres added to edge score; negative = prefer)
 HW_PENALTY = {
@@ -669,6 +673,86 @@ def _map_match_ride(
         elif r is not _PENDING:
             edges.extend(r)
     return edges, skipped
+
+
+# -- Parallel matching ---------------------------------------------------------
+#
+# Rides are independent given the graph, so cold rebuilds (1,000+ rides,
+# ~45 min sequential) are matched on worker processes.  Each worker loads
+# the cached graph and snap structures once via the pool initializer and
+# keeps a private route cache that grows across its chunks; entries new to
+# each chunk are shipped back and merged into the main cache.
+
+_worker_graph_ctx: tuple[Any, ...] | None = None
+_worker_route_cache: dict[tuple[int, int], list[tuple[int, int]] | None] | None = None
+
+
+def _match_worker_init() -> None:
+    """Load the graph and build snap structures once per worker process."""
+    global _worker_graph_ctx, _worker_route_cache
+    with GRAPH_CACHE_PATH.open("rb") as f:
+        G = pickle.load(f)
+    _worker_graph_ctx = (G, _build_snap_tree(G))
+    _worker_route_cache = _load_route_cache()
+
+
+def _match_chunk(
+    chunk: list[tuple[str, np.ndarray]],
+) -> tuple[
+    list[tuple[str, list[tuple[int, int]], int]],
+    dict[tuple[int, int], list[tuple[int, int]] | None],
+]:
+    """Match one chunk of rides in a worker; returns per-ride results and
+    the route-cache entries first computed during this chunk."""
+    assert _worker_graph_ctx is not None and _worker_route_cache is not None
+    G, snap_data = _worker_graph_ctx
+    new_entries: dict[tuple[int, int], list[tuple[int, int]] | None] = {}
+    cache = ChainMap(new_entries, _worker_route_cache)
+    results = []
+    for fname, coords in chunk:
+        edges, skipped = _map_match_ride(G, coords, SNAP_TOLERANCE_M, cache, *snap_data)
+        results.append((fname, edges, skipped))
+    _worker_route_cache.update(new_entries)
+    return results, new_entries
+
+
+def _match_worker_count(n_rides: int) -> int:
+    """Worker processes to use for map matching.
+
+    Overridable via the MATCH_WORKERS env var (1 = sequential).  Parallel
+    matching only pays off when many rides amortize each worker's graph
+    load (tens of seconds and ~1-2 GB RAM per worker), so small batches
+    run sequentially and workers are capped at 4.
+    """
+    env = os.environ.get("MATCH_WORKERS")
+    if env is not None:
+        return max(1, int(env))
+    if n_rides < MATCH_PARALLEL_MIN_RIDES or not GRAPH_CACHE_PATH.exists():
+        return 1
+    return min(4, os.cpu_count() or 1)
+
+
+def _match_rides_parallel(
+    new_rides: list[tuple[str, np.ndarray]],
+    route_cache: dict[tuple[int, int], list[tuple[int, int]] | None],
+    n_workers: int,
+) -> list[tuple[str, list[tuple[int, int]], int]]:
+    """Map-match rides across worker processes, merging route-cache entries
+    into `route_cache` as chunks complete."""
+    chunks = [
+        new_rides[i : i + MATCH_CHUNK_SIZE]
+        for i in range(0, len(new_rides), MATCH_CHUNK_SIZE)
+    ]
+    results: list[tuple[str, list[tuple[int, int]], int]] = []
+    with ProcessPoolExecutor(max_workers=n_workers, initializer=_match_worker_init) as pool:
+        for chunk_results, new_entries in pool.map(_match_chunk, chunks):
+            route_cache.update(new_entries)
+            results.extend(chunk_results)
+            print(
+                f"  {len(results)}/{len(new_rides)} rides "
+                f"(route cache: {len(route_cache):,} entries)"
+            )
+    return results
 
 
 # -- Render data ---------------------------------------------------------------
@@ -1447,30 +1531,48 @@ def main() -> None:
     print("Map-matching...")
     route_cache = _load_route_cache()
     print(f"  Route cache: {len(route_cache):,} entries loaded")
+
+    results: list[tuple[str, list[tuple[int, int]], int]] | None = None
+    n_workers = _match_worker_count(len(new_rides))
+    if n_workers > 1:
+        print(f"  Matching on {n_workers} worker processes")
+        try:
+            results = _match_rides_parallel(new_rides, route_cache, n_workers)
+        except Exception as e:
+            print(f"  Parallel matching failed ({e!r}) -- falling back to sequential")
+            results = None
+
+    if results is None:
+        results = []
+        for i, (fname, coords) in enumerate(new_rides, 1):
+            edges, skipped = _map_match_ride(
+                G,
+                coords,
+                SNAP_TOLERANCE_M,
+                route_cache,
+                snap_tree,
+                tree_node_ids,
+                mean_lat_rad,
+                node_xs,
+                node_ys,
+                node_idx_map,
+                adj,
+                edge_hw,
+            )
+            results.append((fname, edges, skipped))
+            if i % 20 == 0 or i == len(new_rides):
+                print(f"  {i}/{len(new_rides)} rides (route cache: {len(route_cache):,} entries)")
+
+    # Apply results in filename order so state is identical regardless of
+    # how matching was scheduled.
     total_skipped = 0
-    for i, (fname, coords) in enumerate(new_rides, 1):
-        edges, skipped = _map_match_ride(
-            G,
-            coords,
-            SNAP_TOLERANCE_M,
-            route_cache,
-            snap_tree,
-            tree_node_ids,
-            mean_lat_rad,
-            node_xs,
-            node_ys,
-            node_idx_map,
-            adj,
-            edge_hw,
-        )
+    for fname, edges, skipped in sorted(results):
         total_skipped += skipped
         edge_rides = state.setdefault("edge_rides", {})
         for edge in set(edges):
             state["edge_counts"][edge] = state["edge_counts"].get(edge, 0) + 1
             edge_rides.setdefault(edge, []).append(fname)
         state["processed_files"].add(fname)
-        if i % 20 == 0 or i == len(new_rides):
-            print(f"  {i}/{len(new_rides)} rides (route cache: {len(route_cache):,} entries)")
 
     if total_skipped:
         print(f"  Skipped {total_skipped:,} segments > {MAX_ROUTING_DISTANCE_M}m")
