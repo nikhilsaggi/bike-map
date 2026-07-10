@@ -19,6 +19,11 @@
   }
   #stats strong { color: #fff; }
   #stats .label { color: #888; }
+  #stat-years {
+    display: none; margin-top: 8px; padding-top: 8px; border-top: 1px solid #333;
+    font-size: 11px; line-height: 1.5;
+  }
+  #stat-years .year-row { display: flex; justify-content: space-between; gap: 16px; }
 
   #legend {
     position: absolute; bottom: 28px; left: 12px; z-index: 1000;
@@ -55,7 +60,9 @@
 <div id="stats">
   <div><span class="label">Rides:</span> <strong id="stat-rides">—</strong></div>
   <div><span class="label">Edges:</span> <strong id="stat-edges">—</strong></div>
+  <div><span class="label">Street km:</span> <strong id="stat-km">—</strong></div>
   <div><span class="label">Updated:</span> <strong id="stat-updated">—</strong></div>
+  <div id="stat-years"></div>
 </div>
 
 <div id="legend">
@@ -234,6 +241,19 @@ fetch('rides.geojson.gz')
     document.getElementById('stat-edges').textContent = totalEdges.toLocaleString();
     document.getElementById('stat-updated').textContent = updated;
     document.getElementById('legend-max').textContent = maxCount;
+
+    const totalKm = data.properties?.total_km;
+    if (totalKm != null) {
+      document.getElementById('stat-km').textContent = Math.round(totalKm).toLocaleString();
+    }
+    const ridesPerYear = data.properties?.rides_per_year;
+    if (ridesPerYear && Object.keys(ridesPerYear).length) {
+      const el = document.getElementById('stat-years');
+      el.innerHTML = Object.entries(ridesPerYear)
+        .map(([y, n]) => `<div class="year-row"><span class="label">${y}</span><strong>${n}</strong></div>`)
+        .join('');
+      el.style.display = 'block';
+    }
 
     sqrtMax = Math.sqrt(maxCount);
 

@@ -1319,12 +1319,29 @@ def _export_geojson(
         props["ride_dates"] = [date_idx[d] for d in props["ride_dates"]]
         del props["ride_count"]
 
+    total_km = (
+        sum(
+            math.hypot((lon1 - lon0) * _M_PER_LON, (lat1 - lat0) * _M_PER_LAT)
+            for f in features
+            for (lon0, lat0), (lon1, lat1) in zip(
+                f["geometry"]["coordinates"], f["geometry"]["coordinates"][1:]
+            )
+        )
+        / 1000
+    )
+
+    rides_per_year: dict[str, int] = {}
+    for fname in sorted(state["processed_files"]):
+        rides_per_year[fname[:4]] = rides_per_year.get(fname[:4], 0) + 1
+
     geojson = {
         "type": "FeatureCollection",
         "properties": {
             "total_rides": len(state["processed_files"]),
             "total_edges": len(features),
             "max_count": max_count,
+            "total_km": round(total_km, 1),
+            "rides_per_year": rides_per_year,
             "dates": all_dates,
             "updated": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
         },
