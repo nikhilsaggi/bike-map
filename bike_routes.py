@@ -19,6 +19,7 @@ from __future__ import annotations
 import gzip
 import hashlib
 import json
+import math
 import pickle
 import time
 from datetime import datetime, timezone
@@ -102,6 +103,7 @@ def _processing_config() -> dict[str, Any]:
         "hw_penalty": sorted(HW_PENALTY.items()),
         "resample_spacing_m": RESAMPLE_SPACING_M,
         "network_types": sorted(NETWORK_TYPES),
+        "edge_key_format": "node_pair",
     }
 
 
@@ -155,7 +157,7 @@ def _save_state(state: dict[str, Any]) -> None:
         pickle.dump(state, f, protocol=pickle.HIGHEST_PROTOCOL)
 
 
-def _load_route_cache() -> dict[tuple[int, int], list[tuple[int, int, int]] | None]:
+def _load_route_cache() -> dict[tuple[int, int], list[tuple[int, int]] | None]:
     """Load cached shortest-path results between node pairs."""
     if not ROUTE_CACHE_PATH.exists():
         return {}
@@ -167,7 +169,7 @@ def _load_route_cache() -> dict[tuple[int, int], list[tuple[int, int, int]] | No
 
 
 def _save_route_cache(
-    route_cache: dict[tuple[int, int], list[tuple[int, int, int]] | None],
+    route_cache: dict[tuple[int, int], list[tuple[int, int]] | None],
 ) -> None:
     """Persist route cache to disk."""
     with ROUTE_CACHE_PATH.open("wb") as f:
@@ -267,29 +269,57 @@ def _load_and_resample(
 
 
 def _compute_bbox(all_pts: np.ndarray) -> tuple[float, float, float, float]:
-    """Compute bounding box from ride coordinates with IQR outlier removal + NYC clamp."""
+    """Compute bounding box from ride coordinates, clamped to NYC."""
     lats, lons = all_pts[:, 0], all_pts[:, 1]
 
-    def iqr_bounds(arr: np.ndarray, k: float = 3.0) -> tuple[float, float]:
-        q1, q3 = np.percentile(arr, 25), np.percentile(arr, 75)
-        iqr = q3 - q1
-        return q1 - k * iqr, q3 + k * iqr
-
-    lat_lo, lat_hi = iqr_bounds(lats)
-    lon_lo, lon_hi = iqr_bounds(lons)
-    mask = (lats >= lat_lo) & (lats <= lat_hi) & (lons >= lon_lo) & (lons <= lon_hi)
-    n_dropped = int((~mask).sum())
-    if n_dropped:
-        print(f"  Dropped {n_dropped:,} outlier points before bbox calculation")
-    clean = all_pts[mask]
-
-    lat_min = max(clean[:, 0].min(), 40.538128)
-    lat_max = min(clean[:, 0].max(), 40.95)
-    lon_min = max(clean[:, 1].min(), -74.050255)
-    lon_max = min(clean[:, 1].max(), -73.65)
+    lat_min = max(float(lats.min()), 40.538128)
+    lat_max = min(float(lats.max()), 40.95)
+    lon_min = max(float(lons.min()), -74.050255)
+    lon_max = min(float(lons.max()), -73.65)
 
     buf = 0.005
     return (lon_min - buf, lat_min - buf, lon_max + buf, lat_max + buf)
+
+
+def _remove_subsumed_edges(G: nx.MultiDiGraph) -> int:
+    """Remove edges whose geometry passes through intermediate graph nodes.
+
+    When composing separately-simplified networks (bike/drive/walk), a street
+    simplified as one long edge A->D in the drive network may have intermediate
+    nodes B, C added by the bike/walk network.  The composed graph then has
+    both A->D and A->B, B->C, C->D -- the long edge's geometry overlaps the
+    shorter edges, causing visual duplicates on the map.
+
+    Only removes an edge when ALL sub-edges in the chain through intermediate
+    nodes actually exist, so the graph stays fully connected.
+    """
+    node_pos: dict[tuple[float, float], set[int]] = {}
+    for n, data in G.nodes(data=True):
+        key = (round(data["x"], 7), round(data["y"], 7))
+        node_pos.setdefault(key, set()).add(n)
+
+    to_remove = []
+    for u, v, k, data in G.edges(data=True, keys=True):
+        geom = data.get("geometry")
+        if geom is None:
+            continue
+        coords = list(geom.coords)
+        if len(coords) <= 2:
+            continue
+        chain = [u]
+        for coord in coords[1:-1]:
+            rounded = (round(coord[0], 7), round(coord[1], 7))
+            hit = node_pos.get(rounded, set()) - {u, v}
+            if hit:
+                chain.append(next(iter(hit)))
+        if len(chain) < 2:
+            continue
+        chain.append(v)
+        if all(G.has_edge(a, b) for a, b in zip(chain[:-1], chain[1:])):
+            to_remove.append((u, v, k))
+
+    G.remove_edges_from(to_remove)
+    return len(to_remove)
 
 
 def _fetch_graph(bbox: tuple[float, float, float, float]) -> nx.MultiDiGraph:
@@ -302,6 +332,8 @@ def _fetch_graph(bbox: tuple[float, float, float, float]) -> nx.MultiDiGraph:
         print(f"    {g.number_of_nodes():,} nodes, {g.number_of_edges():,} edges")
 
     G = nx.compose_all(graphs)
+    n_removed = _remove_subsumed_edges(G)
+    print(f"  Removed {n_removed:,} subsumed edges")
     G = ox.add_edge_speeds(G)
     G = ox.add_edge_travel_times(G)
     print(f"  Merged: {G.number_of_nodes():,} nodes, {G.number_of_edges():,} edges")
@@ -353,21 +385,21 @@ def _load_graph(new_rides: list[tuple[str, np.ndarray]], state: dict[str, Any]) 
 
 def _path_to_edges(
     G: nx.MultiDiGraph, path_nodes: list[int], max_dist: float
-) -> list[tuple[int, int, int]] | None:
-    """Convert path nodes to canonical edge tuples in a single pass.
+) -> list[tuple[int, int]] | None:
+    """Convert path nodes to canonical edge pairs in a single pass.
 
     Returns edge list or None if cumulative length exceeds max_dist.
     """
     length = 0.0
     result = []
     for a, b in zip(path_nodes[:-1], path_nodes[1:]):
-        canon_u, canon_v = min(a, b), max(a, b)
-        edge_data = G[canon_u][canon_v] if G.has_edge(canon_u, canon_v) else G[a][b]
+        canon = (min(a, b), max(a, b))
+        edge_data = G[canon[0]][canon[1]] if G.has_edge(canon[0], canon[1]) else G[a][b]
         key = min(edge_data, key=lambda k: edge_data[k].get("length", 0))
         length += edge_data[key].get("length", 0)
         if length > max_dist:
             return None
-        result.append((canon_u, canon_v, key))
+        result.append(canon)
     return result
 
 
@@ -451,7 +483,7 @@ def _map_match_ride(
     G: nx.MultiDiGraph,
     coords: np.ndarray,
     snap_tol: float,
-    route_cache: dict[tuple[int, int], list[tuple[int, int, int]] | None],
+    route_cache: dict[tuple[int, int], list[tuple[int, int]] | None],
     snap_tree: cKDTree,
     tree_node_ids: np.ndarray,
     mean_lat_rad: float,
@@ -460,7 +492,7 @@ def _map_match_ride(
     node_idx_map: dict[int, int],
     adj: dict[int, set[int]],
     edge_hw: dict[tuple[int, int], float],
-) -> tuple[list[tuple[int, int, int]], int]:
+) -> tuple[list[tuple[int, int]], int]:
     """Snap points to nearest OSM edges, route between them."""
     lats, lons = coords[:, 0], coords[:, 1]
     R = 6_371_000
@@ -596,9 +628,7 @@ def _map_match_ride(
         canon = (min(u, v), max(u, v))
 
         if G.has_edge(u, v):
-            ed = G[u][v]
-            key = min(ed, key=lambda k: ed[k].get("length", 0))
-            pairs.append([(canon[0], canon[1], key)])
+            pairs.append([(canon[0], canon[1])])
         elif canon in route_cache:
             pairs.append(route_cache[canon])
         else:
@@ -627,7 +657,7 @@ def _map_match_ride(
             pairs[idx] = result
 
     # Phase 3: assemble
-    edges: list[tuple[int, int, int]] = []
+    edges: list[tuple[int, int]] = []
     skipped = 0
     for r in pairs:
         if r is None:
@@ -642,13 +672,20 @@ def _map_match_ride(
 
 def _build_render_cache(
     G: nx.MultiDiGraph,
-) -> dict[tuple[int, int, int], list[tuple[float, float]]]:
-    """Extract canonical edge geometries from graph for rendering."""
+) -> dict[tuple[int, int], list[tuple[float, float]]]:
+    """Extract one canonical geometry per node pair for rendering.
+
+    When multiple parallel edges exist between the same nodes (from
+    composing bike/drive/walk networks), keeps only the shortest edge's
+    geometry to avoid overlapping rendered lines.
+    """
     print("Building render cache...")
-    edge_geom = {}
-    for u, v, key, data in G.edges(data=True, keys=True):
-        canon = (min(u, v), max(u, v), key)
-        if canon in edge_geom:
+    edge_geom: dict[tuple[int, int], list[tuple[float, float]]] = {}
+    edge_len: dict[tuple[int, int], float] = {}
+    for u, v, _key, data in G.edges(data=True, keys=True):
+        canon = (min(u, v), max(u, v))
+        length = data.get("length", float("inf"))
+        if canon in edge_geom and edge_len[canon] <= length:
             continue
         if "geometry" in data:
             xs, ys = data["geometry"].xy
@@ -658,6 +695,7 @@ def _build_render_cache(
                 (G.nodes[u]["x"], G.nodes[u]["y"]),
                 (G.nodes[v]["x"], G.nodes[v]["y"]),
             ]
+        edge_len[canon] = length
 
     with RENDER_CACHE_PATH.open("wb") as f:
         pickle.dump(edge_geom, f, protocol=pickle.HIGHEST_PROTOCOL)
@@ -667,7 +705,7 @@ def _build_render_cache(
 
 def _get_render_data(
     G: nx.MultiDiGraph | None = None,
-) -> dict[tuple[int, int, int], list[tuple[float, float]]] | None:
+) -> dict[tuple[int, int], list[tuple[float, float]]] | None:
     """Load render cache, or build it from graph if missing."""
     if RENDER_CACHE_PATH.exists():
         with RENDER_CACHE_PATH.open("rb") as f:
@@ -705,7 +743,7 @@ def _save_fig(fig: plt.Figure, path: str) -> None:
 
 
 def _render(
-    edge_geom: dict[tuple[int, int, int], list[tuple[float, float]]],
+    edge_geom: dict[tuple[int, int], list[tuple[float, float]]],
     state: dict[str, Any],
 ) -> None:
     """Render both coverage and frequency maps."""
@@ -811,9 +849,349 @@ def _render(
 
 # -- GeoJSON export ------------------------------------------------------------
 
+MERGE_TOL_M = 20.0  # parallel features within this lateral distance may merge
+MERGE_SAMPLE_M = 8.0  # geometry sampling interval for coverage tests
+MERGE_HEADING_DEG = 30.0  # max heading difference (mod 180) for samples to match
+MERGE_MUTUAL_COV = 0.75  # mutual coverage required to cluster two features
+MERGE_ABSORB_COV = 0.95  # union coverage required to absorb a redundant span
+MERGE_TRANSFER_COV = 0.80  # coverage needed to receive an absorbed feature's rides
+MERGE_KEEP_COV = 0.97  # cluster extent that kept geometries must cover
+MERGE_SNAP_M = 40.0  # reconnect feature endpoints to neighbours within this
+MERGE_CONNECT_M = 6.0  # endpoints this close to another feature stay put
+
+_M_PER_LON = 111_320 * np.cos(np.radians(40.73))
+_M_PER_LAT = 110_540
+
+
+def _sample_line(coords: list) -> list[tuple[float, float, float]]:
+    """Sample (x_m, y_m, heading_deg mod 180) every MERGE_SAMPLE_M along a line."""
+    pts = [(c[0] * _M_PER_LON, c[1] * _M_PER_LAT) for c in coords]
+
+    def head(x0: float, y0: float, x1: float, y1: float) -> float:
+        return math.degrees(math.atan2(y1 - y0, x1 - x0)) % 180.0
+
+    out = [(pts[0][0], pts[0][1], head(*pts[0], *pts[1]))]
+    carry = 0.0
+    for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
+        seg = math.hypot(x1 - x0, y1 - y0)
+        if seg == 0:
+            continue
+        h = head(x0, y0, x1, y1)
+        d = MERGE_SAMPLE_M - carry
+        while d <= seg:
+            t = d / seg
+            out.append((x0 + t * (x1 - x0), y0 + t * (y1 - y0), h))
+            d += MERGE_SAMPLE_M
+        carry = seg - (d - MERGE_SAMPLE_M)
+    out.append((pts[-1][0], pts[-1][1], head(*pts[-2], *pts[-1])))
+    return out
+
+
+def _heading_diff(a: float, b: float) -> float:
+    d = abs(a - b) % 180.0
+    return min(d, 180.0 - d)
+
+
+def _sample_hits(
+    samples: list[list[tuple[float, float, float]]],
+) -> list[list[set[int]]]:
+    """For each feature, for each of its samples, the set of OTHER features
+    with an aligned sample within MERGE_TOL_M."""
+    cell = MERGE_TOL_M
+    grid: dict[tuple[int, int], list[tuple[int, float, float, float]]] = {}
+    for i, pts in enumerate(samples):
+        for (x, y, h) in pts:
+            grid.setdefault((int(x // cell), int(y // cell)), []).append((i, x, y, h))
+    tol_sq = MERGE_TOL_M * MERGE_TOL_M
+    hits: list[list[set[int]]] = []
+    for i, pts in enumerate(samples):
+        rows = []
+        for (x, y, h) in pts:
+            gx, gy = int(x // cell), int(y // cell)
+            hit: set[int] = set()
+            for dx in (-1, 0, 1):
+                for dy in (-1, 0, 1):
+                    for (j, jx, jy, jh) in grid.get((gx + dx, gy + dy), ()):
+                        if j == i or j in hit:
+                            continue
+                        ddx, ddy = jx - x, jy - y
+                        if (
+                            ddx * ddx + ddy * ddy <= tol_sq
+                            and _heading_diff(h, jh) <= MERGE_HEADING_DEG
+                        ):
+                            hit.add(j)
+            rows.append(hit)
+        hits.append(rows)
+    return hits
+
+
+def _snap_endpoints(features: list[dict[str, Any]]) -> None:
+    """Reconnect merged features at junctions (in place).
+
+    Merging keeps one geometry per parallel cluster, so adjacent features
+    along a corridor can come from different parallel ways offset 10-20m
+    laterally, leaving gaps and jogs at junctions.  Any endpoint that is
+    not already touching another feature gets a short connector segment
+    appended, bridging to the nearest point on a neighbouring feature
+    within MERGE_SNAP_M.  The original endpoint is kept (extending rather
+    than moving it) so the line's true geometry is not distorted.
+    """
+    cell = MERGE_SNAP_M
+    grid: dict[tuple[int, int], list[tuple[int, float, float, float, float]]] = {}
+    step = 4.0
+    for i, f in enumerate(features):
+        coords = f["geometry"]["coordinates"]
+        pts = [(c[0] * _M_PER_LON, c[1] * _M_PER_LAT) for c in coords]
+        for (lon0, lat0), (x0, y0), (x1, y1) in zip(coords, pts, pts[1:]):
+            seg = math.hypot(x1 - x0, y1 - y0)
+            n = max(1, int(seg // step))
+            for k in range(n):
+                t = k / n
+                x, y = x0 + t * (x1 - x0), y0 + t * (y1 - y0)
+                grid.setdefault((int(x // cell), int(y // cell)), []).append(
+                    (i, x, y, x / _M_PER_LON, y / _M_PER_LAT)
+                )
+        x, y = pts[-1]
+        grid.setdefault((int(x // cell), int(y // cell)), []).append(
+            (i, x, y, coords[-1][0], coords[-1][1])
+        )
+
+    snap_sq = MERGE_SNAP_M * MERGE_SNAP_M
+    connect_sq = MERGE_CONNECT_M * MERGE_CONNECT_M
+    for i, f in enumerate(features):
+        coords = f["geometry"]["coordinates"]
+        for end in (0, -1):
+            lon, lat = coords[end][0], coords[end][1]
+            x, y = lon * _M_PER_LON, lat * _M_PER_LAT
+            gx, gy = int(x // cell), int(y // cell)
+            best = None
+            best_d = snap_sq
+            for dx in (-1, 0, 1):
+                for dy in (-1, 0, 1):
+                    for (j, jx, jy, jlon, jlat) in grid.get((gx + dx, gy + dy), ()):
+                        if j == i:
+                            continue
+                        d = (jx - x) ** 2 + (jy - y) ** 2
+                        if d < best_d:
+                            best_d = d
+                            best = (jlon, jlat)
+            if best is not None and best_d > connect_sq:
+                new_pt = (round(best[0], 6), round(best[1], 6))
+                if end == 0:
+                    coords.insert(0, new_pt)
+                else:
+                    coords.append(new_pt)
+
+
+def _merge_parallel_features(
+    features: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Merge GeoJSON features representing the same physical road corridor.
+
+    Parallel OSM ways (divided carriageways, protected bike lanes, footways
+    alongside roads) get map-matched separately, drawing 2+ lines 10-20m
+    apart for the same street.  Merging is driven by heading-aligned sample
+    coverage: fraction of one feature's points lying within MERGE_TOL_M of
+    the other's.  Adjacent segments along a street have near-zero mutual
+    coverage, so transitive chains cannot form the way endpoint matching
+    allowed.
+
+    Phase 1 clusters features that mutually cover each other and keeps a
+    minimal set of member geometries covering the cluster extent.  Phase 2
+    drops features almost entirely covered by the union of the others
+    (e.g. long ways spanning several already-covered blocks).
+
+    Each input feature must carry properties["_rides"]: the set of ride ids
+    using that edge.  Merged counts are unions of these sets, so a ride is
+    never double-counted no matter how features combine.  Returns finalized
+    features with ride_count/ride_dates and no _rides.
+    """
+    tol_sq = MERGE_TOL_M * MERGE_TOL_M
+    samples = [_sample_line(f["geometry"]["coordinates"]) for f in features]
+    hits = _sample_hits(samples)
+
+    # covered[i][j] = number of i's samples matched by feature j
+    covered: list[dict[int, int]] = []
+    for rows in hits:
+        row_counts: dict[int, int] = {}
+        for hit in rows:
+            for j in hit:
+                row_counts[j] = row_counts.get(j, 0) + 1
+        covered.append(row_counts)
+
+    def cov(i: int, j: int) -> float:
+        return covered[i].get(j, 0) / len(samples[i])
+
+    # -- Phase 1: cluster mutually-covering features (Union-Find) --
+    parent = list(range(len(features)))
+
+    def find(x: int) -> int:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    n_pairs = 0
+    for i, row_counts in enumerate(covered):
+        for j in row_counts:
+            if j > i and cov(i, j) >= MERGE_MUTUAL_COV and cov(j, i) >= MERGE_MUTUAL_COV:
+                ri, rj = find(i), find(j)
+                if ri != rj:
+                    parent[rj] = ri
+                n_pairs += 1
+
+    clusters: dict[int, list[int]] = {}
+    for i in range(len(features)):
+        clusters.setdefault(find(i), []).append(i)
+
+    def line_len(i: int) -> float:
+        pts = samples[i]
+        return math.hypot(pts[-1][0] - pts[0][0], pts[-1][1] - pts[0][1])
+
+    merged: list[dict[str, Any]] = []
+    for members in clusters.values():
+        rides: set[str] = set()
+        for i in members:
+            rides |= features[i]["properties"]["_rides"]
+        if len(members) == 1:
+            keep = members
+        else:
+            # Greedy set-cover: keep member geometries until MERGE_KEEP_COV of
+            # the cluster's sampled extent lies within MERGE_TOL_M of a kept
+            # one.  Tight clusters keep a single line; staggered fragment
+            # chains at junctions keep 2-3 instead of losing extent.
+            all_pts = [(x, y) for i in members for (x, y, _h) in samples[i]]
+            cov_flags = [False] * len(all_pts)
+            keep = []
+            # Prefer the most-ridden member as the kept geometry: rides stay
+            # on the same physical way through consecutive blocks, so this
+            # picks laterally-consistent representatives along a corridor
+            # (keeping the longest instead makes adjacent blocks alternate
+            # between parallel ways, fragmenting the drawn line).
+            remaining = sorted(
+                members,
+                key=lambda m: (len(features[m]["properties"]["_rides"]), line_len(m)),
+                reverse=True,
+            )
+
+            def mark(m: int) -> int:
+                gained = 0
+                for k, (x, y) in enumerate(all_pts):
+                    if cov_flags[k]:
+                        continue
+                    for (jx, jy, _jh) in samples[m]:
+                        if (jx - x) ** 2 + (jy - y) ** 2 <= tol_sq:
+                            cov_flags[k] = True
+                            gained += 1
+                            break
+                return gained
+
+            while remaining and (not keep or sum(cov_flags) / len(cov_flags) < MERGE_KEEP_COV):
+                m = remaining.pop(0)
+                if mark(m) == 0 and keep:
+                    continue
+                keep.append(m)
+        for m in keep:
+            merged.append(
+                {
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "LineString",
+                        "coordinates": features[m]["geometry"]["coordinates"],
+                    },
+                    "properties": {"_rides": set(rides)},
+                }
+            )
+
+    # -- Phase 2: absorb spans redundant with the union of other features --
+    m_samples = [_sample_line(f["geometry"]["coordinates"]) for f in merged]
+    m_hits = _sample_hits(m_samples)
+    m_covered: list[dict[int, int]] = []
+    for rows in m_hits:
+        row_counts = {}
+        for hit in rows:
+            for j in hit:
+                row_counts[j] = row_counts.get(j, 0) + 1
+        m_covered.append(row_counts)
+
+    active = [True] * len(merged)
+    n_absorbed = 0
+    # Absorb low-ridership features first: a busy corridor must never be
+    # dropped in favour of a near-empty parallel path that happens to cover
+    # it -- by the time a busy feature is considered, its low-count cover
+    # has already been absorbed, so the busy feature survives.
+    order = sorted(
+        range(len(merged)),
+        key=lambda i: (len(merged[i]["properties"]["_rides"]), -len(m_samples[i])),
+    )
+    def union_cov(i: int) -> float:
+        """Fraction of i's samples covered by active features of comparable
+        ridership.  Near-empty parallel paths must not count as cover for a
+        busy corridor -- absorbing the corridor would leave its street drawn
+        only by an almost-invisible low-count line."""
+        min_rides = len(merged[i]["properties"]["_rides"]) / 2
+        rows = m_hits[i]
+        n = sum(
+            1
+            for hit in rows
+            if any(
+                active[j] and len(merged[j]["properties"]["_rides"]) >= min_rides
+                for j in hit
+            )
+        )
+        return n / len(rows)
+
+    for i in order:
+        if union_cov(i) < MERGE_ABSORB_COV:
+            continue
+        receivers = [
+            j
+            for j in {j for hit in m_hits[i] for j in hit if active[j]}
+            if m_covered[j].get(i, 0) / len(m_samples[j]) >= MERGE_TRANSFER_COV
+        ]
+        if not receivers:
+            continue
+        active[i] = False
+        n_absorbed += 1
+        for j in receivers:
+            merged[j]["properties"]["_rides"] |= merged[i]["properties"]["_rides"]
+
+    # Restore pass: absorbing feature B can erode the cover that justified
+    # absorbing feature A earlier, leaving a hole in the drawn corridor.
+    # Reactivate any absorbed feature no longer covered by the final set.
+    while True:
+        restored = 0
+        for i in order:
+            if active[i]:
+                continue
+            if union_cov(i) < MERGE_ABSORB_COV:
+                active[i] = True
+                n_absorbed -= 1
+                restored += 1
+        if not restored:
+            break
+
+    survivors = [f for i, f in enumerate(merged) if active[i]]
+    _snap_endpoints(survivors)
+
+    out = []
+    for f in survivors:
+        rides = f["properties"].pop("_rides")
+        f["properties"]["ride_count"] = len(rides)
+        dates = sorted({r[:10] for r in rides})
+        if dates:
+            f["properties"]["ride_dates"] = dates
+        out.append(f)
+
+    print(
+        f"  Merged parallel features: {len(features):,} -> {len(out):,} "
+        f"({n_pairs:,} mutual pairs, {n_absorbed:,} redundant spans absorbed)"
+    )
+    return out
+
 
 def _export_geojson(
-    edge_geom: dict[tuple[int, int, int], list[tuple[float, float]]],
+    edge_geom: dict[tuple[int, int], list[tuple[float, float]]],
     state: dict[str, Any],
 ) -> None:
     """Export ridden edges as GeoJSON for the interactive Leaflet map."""
@@ -821,29 +1199,25 @@ def _export_geojson(
     if not edge_counts:
         return
 
-    edge_rides: dict[tuple[int, int, int], list[str]] = state.get("edge_rides", {})
+    edge_rides: dict[tuple[int, int], list[str]] = state.get("edge_rides", {})
 
     features = []
-    max_count = 0
     for edge_key, count in edge_counts.items():
         if edge_key not in edge_geom:
             continue
         coords = [(round(lon, 6), round(lat, 6)) for lon, lat in edge_geom[edge_key]]
-        max_count = max(max_count, count)
-        dates = sorted({f[:10] for f in edge_rides.get(edge_key, [])})
-        props: dict[str, Any] = {"ride_count": count}
-        if dates:
-            props["ride_dates"] = dates
         features.append(
             {
                 "type": "Feature",
                 "geometry": {"type": "LineString", "coordinates": coords},
-                "properties": props,
+                "properties": {"_rides": set(edge_rides.get(edge_key, ()))},
             }
         )
 
+    features = _merge_parallel_features(features)
     features.sort(key=lambda f: f["properties"]["ride_count"])
 
+    max_count = max((f["properties"]["ride_count"] for f in features), default=0)
     geojson = {
         "type": "FeatureCollection",
         "properties": {
