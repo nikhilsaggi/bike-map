@@ -926,24 +926,16 @@ def _sample_hits(
     return hits
 
 
-def _snap_endpoints(features: list[dict[str, Any]]) -> None:
-    """Reconnect merged features at junctions (in place).
-
-    Merging keeps one geometry per parallel cluster, so adjacent features
-    along a corridor can come from different parallel ways offset 10-20m
-    laterally, leaving gaps and jogs at junctions.  Any endpoint that is
-    not already touching another feature gets a short connector segment
-    appended, bridging to the nearest point on a neighbouring feature
-    within MERGE_SNAP_M.  The original endpoint is kept (extending rather
-    than moving it) so the line's true geometry is not distorted.
-    """
-    cell = MERGE_SNAP_M
+def _dense_point_grid(
+    features: list[dict[str, Any]], cell: float, step: float = 4.0
+) -> dict[tuple[int, int], list[tuple[int, float, float, float, float]]]:
+    """Spatial grid of (feature_idx, x_m, y_m, lon, lat) points sampled
+    every `step` m along every feature's geometry."""
     grid: dict[tuple[int, int], list[tuple[int, float, float, float, float]]] = {}
-    step = 4.0
     for i, f in enumerate(features):
         coords = f["geometry"]["coordinates"]
         pts = [(c[0] * _M_PER_LON, c[1] * _M_PER_LAT) for c in coords]
-        for (lon0, lat0), (x0, y0), (x1, y1) in zip(coords, pts, pts[1:]):
+        for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
             seg = math.hypot(x1 - x0, y1 - y0)
             n = max(1, int(seg // step))
             for k in range(n):
@@ -956,6 +948,22 @@ def _snap_endpoints(features: list[dict[str, Any]]) -> None:
         grid.setdefault((int(x // cell), int(y // cell)), []).append(
             (i, x, y, coords[-1][0], coords[-1][1])
         )
+    return grid
+
+
+def _snap_endpoints(features: list[dict[str, Any]]) -> None:
+    """Reconnect merged features at junctions (in place).
+
+    Merging keeps one geometry per parallel cluster, so adjacent features
+    along a corridor can come from different parallel ways offset 10-20m
+    laterally, leaving gaps and jogs at junctions.  Any endpoint that is
+    not already touching another feature gets a short connector segment
+    appended, bridging to the nearest point on a neighbouring feature
+    within MERGE_SNAP_M.  The original endpoint is kept (extending rather
+    than moving it) so the line's true geometry is not distorted.
+    """
+    cell = MERGE_SNAP_M
+    grid = _dense_point_grid(features, cell)
 
     snap_sq = MERGE_SNAP_M * MERGE_SNAP_M
     connect_sq = MERGE_CONNECT_M * MERGE_CONNECT_M
@@ -1191,6 +1199,79 @@ def _merge_parallel_features(
     return out
 
 
+def _audit_merge(features: list[dict[str, Any]]) -> None:
+    """Print post-merge regression metrics.
+
+    Residual duplicate pairs: features >= 30m that still mutually cover each
+    other (should have been merged).  Dangling endpoints: endpoints near
+    another feature (within MERGE_SNAP_M) but not touching it (beyond
+    MERGE_CONNECT_M) -- broken corridor joins.  Healthy baseline as of
+    2026-07: ~34 duplicate pairs, ~0.4% dangling.
+    """
+    samples = [_sample_line(f["geometry"]["coordinates"]) for f in features]
+    hits = _sample_hits(samples)
+    covered: list[dict[int, int]] = []
+    for rows in hits:
+        row_counts: dict[int, int] = {}
+        for hit in rows:
+            for j in hit:
+                row_counts[j] = row_counts.get(j, 0) + 1
+        covered.append(row_counts)
+
+    def length_m(i: int) -> float:
+        pts = [
+            (c[0] * _M_PER_LON, c[1] * _M_PER_LAT)
+            for c in features[i]["geometry"]["coordinates"]
+        ]
+        return sum(
+            math.hypot(x1 - x0, y1 - y0) for (x0, y0), (x1, y1) in zip(pts, pts[1:])
+        )
+
+    lens = [length_m(i) for i in range(len(features))]
+    dup_pairs = 0
+    dup_km = 0.0
+    for i, row_counts in enumerate(covered):
+        for j, n in row_counts.items():
+            if j <= i or min(lens[i], lens[j]) < 30.0:
+                continue
+            ci = n / len(samples[i])
+            cj = covered[j].get(i, 0) / len(samples[j])
+            if ci >= MERGE_MUTUAL_COV and cj >= MERGE_MUTUAL_COV:
+                dup_pairs += 1
+                dup_km += min(lens[i], lens[j]) / 1000
+
+    grid = _dense_point_grid(features, MERGE_SNAP_M)
+    snap_sq = MERGE_SNAP_M * MERGE_SNAP_M
+    connect_sq = MERGE_CONNECT_M * MERGE_CONNECT_M
+    dangling = 0
+    for i, f in enumerate(features):
+        coords = f["geometry"]["coordinates"]
+        for end in (0, -1):
+            x = coords[end][0] * _M_PER_LON
+            y = coords[end][1] * _M_PER_LAT
+            gx, gy = int(x // MERGE_SNAP_M), int(y // MERGE_SNAP_M)
+            best = snap_sq
+            for dx in (-1, 0, 1):
+                for dy in (-1, 0, 1):
+                    for (j, jx, jy, _jlon, _jlat) in grid.get((gx + dx, gy + dy), ()):
+                        if j == i:
+                            continue
+                        d = (jx - x) ** 2 + (jy - y) ** 2
+                        if d < best:
+                            best = d
+            if connect_sq < best < snap_sq:
+                dangling += 1
+
+    total_ends = 2 * len(features)
+    pct = 100 * dangling / total_ends if total_ends else 0.0
+    print(
+        f"  Audit: {dup_pairs:,} residual duplicate pairs ({dup_km:.1f} km), "
+        f"{dangling:,}/{total_ends:,} dangling endpoints ({pct:.1f}%)"
+    )
+    if dup_pairs > 100 or pct > 2.0:
+        print("  WARNING: merge regression suspected -- metrics well above baseline")
+
+
 def _export_geojson(
     edge_geom: dict[tuple[int, int], list[tuple[float, float]]],
     state: dict[str, Any],
@@ -1216,6 +1297,7 @@ def _export_geojson(
         )
 
     features = _merge_parallel_features(features)
+    _audit_merge(features)
     features.sort(key=lambda f: f["properties"]["ride_count"])
 
     max_count = max((f["properties"]["ride_count"] for f in features), default=0)
