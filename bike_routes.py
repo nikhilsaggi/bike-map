@@ -20,6 +20,7 @@ import gzip
 import hashlib
 import json
 import math
+import os
 import pickle
 import time
 from datetime import datetime, timezone
@@ -78,6 +79,8 @@ LINE_WIDTH_MAX = 6.0
 OUTPUT_PATH_UNWEIGHTED = "bike_routes_coverage.png"
 OUTPUT_PATH_WEIGHTED = "bike_routes_frequency.png"
 GEOJSON_OUTPUT_PATH = Path("docs/rides.geojson.gz")
+# The PNGs are gitignored and only useful locally; CI sets this to skip them.
+SKIP_PNG_RENDER = os.environ.get("SKIP_PNG_RENDER") == "1"
 
 # -- Config: Cache paths -------------------------------------------------------
 
@@ -748,6 +751,10 @@ def _render(
     state: dict[str, Any],
 ) -> None:
     """Render both coverage and frequency maps."""
+    if SKIP_PNG_RENDER:
+        print("Skipping PNG render (SKIP_PNG_RENDER=1)")
+        return
+
     edge_counts = state["edge_counts"]
 
     if not edge_counts:

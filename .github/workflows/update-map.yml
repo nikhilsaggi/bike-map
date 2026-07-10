@@ -54,6 +54,8 @@ jobs:
         run: python gpx_to_csv.py incoming/ rides/
 
       - name: Run pipeline
+        env:
+          SKIP_PNG_RENDER: '1'
         run: python bike_routes.py
 
       - name: Commit and push if changed
