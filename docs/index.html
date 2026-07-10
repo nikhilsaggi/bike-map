@@ -129,7 +129,7 @@ fetch('rides.geojson.gz')
     L.geoJSON(data, {
       style: feature => {
         const count = feature.properties.ride_count || 1;
-        const t = Math.sqrt(count) / sqrtMax;
+        const t = 0.15 + 0.85 * Math.sqrt(count) / sqrtMax;
         const weight = 1.5 + t * 4;
         return {
           color: plasmaColor(t),

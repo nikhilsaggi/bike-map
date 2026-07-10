@@ -29,7 +29,7 @@ jobs:
             state.pkl
             render_cache.pkl
             route_cache.pkl
-          key: bike-pipeline-${{ hashFiles('bike_routes.py') }}
+          key: bike-pipeline-${{ github.run_id }}
           restore-keys: |
             bike-pipeline-
 
