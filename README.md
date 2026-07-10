@@ -44,6 +44,18 @@ pip install .
 
 Requires Python 3.9+.
 
+## Tests
+
+The map-matching and merge logic is covered by a pytest suite using small
+synthetic street grids (no OSM download or ride data needed):
+
+```bash
+pip install pytest
+pytest
+```
+
+Tests also run in CI on every push and pull request.
+
 ## Usage
 
 1. Place GPS ride CSVs in the `rides/` folder (or GPX files in `incoming/`)

@@ -12,7 +12,10 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["ruff>=0.11", "ty>=0.0.1a7"]
+dev = ["ruff>=0.11", "ty>=0.0.1a7", "pytest>=8.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 
 [tool.ruff]
 target-version = "py39"
@@ -37,6 +40,14 @@ ignore = [
     "D203",     # blank line before class docstring (incompatible with D211)
     "D213",     # multi-line summary second line (incompatible with D212)
     "S101",     # assert (fine in a pipeline script, not a library)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = [
+    "D",        # docstrings not required in tests
+    "ANN",      # type annotations not required in tests
+    "INP001",   # tests/ is intentionally not a package
+    "SLF001",   # tests exercise private pipeline functions
 ]
 
 [tool.ty.environment]

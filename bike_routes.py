@@ -689,7 +689,7 @@ _worker_route_cache: dict[tuple[int, int], list[tuple[int, int]] | None] | None 
 
 def _match_worker_init() -> None:
     """Load the graph and build snap structures once per worker process."""
-    global _worker_graph_ctx, _worker_route_cache
+    global _worker_graph_ctx, _worker_route_cache  # noqa: PLW0603 -- pool initializer pattern
     with GRAPH_CACHE_PATH.open("rb") as f:
         G = pickle.load(f)
     _worker_graph_ctx = (G, _build_snap_tree(G))
@@ -702,9 +702,13 @@ def _match_chunk(
     list[tuple[str, list[tuple[int, int]], int]],
     dict[tuple[int, int], list[tuple[int, int]] | None],
 ]:
-    """Match one chunk of rides in a worker; returns per-ride results and
-    the route-cache entries first computed during this chunk."""
-    assert _worker_graph_ctx is not None and _worker_route_cache is not None
+    """Match one chunk of rides in a worker.
+
+    Returns per-ride results and the route-cache entries first computed
+    during this chunk.
+    """
+    assert _worker_graph_ctx is not None
+    assert _worker_route_cache is not None
     G, snap_data = _worker_graph_ctx
     new_entries: dict[tuple[int, int], list[tuple[int, int]] | None] = {}
     cache = ChainMap(new_entries, _worker_route_cache)
@@ -737,8 +741,10 @@ def _match_rides_parallel(
     route_cache: dict[tuple[int, int], list[tuple[int, int]] | None],
     n_workers: int,
 ) -> list[tuple[str, list[tuple[int, int]], int]]:
-    """Map-match rides across worker processes, merging route-cache entries
-    into `route_cache` as chunks complete."""
+    """Map-match rides across worker processes.
+
+    Route-cache entries are merged into `route_cache` as chunks complete.
+    """
     chunks = [
         new_rides[i : i + MATCH_CHUNK_SIZE]
         for i in range(0, len(new_rides), MATCH_CHUNK_SIZE)
@@ -987,8 +993,11 @@ def _heading_diff(a: float, b: float) -> float:
 def _sample_hits(
     samples: list[list[tuple[float, float, float]]],
 ) -> list[list[set[int]]]:
-    """For each feature, for each of its samples, the set of OTHER features
-    with an aligned sample within MERGE_TOL_M."""
+    """Find aligned neighbours for every sample of every feature.
+
+    For each feature, for each of its samples, the set of OTHER features
+    with an aligned sample within MERGE_TOL_M.
+    """
     cell = MERGE_TOL_M
     grid: dict[tuple[int, int], list[tuple[int, float, float, float]]] = {}
     for i, pts in enumerate(samples):
@@ -1020,8 +1029,11 @@ def _sample_hits(
 def _dense_point_grid(
     features: list[dict[str, Any]], cell: float, step: float = 4.0
 ) -> dict[tuple[int, int], list[tuple[int, float, float, float, float]]]:
-    """Spatial grid of (feature_idx, x_m, y_m, lon, lat) points sampled
-    every `step` m along every feature's geometry."""
+    """Build a spatial grid over all feature geometries.
+
+    Cells hold (feature_idx, x_m, y_m, lon, lat) points sampled every
+    `step` m along every feature's geometry.
+    """
     grid: dict[tuple[int, int], list[tuple[int, float, float, float, float]]] = {}
     for i, f in enumerate(features):
         coords = f["geometry"]["coordinates"]
@@ -1174,7 +1186,7 @@ def _merge_parallel_features(
                 reverse=True,
             )
 
-            def mark(m: int) -> int:
+            def mark(m: int, all_pts: list, cov_flags: list) -> int:
                 gained = 0
                 for k, (x, y) in enumerate(all_pts):
                     if cov_flags[k]:
@@ -1188,20 +1200,20 @@ def _merge_parallel_features(
 
             while remaining and (not keep or sum(cov_flags) / len(cov_flags) < MERGE_KEEP_COV):
                 m = remaining.pop(0)
-                if mark(m) == 0 and keep:
+                if mark(m, all_pts, cov_flags) == 0 and keep:
                     continue
                 keep.append(m)
-        for m in keep:
-            merged.append(
-                {
-                    "type": "Feature",
-                    "geometry": {
-                        "type": "LineString",
-                        "coordinates": features[m]["geometry"]["coordinates"],
-                    },
-                    "properties": {"_rides": set(rides)},
-                }
-            )
+        merged.extend(
+            {
+                "type": "Feature",
+                "geometry": {
+                    "type": "LineString",
+                    "coordinates": features[m]["geometry"]["coordinates"],
+                },
+                "properties": {"_rides": set(rides)},
+            }
+            for m in keep
+        )
 
     # -- Phase 2: absorb spans redundant with the union of other features --
     m_samples = [_sample_line(f["geometry"]["coordinates"]) for f in merged]
@@ -1225,10 +1237,12 @@ def _merge_parallel_features(
         key=lambda i: (len(merged[i]["properties"]["_rides"]), -len(m_samples[i])),
     )
     def union_cov(i: int) -> float:
-        """Fraction of i's samples covered by active features of comparable
-        ridership.  Near-empty parallel paths must not count as cover for a
-        busy corridor -- absorbing the corridor would leave its street drawn
-        only by an almost-invisible low-count line."""
+        """Fraction of i's samples covered by comparably-ridden active features.
+
+        Near-empty parallel paths must not count as cover for a busy
+        corridor -- absorbing the corridor would leave its street drawn
+        only by an almost-invisible low-count line.
+        """
         min_rides = len(merged[i]["properties"]["_rides"]) / 2
         rows = m_hits[i]
         n = sum(
@@ -1348,8 +1362,7 @@ def _audit_merge(features: list[dict[str, Any]]) -> None:
                         if j == i:
                             continue
                         d = (jx - x) ** 2 + (jy - y) ** 2
-                        if d < best:
-                            best = d
+                        best = min(best, d)
             if connect_sq < best < snap_sq:
                 dangling += 1
 
@@ -1375,7 +1388,7 @@ def _export_geojson(
     edge_rides: dict[tuple[int, int], list[str]] = state.get("edge_rides", {})
 
     features = []
-    for edge_key, count in edge_counts.items():
+    for edge_key in edge_counts:
         if edge_key not in edge_geom:
             continue
         coords = [(round(lon, 6), round(lat, 6)) for lon, lat in edge_geom[edge_key]]
