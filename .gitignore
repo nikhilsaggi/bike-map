@@ -17,6 +17,8 @@ incoming/
 
 # Python
 __pycache__/
+build/
+*.egg-info/
 *.pyc
 
 # Jupyter
