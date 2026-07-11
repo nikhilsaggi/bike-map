@@ -71,6 +71,14 @@ HW_PENALTY = {
     "trunk_link": 2,
 }
 
+# Infrastructure classification for the interactive map
+INFRA_CLASS: dict[str, str] = {
+    "cycleway": "bike",
+    "path": "bike",
+    "track": "bike",
+}
+INFRA_DEFAULT = "road"
+
 # Rides with no coordinates inside this bbox are skipped entirely.
 NYC_BBOX = (40.49, -74.30, 41.0, -73.60)  # (lat_min, lon_min, lat_max, lon_max)
 
@@ -764,10 +772,18 @@ def _match_rides_parallel(
 # -- Render data ---------------------------------------------------------------
 
 
+def _classify_hw(hw: str | list[str]) -> str:
+    """Map an OSM highway tag value to an infrastructure class."""
+    if isinstance(hw, list):
+        classes = [INFRA_CLASS.get(h, INFRA_DEFAULT) for h in hw]
+        return "bike" if "bike" in classes else INFRA_DEFAULT
+    return INFRA_CLASS.get(hw, INFRA_DEFAULT)
+
+
 def _build_render_cache(
     G: nx.MultiDiGraph,
-) -> dict[tuple[int, int], list[tuple[float, float]]]:
-    """Extract one canonical geometry per node pair for rendering.
+) -> tuple[dict[tuple[int, int], list[tuple[float, float]]], dict[tuple[int, int], str]]:
+    """Extract one canonical geometry and highway class per node pair.
 
     When multiple parallel edges exist between the same nodes (from
     composing bike/drive/walk networks), keeps only the shortest edge's
@@ -775,12 +791,17 @@ def _build_render_cache(
     """
     print("Building render cache...")
     edge_geom: dict[tuple[int, int], list[tuple[float, float]]] = {}
+    edge_hw: dict[tuple[int, int], str] = {}
     edge_len: dict[tuple[int, int], float] = {}
     for u, v, _key, data in G.edges(data=True, keys=True):
         canon = (min(u, v), max(u, v))
         length = data.get("length", float("inf"))
-        if canon in edge_geom and edge_len[canon] <= length:
-            continue
+        cls = _classify_hw(data.get("highway", ""))
+        if canon in edge_geom:
+            if cls == "bike" and edge_hw[canon] != "bike":
+                edge_hw[canon] = "bike"
+            if edge_len[canon] <= length:
+                continue
         if "geometry" in data:
             xs, ys = data["geometry"].xy
             edge_geom[canon] = list(zip(xs, ys))
@@ -790,22 +811,32 @@ def _build_render_cache(
                 (G.nodes[v]["x"], G.nodes[v]["y"]),
             ]
         edge_len[canon] = length
+        if canon not in edge_hw:
+            edge_hw[canon] = cls
 
     with RENDER_CACHE_PATH.open("wb") as f:
-        pickle.dump(edge_geom, f, protocol=pickle.HIGHEST_PROTOCOL)
+        pickle.dump((edge_geom, edge_hw), f, protocol=pickle.HIGHEST_PROTOCOL)
     print(f"  Cached {len(edge_geom):,} edge geometries")
-    return edge_geom
+    return edge_geom, edge_hw
 
 
 def _get_render_data(
     G: nx.MultiDiGraph | None = None,
-) -> dict[tuple[int, int], list[tuple[float, float]]] | None:
+) -> tuple[
+    dict[tuple[int, int], list[tuple[float, float]]],
+    dict[tuple[int, int], str],
+] | None:
     """Load render cache, or build it from graph if missing."""
     if RENDER_CACHE_PATH.exists():
         with RENDER_CACHE_PATH.open("rb") as f:
-            edge_geom = pickle.load(f)
+            cached = pickle.load(f)
+        if isinstance(cached, tuple):
+            edge_geom, edge_hw = cached
+        else:
+            edge_geom = cached
+            edge_hw = {}
         print(f"Loaded render cache ({len(edge_geom):,} edges)")
-        return edge_geom
+        return edge_geom, edge_hw
     if G is None:
         return None
     return _build_render_cache(G)
@@ -1163,8 +1194,11 @@ def _merge_parallel_features(
     merged: list[dict[str, Any]] = []
     for members in clusters.values():
         rides: set[str] = set()
+        hw = INFRA_DEFAULT
         for i in members:
             rides |= features[i]["properties"]["_rides"]
+            if features[i]["properties"].get("_hw") == "bike":
+                hw = "bike"
         if len(members) == 1:
             keep = members
         else:
@@ -1210,7 +1244,7 @@ def _merge_parallel_features(
                     "type": "LineString",
                     "coordinates": features[m]["geometry"]["coordinates"],
                 },
-                "properties": {"_rides": set(rides)},
+                "properties": {"_rides": set(rides), "_hw": hw},
             }
             for m in keep
         )
@@ -1292,9 +1326,10 @@ def _merge_parallel_features(
     for f in survivors:
         rides = f["properties"].pop("_rides")
         f["properties"]["ride_count"] = len(rides)
-        # One date per ride (duplicates preserved) so clients can compute
-        # exact per-date-range counts.
         f["properties"]["ride_dates"] = sorted(r[:10] for r in rides)
+        hw = f["properties"].pop("_hw", None)
+        if hw is not None:
+            f["properties"]["hw"] = hw
         out.append(f)
 
     print(
@@ -1379,6 +1414,7 @@ def _audit_merge(features: list[dict[str, Any]]) -> None:
 def _export_geojson(
     edge_geom: dict[tuple[int, int], list[tuple[float, float]]],
     state: dict[str, Any],
+    edge_hw: dict[tuple[int, int], str] | None = None,
 ) -> None:
     """Export ridden edges as GeoJSON for the interactive Leaflet map."""
     edge_counts = state["edge_counts"]
@@ -1392,11 +1428,14 @@ def _export_geojson(
         if edge_key not in edge_geom:
             continue
         coords = [(round(lon, 6), round(lat, 6)) for lon, lat in edge_geom[edge_key]]
+        props: dict[str, Any] = {"_rides": set(edge_rides.get(edge_key, ()))}
+        if edge_hw:
+            props["_hw"] = edge_hw.get(edge_key, INFRA_DEFAULT)
         features.append(
             {
                 "type": "Feature",
                 "geometry": {"type": "LineString", "coordinates": coords},
-                "properties": {"_rides": set(edge_rides.get(edge_key, ()))},
+                "properties": props,
             }
         )
 
@@ -1415,17 +1454,23 @@ def _export_geojson(
         props = f["properties"]
         props["ride_dates"] = [date_idx[d] for d in props["ride_dates"]]
         del props["ride_count"]
+        if props.get("hw") == INFRA_DEFAULT:
+            del props["hw"]
 
-    total_km = (
-        sum(
+    km_by_class: dict[str, float] = {}
+    total_km = 0.0
+    for f in features:
+        length = sum(
             math.hypot((lon1 - lon0) * _M_PER_LON, (lat1 - lat0) * _M_PER_LAT)
-            for f in features
             for (lon0, lat0), (lon1, lat1) in zip(
                 f["geometry"]["coordinates"], f["geometry"]["coordinates"][1:]
             )
         )
-        / 1000
-    )
+        total_km += length
+        cls = f["properties"].get("hw", INFRA_DEFAULT)
+        km_by_class[cls] = km_by_class.get(cls, 0) + length
+    total_km /= 1000
+    km_by_class = {k: round(v / 1000, 1) for k, v in km_by_class.items()}
 
     rides_per_year: dict[str, int] = {}
     for fname in sorted(state["processed_files"]):
@@ -1438,6 +1483,7 @@ def _export_geojson(
             "total_edges": len(features),
             "max_count": max_count,
             "total_km": round(total_km, 1),
+            "km_by_class": km_by_class,
             "rides_per_year": rides_per_year,
             "dates": all_dates,
             "updated": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
@@ -1494,13 +1540,14 @@ def main() -> None:
             print("No rides found")
             return
 
-        edge_geom = _get_render_data()
-        if edge_geom is None:
+        render_data = _get_render_data()
+        if render_data is None:
             print("Render cache missing -- loading graph to rebuild...")
             G = _load_graph([], state)
-            edge_geom = _build_render_cache(G)
+            render_data = _build_render_cache(G)
+        edge_geom, edge_hw = render_data
         _render(edge_geom, state)
-        _export_geojson(edge_geom, state)
+        _export_geojson(edge_geom, state, edge_hw)
 
         print(f"\nDone in {time.time() - t0:.1f}s (no new rides)")
         return
@@ -1519,13 +1566,14 @@ def main() -> None:
         print("No new NYC rides to process")
         _save_state(state)
         if state["edge_counts"]:
-            edge_geom = _get_render_data()
-            if edge_geom is None:
+            render_data = _get_render_data()
+            if render_data is None:
                 print("Render cache missing -- loading graph to rebuild...")
                 G = _load_graph([], state)
-                edge_geom = _build_render_cache(G)
+                render_data = _build_render_cache(G)
+            edge_geom, edge_hw = render_data
             _render(edge_geom, state)
-            _export_geojson(edge_geom, state)
+            _export_geojson(edge_geom, state, edge_hw)
         print(f"\nDone in {time.time() - t0:.1f}s")
         return
 
@@ -1597,10 +1645,11 @@ def main() -> None:
     _save_state(state)
 
     # 9. Render
-    edge_geom = _get_render_data(G)
-    assert edge_geom is not None
+    render_data = _get_render_data(G)
+    assert render_data is not None
+    edge_geom, edge_hw = render_data
     _render(edge_geom, state)
-    _export_geojson(edge_geom, state)
+    _export_geojson(edge_geom, state, edge_hw)
 
     # Summary
     elapsed = time.time() - t0
