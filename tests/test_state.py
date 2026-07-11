@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import pickle
+
+import networkx as nx
+
 import bike_routes as br
 
 
@@ -59,3 +63,71 @@ def test_config_hash_stable(monkeypatch):
     assert h1 == h2
     monkeypatch.setattr(br, "HEADING_PENALTY", 0.5)
     assert br._config_hash() != h1
+
+
+def test_version_mismatch_invalidates_graph_caches(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    for p in (br.GRAPH_CACHE_PATH, br.RENDER_CACHE_PATH, br.ROUTE_CACHE_PATH):
+        (tmp_path / p.name).write_bytes(b"stale")
+    (tmp_path / br.CACHE_VERSIONS_PATH.name).write_text(
+        '{"osmnx": "0.0", "networkx": "0.0"}'
+    )
+
+    assert br._graph_cache_valid() is False
+    for p in (br.GRAPH_CACHE_PATH, br.RENDER_CACHE_PATH, br.ROUTE_CACHE_PATH):
+        assert not (tmp_path / p.name).exists()
+
+
+def test_matching_versions_keep_caches(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / br.GRAPH_CACHE_PATH.name).write_bytes(b"graph")
+    br._write_cache_versions()
+
+    assert br._graph_cache_valid() is True
+    assert (tmp_path / br.GRAPH_CACHE_PATH.name).exists()
+
+
+def test_missing_stamp_adopts_current_versions(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / br.GRAPH_CACHE_PATH.name).write_bytes(b"legacy")
+
+    assert br._graph_cache_valid() is True
+    assert (tmp_path / br.CACHE_VERSIONS_PATH.name).exists()
+    assert br._graph_cache_valid() is True  # stamp written, still valid
+
+
+def test_legacy_render_cache_treated_as_missing(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    # Old format: bare geometry dict, no highway classes
+    with (tmp_path / br.RENDER_CACHE_PATH.name).open("wb") as f:
+        pickle.dump({(1, 2): [(0.0, 0.0), (1.0, 1.0)]}, f)
+
+    assert br._get_render_data() is None
+
+
+def test_render_cache_roundtrip(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    G = nx.MultiDiGraph()
+    G.add_node(1, x=0.0, y=0.0)
+    G.add_node(2, x=0.001, y=0.0)
+    G.add_edge(1, 2, length=100.0, highway="cycleway")
+
+    edge_geom, edge_hw = br._build_render_cache(G)
+    assert edge_hw[(1, 2)] == "bike"
+
+    loaded_geom, loaded_hw = br._get_render_data()
+    assert loaded_geom == edge_geom
+    assert loaded_hw == edge_hw
+
+
+def test_unreadable_graph_cache_refetches(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / br.GRAPH_CACHE_PATH.name).write_bytes(b"not a pickle")
+    br._write_cache_versions()
+
+    sentinel = object()
+    monkeypatch.setattr(br, "_fetch_graph", lambda _bbox: sentinel)
+    state = {"graph_bbox": (-74.0, 40.7, -73.9, 40.8)}
+
+    assert br._load_graph([], state) is sentinel
+    assert not (tmp_path / br.GRAPH_CACHE_PATH.name).exists()

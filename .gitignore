@@ -1,6 +1,7 @@
 # Cache files (auto-generated, can be large)
 *.pkl
 cache/
+cache_versions.json
 
 # Ride data (personal GPS traces)
 rides/*.csv

@@ -15,7 +15,10 @@ The pipeline exports a compressed GeoJSON that powers an interactive
 
 - Coloring by ride frequency
 - Hover for ride count, click for the full list of ride dates
-- Stats panel with total rides, edges covered, and last-updated date
+- Date-range slider with time-lapse playback (watch the network grow)
+- Bike-infrastructure view highlighting cycleways, paths, and tracks
+- Stats panel with total rides, edges covered, street km, bike-infra
+  share, rides per year, and last-updated date
 
 To view locally:
 
@@ -69,6 +72,15 @@ python gpx_to_csv.py incoming/ rides/
 
 ```bash
 python bike_routes.py
+```
+
+Optional flags:
+
+```
+--sample N               process only the first N ride files
+--rides FILE [FILE ...]  process only these ride CSV filenames
+--no-png                 skip rendering the static PNG maps
+--workers N              worker processes for map matching (1 = sequential)
 ```
 
 4. Outputs:
@@ -149,11 +161,13 @@ The pipeline creates several cache files (auto-managed, gitignored):
 
 - `osm_graph_cache.pkl` — merged OSM street graph (~260 MB)
 - `state.pkl` — processed filenames, edge counts, config snapshot
-- `render_cache.pkl` — pre-extracted edge geometries for rendering
+- `render_cache.pkl` — pre-extracted edge geometries + highway classes
 - `route_cache.pkl` — shortest-path results between node pairs
+- `cache_versions.json` — osmnx/networkx versions that wrote the graph cache
 
 Delete any cache file to force it to rebuild. Changing processing parameters
-automatically triggers a full reprocess.
+automatically triggers a full reprocess, and upgrading osmnx/networkx
+automatically refetches the graph (pickled graphs are version-bound).
 
 ## License
 

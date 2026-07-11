@@ -16,6 +16,7 @@ Dependencies:
 
 from __future__ import annotations
 
+import argparse
 import gzip
 import hashlib
 import json
@@ -100,6 +101,7 @@ GRAPH_CACHE_PATH = Path("osm_graph_cache.pkl")
 STATE_CACHE_PATH = Path("state.pkl")
 RENDER_CACHE_PATH = Path("render_cache.pkl")
 ROUTE_CACHE_PATH = Path("route_cache.pkl")
+CACHE_VERSIONS_PATH = Path("cache_versions.json")
 
 
 # -- Cache management ----------------------------------------------------------
@@ -170,6 +172,41 @@ def _save_state(state: dict[str, Any]) -> None:
     state["config"] = _processing_config()
     with STATE_CACHE_PATH.open("wb") as f:
         pickle.dump(state, f, protocol=pickle.HIGHEST_PROTOCOL)
+
+
+def _lib_versions() -> dict[str, str]:
+    """Library versions the pickled graph cache depends on."""
+    return {"osmnx": ox.__version__, "networkx": nx.__version__}
+
+
+def _write_cache_versions() -> None:
+    """Stamp the current library versions alongside the graph cache."""
+    CACHE_VERSIONS_PATH.write_text(json.dumps(_lib_versions()))
+
+
+def _graph_cache_valid() -> bool:
+    """Check the graph cache was written by the current library versions.
+
+    A graph pickled under a different osmnx/networkx can fail to unpickle
+    or produce subtly broken objects, so a version mismatch invalidates the
+    graph and its derived caches.  A missing stamp (cache predates version
+    stamping) adopts the current versions rather than forcing a refetch.
+    """
+    if not CACHE_VERSIONS_PATH.exists():
+        _write_cache_versions()
+        return True
+    try:
+        stamped = json.loads(CACHE_VERSIONS_PATH.read_text())
+    except Exception:
+        stamped = None
+    current = _lib_versions()
+    if stamped == current:
+        return True
+    print(f"Library versions changed ({stamped} -> {current}) -- refetching graph")
+    for p in [GRAPH_CACHE_PATH, RENDER_CACHE_PATH, ROUTE_CACHE_PATH, CACHE_VERSIONS_PATH]:
+        if p.exists():
+            p.unlink()
+    return False
 
 
 def _load_route_cache() -> dict[tuple[int, int], list[tuple[int, int]] | None]:
@@ -356,18 +393,24 @@ def _fetch_graph(bbox: tuple[float, float, float, float]) -> nx.MultiDiGraph:
 
     with GRAPH_CACHE_PATH.open("wb") as f:
         pickle.dump(G, f, protocol=pickle.HIGHEST_PROTOCOL)
+    _write_cache_versions()
     print(f"  Cached to {GRAPH_CACHE_PATH}")
     return G
 
 
 def _load_graph(new_rides: list[tuple[str, np.ndarray]], state: dict[str, Any]) -> nx.MultiDiGraph:
     """Load graph from cache or fetch from OSM."""
-    if GRAPH_CACHE_PATH.exists():
+    if GRAPH_CACHE_PATH.exists() and _graph_cache_valid():
         print(f"Loading graph from {GRAPH_CACHE_PATH}...")
-        with GRAPH_CACHE_PATH.open("rb") as f:
-            G = pickle.load(f)
-        print(f"  {G.number_of_nodes():,} nodes, {G.number_of_edges():,} edges")
-        return G
+        try:
+            with GRAPH_CACHE_PATH.open("rb") as f:
+                G = pickle.load(f)
+        except Exception as exc:
+            print(f"  Graph cache unreadable ({exc!r}) -- refetching from OSM")
+            GRAPH_CACHE_PATH.unlink()
+        else:
+            print(f"  {G.number_of_nodes():,} nodes, {G.number_of_edges():,} edges")
+            return G
 
     print("Fetching OSM graph...")
 
@@ -826,17 +869,20 @@ def _get_render_data(
     dict[tuple[int, int], list[tuple[float, float]]],
     dict[tuple[int, int], str],
 ] | None:
-    """Load render cache, or build it from graph if missing."""
+    """Load render cache, or build it from graph if missing.
+
+    A legacy cache (geometry only, no highway classes) is treated as
+    missing so it rebuilds with classes rather than silently dropping
+    the infrastructure data from the export.
+    """
     if RENDER_CACHE_PATH.exists():
         with RENDER_CACHE_PATH.open("rb") as f:
             cached = pickle.load(f)
         if isinstance(cached, tuple):
             edge_geom, edge_hw = cached
-        else:
-            edge_geom = cached
-            edge_hw = {}
-        print(f"Loaded render cache ({len(edge_geom):,} edges)")
-        return edge_geom, edge_hw
+            print(f"Loaded render cache ({len(edge_geom):,} edges)")
+            return edge_geom, edge_hw
+        print("Render cache in legacy format -- rebuilding")
     if G is None:
         return None
     return _build_render_cache(G)
@@ -870,10 +916,12 @@ def _save_fig(fig: plt.Figure, path: str) -> None:
 def _render(
     edge_geom: dict[tuple[int, int], list[tuple[float, float]]],
     state: dict[str, Any],
+    *,
+    skip_png: bool = SKIP_PNG_RENDER,
 ) -> None:
     """Render both coverage and frequency maps."""
-    if SKIP_PNG_RENDER:
-        print("Skipping PNG render (SKIP_PNG_RENDER=1)")
+    if skip_png:
+        print("Skipping PNG render")
         return
 
     edge_counts = state["edge_counts"]
@@ -1506,20 +1554,49 @@ def _export_geojson(
 # -- Main pipeline -------------------------------------------------------------
 
 
-def main() -> None:
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """Parse command-line overrides for the module-level config."""
+    parser = argparse.ArgumentParser(
+        description="Process bike ride GPS logs into an interactive frequency map."
+    )
+    parser.add_argument(
+        "--sample", type=int, metavar="N", help="process only the first N ride files"
+    )
+    parser.add_argument(
+        "--rides", nargs="+", metavar="FILE", help="process only these ride CSV filenames"
+    )
+    parser.add_argument("--no-png", action="store_true", help="skip rendering the static PNG maps")
+    parser.add_argument(
+        "--workers",
+        type=int,
+        metavar="N",
+        help="worker processes for map matching (1 = sequential)",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> None:
     """Run the full bike route pipeline."""
     t0 = time.time()
+
+    args = _parse_args(argv)
+    sample_size = args.sample if args.sample is not None else SAMPLE_SIZE
+    ride_files = args.rides if args.rides is not None else RIDE_FILES
+    skip_png = SKIP_PNG_RENDER or args.no_png
+    if args.workers is not None:
+        # _match_worker_count reads this; the env var also reaches workers
+        os.environ["MATCH_WORKERS"] = str(args.workers)
 
     # 1. Load state
     state = _load_state()
 
     # 2. Find new rides (exclude already-processed and already-skipped files)
     all_files = sorted(f.name for f in Path(RIDES_FOLDER).iterdir() if f.suffix == ".csv")
-    if RIDE_FILES is not None:
-        ride_set = set(RIDE_FILES)
+    if ride_files is not None:
+        ride_set = set(ride_files)
         all_files = [f for f in all_files if f in ride_set]
-    elif SAMPLE_SIZE is not None:
-        all_files = all_files[:SAMPLE_SIZE]
+    elif sample_size is not None:
+        all_files = all_files[:sample_size]
     known = state["processed_files"] | state.get("skipped_files", set())
     new_files = [f for f in all_files if f not in known]
 
@@ -1546,7 +1623,7 @@ def main() -> None:
             G = _load_graph([], state)
             render_data = _build_render_cache(G)
         edge_geom, edge_hw = render_data
-        _render(edge_geom, state)
+        _render(edge_geom, state, skip_png=skip_png)
         _export_geojson(edge_geom, state, edge_hw)
 
         print(f"\nDone in {time.time() - t0:.1f}s (no new rides)")
@@ -1572,7 +1649,7 @@ def main() -> None:
                 G = _load_graph([], state)
                 render_data = _build_render_cache(G)
             edge_geom, edge_hw = render_data
-            _render(edge_geom, state)
+            _render(edge_geom, state, skip_png=skip_png)
             _export_geojson(edge_geom, state, edge_hw)
         print(f"\nDone in {time.time() - t0:.1f}s")
         return
@@ -1648,7 +1725,7 @@ def main() -> None:
     render_data = _get_render_data(G)
     assert render_data is not None
     edge_geom, edge_hw = render_data
-    _render(edge_geom, state)
+    _render(edge_geom, state, skip_png=skip_png)
     _export_geojson(edge_geom, state, edge_hw)
 
     # Summary
