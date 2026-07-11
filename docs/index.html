@@ -24,6 +24,15 @@
     font-size: 11px; line-height: 1.5;
   }
   #stat-years .year-row { display: flex; justify-content: space-between; gap: 16px; }
+  #stat-riding {
+    display: none; margin-top: 8px; padding-top: 8px; border-top: 1px solid #333;
+    font-size: 11px; line-height: 1.6;
+  }
+  #stat-riding .r-row { display: flex; justify-content: space-between; gap: 16px; }
+  .histo { display: flex; align-items: flex-end; gap: 1px; height: 26px; margin: 3px 0 1px; }
+  .histo div { flex: 1; background: #7b3ff2; border-radius: 1px 1px 0 0; min-height: 1px; }
+  .histo-labels { display: flex; justify-content: space-between; font-size: 9px; color: #666; }
+  .histo-title { color: #888; margin-top: 6px; }
 
   #legend {
     position: absolute; bottom: 28px; left: 12px; z-index: 1000;
@@ -100,6 +109,7 @@
   <div id="stat-infra-row" style="display:none"><span class="label">Bike infra:</span> <strong id="stat-infra">—</strong></div>
   <div><span class="label">Updated:</span> <strong id="stat-updated">—</strong></div>
   <div id="stat-years"></div>
+  <div id="stat-riding"></div>
 </div>
 
 <div id="legend">
@@ -398,12 +408,41 @@ fetch('rides.geojson.gz')
       document.getElementById('stat-infra-row').style.display = 'block';
     }
     const ridesPerYear = data.properties?.rides_per_year;
+    const riding = data.properties?.riding;
     if (ridesPerYear && Object.keys(ridesPerYear).length) {
+      const kmByYear = riding?.km_by_year || {};
       const el = document.getElementById('stat-years');
       el.innerHTML = Object.entries(ridesPerYear)
-        .map(([y, n]) => `<div class="year-row"><span class="label">${y}</span><strong>${n}</strong></div>`)
+        .map(([y, n]) => {
+          const km = kmByYear[y] != null ? ` <span class="label">&middot; ${Math.round(kmByYear[y]).toLocaleString()} km</span>` : '';
+          return `<div class="year-row"><span class="label">${y}</span><span><strong>${n}</strong>${km}</span></div>`;
+        })
         .join('');
       el.style.display = 'block';
+    }
+
+    if (riding) {
+      const histo = (counts, labels) => {
+        const max = Math.max(...counts, 1);
+        const bars = counts
+          .map(c => `<div style="height:${Math.max(4, Math.round(100 * c / max))}%" title="${c} rides"></div>`)
+          .join('');
+        return `<div class="histo">${bars}</div><div class="histo-labels">${labels}</div>`;
+      };
+      const rows = [
+        ['Distance', `${Math.round(riding.total_km).toLocaleString()} km`],
+        ['Time', `${Math.round(riding.total_h).toLocaleString()} h`],
+        riding.avg_kmh != null ? ['Avg speed', `${riding.avg_kmh} km/h`] : null,
+        ['Longest ride', `${Math.round(riding.longest_km)} km`],
+      ].filter(Boolean)
+        .map(([k, v]) => `<div class="r-row"><span class="label">${k}</span><strong>${v}</strong></div>`)
+        .join('');
+      document.getElementById('stat-riding').innerHTML = rows +
+        `<div class="histo-title">Rides by hour</div>` +
+        histo(riding.by_hour, '<span>12am</span><span>6</span><span>noon</span><span>6</span><span>11pm</span>') +
+        `<div class="histo-title">Rides by weekday</div>` +
+        histo(riding.by_weekday, '<span>Mon</span><span>Sun</span>');
+      document.getElementById('stat-riding').style.display = 'block';
     }
 
     sqrtMax = Math.sqrt(maxCount);
