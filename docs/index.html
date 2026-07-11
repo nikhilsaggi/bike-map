@@ -37,12 +37,40 @@
   }
   #legend .labels { display: flex; justify-content: space-between; font-size: 11px; color: #888; }
   #filter-row {
-    display: none; align-items: center; gap: 6px; margin-top: 10px;
+    display: none; align-items: center; gap: 8px; margin-top: 10px;
     font-size: 11px; color: #888;
   }
-  #filter-row select {
+  #play-btn {
     background: #1a1a1a; color: #ccc; border: 1px solid #333; border-radius: 4px;
-    font-size: 11px; padding: 2px 4px;
+    width: 24px; height: 24px; font-size: 11px; cursor: pointer; flex: none;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #play-btn:hover { color: #fff; border-color: #555; }
+  #slider { position: relative; width: 148px; height: 20px; flex: none; }
+  #slider-track {
+    position: absolute; top: 8px; left: 0; right: 0; height: 4px;
+    background: #333; border-radius: 2px;
+  }
+  #slider-range {
+    position: absolute; top: 8px; height: 4px; background: #999; border-radius: 2px;
+  }
+  #slider input[type=range] {
+    position: absolute; left: 0; top: 0; width: 100%; height: 20px; margin: 0;
+    -webkit-appearance: none; appearance: none; background: none; pointer-events: none;
+  }
+  #slider input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none; pointer-events: auto; cursor: pointer;
+    width: 13px; height: 13px; border-radius: 50%;
+    background: #ddd; border: 1px solid #666;
+  }
+  #slider input[type=range]::-moz-range-thumb {
+    pointer-events: auto; cursor: pointer;
+    width: 11px; height: 11px; border-radius: 50%;
+    background: #ddd; border: 1px solid #666;
+  }
+  #filter-dates {
+    display: none; justify-content: space-between; margin-top: 4px;
+    font-size: 10px; color: #888; font-variant-numeric: tabular-nums;
   }
 
   .ride-popup .leaflet-popup-content-wrapper {
@@ -70,11 +98,15 @@
   <div class="bar" id="legend-bar"></div>
   <div class="labels"><span>1</span><span id="legend-max">—</span></div>
   <div id="filter-row">
-    <span>Years</span>
-    <select id="year-from"></select>
-    <span>&ndash;</span>
-    <select id="year-to"></select>
+    <button id="play-btn" title="Play time-lapse">&#9654;</button>
+    <div id="slider">
+      <div id="slider-track"></div>
+      <div id="slider-range"></div>
+      <input type="range" id="range-lo" min="0" value="0" step="1">
+      <input type="range" id="range-hi" min="0" value="0" step="1">
+    </div>
   </div>
+  <div id="filter-dates"><span id="date-lo"></span><span id="date-hi"></span></div>
 </div>
 
 <script>
@@ -134,6 +166,7 @@ let dateList = [];
 let filterLo = 0;
 let filterHi = Infinity;
 let sqrtMax = 1;
+let fullMaxCount = 1;
 let geoLayer = null;
 
 function countInRange(idxs) {
@@ -170,58 +203,128 @@ function popupContent(idxs) {
   return `<div style="max-height:200px;overflow-y:auto">${header}${list}</div>`;
 }
 
-function applyFilter() {
+// renormalize=true rescales colors to the filtered max and restyles every
+// layer; renormalize=false keeps the current scale and only restyles layers
+// whose count changed (cheap enough to run every animation frame).
+function applyFilter(renormalize = true) {
   let filteredMax = 1;
   geoLayer.eachLayer(layer => {
     const c = countInRange(layer.feature.properties.ride_dates || []);
-    layer._filteredCount = c;
+    layer._newCount = c;
     if (c > filteredMax) filteredMax = c;
   });
-  sqrtMax = Math.sqrt(filteredMax);
-  document.getElementById('legend-max').textContent = filteredMax;
+  if (renormalize) {
+    sqrtMax = Math.sqrt(filteredMax);
+    document.getElementById('legend-max').textContent = filteredMax;
+  }
   geoLayer.eachLayer(layer => {
-    if (layer._filteredCount === 0) {
+    const c = layer._newCount;
+    if (!renormalize && c === layer._filteredCount) return;
+    layer._filteredCount = c;
+    if (c === 0) {
       map.removeLayer(layer);
     } else {
       if (!map.hasLayer(layer)) layer.addTo(map);
-      layer.setStyle(styleFor(layer._filteredCount));
+      layer.setStyle(styleFor(c));
     }
   });
 }
 
-function initYearFilter() {
-  if (!dateList.length) return;
-  const yearMin = +dateList[0].slice(0, 4);
-  const yearMax = +dateList[dateList.length - 1].slice(0, 4);
-  if (yearMax <= yearMin) return;
-  const from = document.getElementById('year-from');
-  const to = document.getElementById('year-to');
-  for (let y = yearMin; y <= yearMax; y++) {
-    from.add(new Option(y, y));
-    to.add(new Option(y, y));
+// -- Date-range slider + time-lapse playback --------------------------------
+
+const PLAY_DURATION_MS = 25000;
+let playing = false;
+
+function initDateFilter() {
+  if (dateList.length < 2) return;
+  const last = dateList.length - 1;
+  const lo = document.getElementById('range-lo');
+  const hi = document.getElementById('range-hi');
+  const btn = document.getElementById('play-btn');
+  lo.max = last;
+  hi.max = last;
+  lo.value = 0;
+  hi.value = last;
+
+  function updateUI() {
+    const a = +lo.value;
+    const b = +hi.value;
+    document.getElementById('date-lo').textContent = dateList[a];
+    document.getElementById('date-hi').textContent = dateList[b];
+    const bar = document.getElementById('slider-range');
+    bar.style.left = `${(a / last) * 100}%`;
+    bar.style.width = `${((b - a) / last) * 100}%`;
   }
-  from.value = yearMin;
-  to.value = yearMax;
-  const onChange = () => {
-    let a = +from.value;
-    let b = +to.value;
-    if (a > b) [a, b] = [b, a];
-    if (a === yearMin && b === yearMax) {
-      filterLo = 0;
-      filterHi = Infinity;
-    } else {
-      filterLo = dateList.findIndex(d => d >= `${a}-01-01`);
-      if (filterLo === -1) filterLo = dateList.length;
-      filterHi = -1;
-      for (let i = dateList.length - 1; i >= 0; i--) {
-        if (dateList[i] <= `${b}-12-31`) { filterHi = i; break; }
-      }
+
+  let pending = false;
+  let fromPlayback = false;
+  function onInput(moved) {
+    if (fromPlayback) return;
+    if (playing) stopPlay();
+    // Keep handles ordered by pushing the one that was not moved
+    if (+lo.value > +hi.value) {
+      if (moved === lo) hi.value = lo.value;
+      else lo.value = hi.value;
     }
-    applyFilter();
-  };
-  from.onchange = onChange;
-  to.onchange = onChange;
+    filterLo = +lo.value;
+    filterHi = +hi.value === last ? Infinity : +hi.value;
+    updateUI();
+    if (!pending) {
+      pending = true;
+      requestAnimationFrame(() => {
+        pending = false;
+        applyFilter();
+      });
+    }
+  }
+  lo.addEventListener('input', () => onInput(lo));
+  hi.addEventListener('input', () => onInput(hi));
+
+  let playRAF = null;
+  function stopPlay() {
+    playing = false;
+    if (playRAF) cancelAnimationFrame(playRAF);
+    btn.innerHTML = '&#9654;';
+    applyFilter();  // renormalize to wherever playback stopped
+  }
+
+  function startPlay() {
+    playing = true;
+    btn.innerHTML = '&#10074;&#10074;';
+    // Freeze the color scale at the full-history max so streets deepen in
+    // color as they accumulate rides, instead of renormalizing every frame.
+    sqrtMax = Math.sqrt(fullMaxCount);
+    document.getElementById('legend-max').textContent = fullMaxCount;
+    fromPlayback = true;
+    lo.value = 0;
+    fromPlayback = false;
+    const t0 = performance.now();
+    let lastHi = -1;
+    function frame(now) {
+      if (!playing) return;
+      const p = Math.min(1, (now - t0) / PLAY_DURATION_MS);
+      const h = Math.round(p * last);
+      if (h !== lastHi) {
+        lastHi = h;
+        filterLo = 0;
+        filterHi = h === last ? Infinity : h;
+        fromPlayback = true;
+        hi.value = h;
+        fromPlayback = false;
+        updateUI();
+        applyFilter(false);
+      }
+      if (p < 1) playRAF = requestAnimationFrame(frame);
+      else stopPlay();
+    }
+    playRAF = requestAnimationFrame(frame);
+  }
+
+  btn.addEventListener('click', () => (playing ? stopPlay() : startPlay()));
+
+  updateUI();
   document.getElementById('filter-row').style.display = 'flex';
+  document.getElementById('filter-dates').style.display = 'flex';
 }
 
 fetch('rides.geojson.gz')
@@ -256,11 +359,13 @@ fetch('rides.geojson.gz')
     }
 
     sqrtMax = Math.sqrt(maxCount);
+    fullMaxCount = maxCount;
 
     geoLayer = L.geoJSON(data, {
       style: feature => styleFor((feature.properties.ride_dates || []).length || 1),
       onEachFeature: (feature, layer) => {
         const idxs = feature.properties.ride_dates || [];
+        layer._filteredCount = idxs.length;
         layer.bindTooltip(() => {
           const c = countInRange(idxs);
           return `${c} ride${c !== 1 ? 's' : ''}`;
@@ -274,7 +379,7 @@ fetch('rides.geojson.gz')
       },
     }).addTo(map);
 
-    initYearFilter();
+    initDateFilter();
   })
   .catch(err => {
     document.getElementById('stat-rides').textContent = 'Error loading data';
