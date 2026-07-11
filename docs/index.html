@@ -249,21 +249,19 @@ function applyFilter(renormalize = true) {
     if (c === 0) {
       map.removeLayer(layer);
     } else {
-      if (!map.hasLayer(layer)) {
-        layer.addTo(map);
-        // A street appearing mid-playback has few rides; draw it under
-        // the bright frequent lines rather than on top (addTo stacks last).
-        if (!renormalize) layer.bringToBack();
-      }
+      if (!map.hasLayer(layer)) layer.addTo(map);
       layer.setStyle(styleFor(c, layer.feature.properties.hw));
     }
   });
-  if (renormalize) restackLayers();
+  restackLayers();
 }
 
 // Restack visible lines so frequent (bright) edges draw above rare (dark)
 // ones -- remove/re-add during filtering otherwise scrambles the initial
-// count-sorted order. bringToFront is a cheap linked-list move on canvas.
+// count-sorted order. Runs on every filter change (including each playback
+// frame, where re-added streets land on top and growing counts reorder
+// lines): sort + bringToFront are cheap linked-list moves on canvas,
+// small next to the full redraw each frame already triggers.
 function restackLayers() {
   const visible = [];
   geoLayer.eachLayer(l => { if (l._filteredCount > 0) visible.push(l); });
