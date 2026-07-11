@@ -202,7 +202,7 @@ function styleFor(count, hw) {
       lineCap: 'round',
     };
   }
-  const t = 0.15 + 0.85 * Math.sqrt(count) / sqrtMax;
+  const t = Math.sqrt(count) / sqrtMax;
   return {
     color: plasmaColor(t),
     weight: 1.5 + t * 4,
