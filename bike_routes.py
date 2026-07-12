@@ -1691,9 +1691,8 @@ def _merge_parallel_features(
         rides = f["properties"].pop("_rides")
         f["properties"].pop("_alts", None)
         f["properties"]["ride_count"] = len(rides)
-        # One date per ride (duplicates preserved) so clients can compute
-        # exact per-date-range counts.
-        f["properties"]["ride_dates"] = sorted(r[:10] for r in rides)
+        # Sorted ride filenames; the export maps them to ride indices.
+        f["properties"]["rides"] = sorted(rides)
         out.append(f)
 
     print(
@@ -1855,14 +1854,25 @@ def _export_geojson(
 
     max_count = max((f["properties"]["ride_count"] for f in features), default=0)
 
-    # Encode per-ride dates as indices into one global date list: repeated
-    # "YYYY-MM-DD" strings dominate the uncompressed payload otherwise.
-    # ride_count is dropped from features since it equals len(ride_dates).
-    all_dates = sorted({d for f in features for d in f["properties"]["ride_dates"]})
+    # Global ride index: one entry per processed ride, chronological by
+    # filename, as [date_index, "HH:MM"].  Features reference rides by
+    # index (repeated filename/date strings would dominate the payload),
+    # and a single ride's full route is reconstructable client-side.
+    # ride_count is dropped from features since it equals len(rides).
+    all_fnames = sorted(state["processed_files"])
+    ride_id = {fname: i for i, fname in enumerate(all_fnames)}
+    all_dates = sorted({fname[:10] for fname in all_fnames})
     date_idx = {d: i for i, d in enumerate(all_dates)}
+    rides_meta = [
+        [
+            date_idx[fname[:10]],
+            f"{fname[11:13]}:{fname[14:16]}" if len(fname) >= 16 else "",
+        ]
+        for fname in all_fnames
+    ]
     for f in features:
         props = f["properties"]
-        props["ride_dates"] = [date_idx[d] for d in props["ride_dates"]]
+        props["rides"] = [ride_id[r] for r in props["rides"] if r in ride_id]
         del props["ride_count"]
 
     total_km = (
@@ -1870,7 +1880,7 @@ def _export_geojson(
     )
 
     rides_per_year: dict[str, int] = {}
-    for fname in sorted(state["processed_files"]):
+    for fname in all_fnames:
         rides_per_year[fname[:4]] = rides_per_year.get(fname[:4], 0) + 1
 
     geojson = {
@@ -1884,6 +1894,7 @@ def _export_geojson(
             "riding": _riding_summary(state.get("ride_stats", {})),
             "coverage": _coverage_summary(edge_geom, edge_hw or {}, state),
             "dates": all_dates,
+            "rides": rides_meta,
             "updated": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
         },
         "features": features,

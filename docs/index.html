@@ -91,6 +91,21 @@
     display: none; justify-content: space-between; margin-top: 4px;
     font-size: 10px; color: #888; font-variant-numeric: tabular-nums;
   }
+  .ride-row { color: #9fd8ff; font-size: 12px; cursor: pointer; }
+  .ride-row:hover { color: #fff; text-decoration: underline; }
+  #ride-view-bar {
+    display: none; position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+    z-index: 1000; background: rgba(13, 13, 13, 0.88); color: #ccc; padding: 8px 14px;
+    border-radius: 8px; font-size: 12px; border: 1px solid #333;
+    backdrop-filter: blur(6px); align-items: center; gap: 10px;
+  }
+  #ride-view-bar strong { color: #00e5ff; }
+  #ride-view-exit {
+    background: none; border: none; color: #888; font-size: 15px;
+    line-height: 1; cursor: pointer; padding: 0 2px;
+  }
+  #ride-view-exit:hover { color: #fff; }
+
   .ride-popup .leaflet-popup-content-wrapper {
     background: rgba(13, 13, 13, 0.92); color: #fff; border-radius: 8px;
     border: 1px solid #444; backdrop-filter: blur(6px);
@@ -102,6 +117,11 @@
 </head>
 <body>
 <div id="map"></div>
+
+<div id="ride-view-bar">
+  <span>Ride <strong id="ride-view-label"></strong></span>
+  <button id="ride-view-exit" title="Back to all rides (Esc)">&times;</button>
+</div>
 
 <div id="stats">
   <button id="stats-toggle" title="Collapse stats">&ndash;</button>
@@ -198,20 +218,38 @@ try {
   if (localStorage.getItem('statsCollapsed') === '1') setStatsCollapsed(true);
 } catch (e) {}
 
-// ride_dates on each feature are indices into the global dateList;
-// [filterLo, filterHi] selects the active index range.
+// Each feature's properties.rides holds indices into the global rideList
+// ([dateIndex, "HH:MM"] per ride); [filterLo, filterHi] selects the active
+// date-index range.
 let dateList = [];
+let rideList = [];
+let rideDateIdx = [];
 let filterLo = 0;
 let filterHi = Infinity;
 let sqrtMax = 1;
 let fullMaxCount = 1;
 let geoLayer = null;
+let rideView = null;
 
-function countInRange(idxs) {
-  if (filterLo === 0 && filterHi === Infinity) return idxs.length;
+function countInRange(rideIds) {
+  if (filterLo === 0 && filterHi === Infinity) return rideIds.length;
   let n = 0;
-  for (const di of idxs) if (di >= filterLo && di <= filterHi) n++;
+  for (const ri of rideIds) {
+    const di = rideDateIdx[ri];
+    if (di >= filterLo && di <= filterHi) n++;
+  }
   return n;
+}
+
+// rideIds arrays are sorted; binary search for membership
+function hasRide(arr, id) {
+  let lo = 0, hi = arr.length - 1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (arr[mid] === id) return true;
+    if (arr[mid] < id) lo = mid + 1; else hi = mid - 1;
+  }
+  return false;
 }
 
 function styleFor(count) {
@@ -225,21 +263,58 @@ function styleFor(count) {
   };
 }
 
-function popupContent(idxs) {
-  const perDate = new Map();
-  let count = 0;
-  for (const di of idxs) {
+function popupContent(rideIds) {
+  const rows = [];
+  for (const ri of rideIds) {
+    const di = rideDateIdx[ri];
     if (di < filterLo || di > filterHi) continue;
-    count++;
-    const d = dateList[di] ?? String(di);
-    perDate.set(d, (perDate.get(d) || 0) + 1);
+    const d = dateList[di] ?? '';
+    const t = rideList[ri]?.[1] || '';
+    rows.push(
+      `<div class="ride-row" onclick="viewRide(${ri})" title="Show this ride's route">` +
+      `${d}${t ? ` &middot; ${t}` : ''}</div>`
+    );
   }
-  const header = `<strong>${count} ride${count !== 1 ? 's' : ''}</strong>`;
-  const list = [...perDate.entries()]
-    .map(([d, n]) => `<div style="color:#ccc;font-size:12px">${d}${n > 1 ? ` &times;${n}` : ''}</div>`)
-    .join('');
-  return `<div style="max-height:200px;overflow-y:auto">${header}${list}</div>`;
+  const header = `<strong>${rows.length} ride${rows.length !== 1 ? 's' : ''}</strong>`;
+  return `<div style="max-height:200px;overflow-y:auto">${header}${rows.join('')}</div>`;
 }
+
+// -- Single-ride view --------------------------------------------------------
+
+function viewRide(ri) {
+  rideView = ri;
+  map.closePopup();
+  const d = dateList[rideDateIdx[ri]] ?? '';
+  const t = rideList[ri]?.[1] || '';
+  document.getElementById('ride-view-label').textContent = t ? `${d} ${t}` : d;
+  document.getElementById('ride-view-bar').style.display = 'flex';
+  const on = [];
+  geoLayer.eachLayer(layer => {
+    const ids = layer.feature.properties.rides || [];
+    const isOn = hasRide(ids, ri);
+    if (!map.hasLayer(layer)) {
+      if (!isOn) return;
+      layer.addTo(map);  // show the full ride even outside the date filter
+    }
+    if (isOn) {
+      layer.setStyle({ color: '#00e5ff', weight: 4, opacity: 0.95, lineJoin: 'round', lineCap: 'round' });
+      on.push(layer);
+    } else {
+      layer.setStyle({ color: '#555', weight: 1, opacity: 0.12 });
+    }
+  });
+  for (const l of on) l.bringToFront();
+}
+
+function exitRideView() {
+  if (rideView === null) return;
+  rideView = null;
+  document.getElementById('ride-view-bar').style.display = 'none';
+  applyFilter();
+}
+
+document.addEventListener('keydown', e => { if (e.key === 'Escape') exitRideView(); });
+document.getElementById('ride-view-exit').addEventListener('click', exitRideView);
 
 // renormalize=true rescales colors to the filtered max and restyles every
 // layer; renormalize=false keeps the current scale and only restyles layers
@@ -247,7 +322,7 @@ function popupContent(idxs) {
 function applyFilter(renormalize = true) {
   let filteredMax = 1;
   geoLayer.eachLayer(layer => {
-    const c = countInRange(layer.feature.properties.ride_dates || []);
+    const c = countInRange(layer.feature.properties.rides || []);
     layer._newCount = c;
     if (c > filteredMax) filteredMax = c;
   });
@@ -312,6 +387,7 @@ function initDateFilter() {
   let fromPlayback = false;
   function onInput(moved) {
     if (fromPlayback) return;
+    exitRideView();
     if (playing) stopPlay();
     // Keep handles ordered by pushing the one that was not moved
     if (+lo.value > +hi.value) {
@@ -341,6 +417,7 @@ function initDateFilter() {
   }
 
   function startPlay() {
+    exitRideView();
     playing = true;
     btn.innerHTML = '&#10074;&#10074;';
     // Freeze the color scale at the full-history max so streets deepen in
@@ -391,6 +468,8 @@ fetch('rides.geojson.gz')
     const updated = data.properties?.updated ?? '—';
     const maxCount = data.properties?.max_count ?? 1;
     dateList = data.properties?.dates ?? [];
+    rideList = data.properties?.rides ?? [];
+    rideDateIdx = rideList.map(r => r[0]);
 
     document.getElementById('stat-rides').textContent = totalRides.toLocaleString();
     document.getElementById('stat-edges').textContent = totalEdges.toLocaleString();
@@ -449,9 +528,9 @@ fetch('rides.geojson.gz')
     fullMaxCount = maxCount;
 
     geoLayer = L.geoJSON(data, {
-      style: feature => styleFor((feature.properties.ride_dates || []).length || 1),
+      style: feature => styleFor((feature.properties.rides || []).length || 1),
       onEachFeature: (feature, layer) => {
-        const idxs = feature.properties.ride_dates || [];
+        const idxs = feature.properties.rides || [];
         layer._filteredCount = idxs.length;
         layer.bindTooltip(() => {
           const c = countInRange(idxs);

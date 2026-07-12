@@ -39,14 +39,16 @@ def test_export_geojson(tmp_path, monkeypatch):
     assert props["total_edges"] == 2
     assert props["max_count"] == 2
     assert props["dates"] == ["2024-01-05", "2025-06-01"]
+    # Global ride index: [date_index, "HH:MM"] per ride, chronological
+    assert props["rides"] == [[0, "08:00"], [1, "12:00"]]
     assert props["rides_per_year"] == {"2024": 1, "2025": 1}
     assert abs(props["total_km"] - 0.6) < 0.05
     assert props["updated"] >= "2026-01-01"
 
-    features = sorted(data["features"], key=lambda f: len(f["properties"]["ride_dates"]))
-    # ride_dates are indices into the global date list; ride_count is dropped
-    assert features[0]["properties"]["ride_dates"] == [0]
-    assert features[1]["properties"]["ride_dates"] == [0, 1]
+    features = sorted(data["features"], key=lambda f: len(f["properties"]["rides"]))
+    # Feature rides are indices into the global ride list; ride_count is dropped
+    assert features[0]["properties"]["rides"] == [0]
+    assert features[1]["properties"]["rides"] == [0, 1]
     assert all("ride_count" not in f["properties"] for f in features)
 
 

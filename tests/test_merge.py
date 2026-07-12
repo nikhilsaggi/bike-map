@@ -48,7 +48,7 @@ def test_parallel_lines_merge_to_one():
     assert len(out) == 1
     props = out[0]["properties"]
     assert props["ride_count"] == 2
-    assert props["ride_dates"] == ["2024-01-05", "2024-03-10"]
+    assert props["rides"] == sorted([R1, R2])
     assert "_rides" not in props
 
 
@@ -177,4 +177,4 @@ def test_redundant_span_absorbed():
     assert len(out) == 2
     for f in out:
         assert f["properties"]["ride_count"] == 2  # own ride + absorbed span ride
-        assert "2025-06-01" in f["properties"]["ride_dates"]
+        assert R3 in f["properties"]["rides"]
