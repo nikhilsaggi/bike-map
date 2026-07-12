@@ -19,6 +19,16 @@
   }
   #stats strong { color: #fff; }
   #stats .label { color: #888; }
+  #stats-toggle {
+    position: absolute; top: 6px; right: 8px; z-index: 1;
+    background: none; border: none; color: #888; cursor: pointer;
+    font-size: 14px; line-height: 1; padding: 2px 4px;
+  }
+  #stats-toggle:hover { color: #fff; }
+  #stats-collapsed-label { display: none; color: #ccc; font-size: 12px; }
+  #stats.collapsed #stats-body { display: none; }
+  #stats.collapsed { padding: 8px 32px 8px 14px; }
+  #stats.collapsed #stats-collapsed-label { display: inline; }
   #stat-years {
     display: none; margin-top: 8px; padding-top: 8px; border-top: 1px solid #333;
     font-size: 11px; line-height: 1.5;
@@ -94,13 +104,16 @@
 <div id="map"></div>
 
 <div id="stats">
-  <div><span class="label">Rides:</span> <strong id="stat-rides">—</strong></div>
-  <div><span class="label">Edges:</span> <strong id="stat-edges">—</strong></div>
-  <div><span class="label">Street mi:</span> <strong id="stat-km">—</strong></div>
-  <div id="stat-explored-row" style="display:none" title="Share of plausibly rideable streets in the mapped area (footways, motorways, service ways excluded)"><span class="label">Explored:</span> <strong id="stat-explored">—</strong></div>
-  <div><span class="label">Updated:</span> <strong id="stat-updated">—</strong></div>
-  <div id="stat-years"></div>
-  <div id="stat-riding"></div>
+  <button id="stats-toggle" title="Collapse stats">&ndash;</button>
+  <span id="stats-collapsed-label">Stats</span>
+  <div id="stats-body">
+    <div><span class="label">Rides:</span> <strong id="stat-rides">—</strong></div>
+    <div><span class="label">Edges:</span> <strong id="stat-edges">—</strong></div>
+    <div><span class="label">Street mi:</span> <strong id="stat-km">—</strong></div>
+    <div><span class="label">Updated:</span> <strong id="stat-updated">—</strong></div>
+    <div id="stat-years"></div>
+    <div id="stat-riding"></div>
+  </div>
 </div>
 
 <div id="legend">
@@ -169,6 +182,21 @@ function buildGradientCSS() {
   return `linear-gradient(to right, ${stops.join(', ')})`;
 }
 document.getElementById('legend-bar').style.background = buildGradientCSS();
+
+// Collapsible stats panel (state persists across visits)
+const statsEl = document.getElementById('stats');
+const statsToggle = document.getElementById('stats-toggle');
+function setStatsCollapsed(collapsed) {
+  statsEl.classList.toggle('collapsed', collapsed);
+  statsToggle.innerHTML = collapsed ? '+' : '&ndash;';
+  statsToggle.title = collapsed ? 'Expand stats' : 'Collapse stats';
+  try { localStorage.setItem('statsCollapsed', collapsed ? '1' : '0'); } catch (e) {}
+}
+statsToggle.addEventListener('click', () =>
+  setStatsCollapsed(!statsEl.classList.contains('collapsed')));
+try {
+  if (localStorage.getItem('statsCollapsed') === '1') setStatsCollapsed(true);
+} catch (e) {}
 
 // ride_dates on each feature are indices into the global dateList;
 // [filterLo, filterHi] selects the active index range.
@@ -379,11 +407,6 @@ fetch('rides.geojson.gz')
     const ridesPerYear = data.properties?.rides_per_year;
     const riding = data.properties?.riding;
     const coverage = data.properties?.coverage;
-    if (coverage?.pct != null) {
-      document.getElementById('stat-explored').textContent =
-        `${coverage.pct}% of ${Math.round(mi(coverage.network_km)).toLocaleString()} mi`;
-      document.getElementById('stat-explored-row').style.display = 'block';
-    }
     if (ridesPerYear && Object.keys(ridesPerYear).length) {
       const kmByYear = riding?.km_by_year || {};
       const newByYear = coverage?.new_km_by_year || {};
