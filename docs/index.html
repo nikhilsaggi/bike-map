@@ -81,15 +81,6 @@
     display: none; justify-content: space-between; margin-top: 4px;
     font-size: 10px; color: #888; font-variant-numeric: tabular-nums;
   }
-  #infra-row {
-    display: none; align-items: center; gap: 6px; margin-top: 10px;
-    font-size: 11px; color: #aaa; cursor: pointer; user-select: none;
-  }
-  #infra-row input { accent-color: #2ecc71; cursor: pointer; }
-  #infra-swatch {
-    width: 14px; height: 4px; border-radius: 2px; background: #2ecc71; flex: none;
-  }
-
   .ride-popup .leaflet-popup-content-wrapper {
     background: rgba(13, 13, 13, 0.92); color: #fff; border-radius: 8px;
     border: 1px solid #444; backdrop-filter: blur(6px);
@@ -106,7 +97,7 @@
   <div><span class="label">Rides:</span> <strong id="stat-rides">—</strong></div>
   <div><span class="label">Edges:</span> <strong id="stat-edges">—</strong></div>
   <div><span class="label">Street km:</span> <strong id="stat-km">—</strong></div>
-  <div id="stat-infra-row" style="display:none"><span class="label">Bike infra:</span> <strong id="stat-infra">—</strong></div>
+  <div id="stat-explored-row" style="display:none" title="Share of plausibly rideable streets in the mapped area (footways, motorways, service ways excluded)"><span class="label">Explored:</span> <strong id="stat-explored">—</strong></div>
   <div><span class="label">Updated:</span> <strong id="stat-updated">—</strong></div>
   <div id="stat-years"></div>
   <div id="stat-riding"></div>
@@ -126,11 +117,6 @@
     </div>
   </div>
   <div id="filter-dates"><span id="date-lo"></span><span id="date-hi"></span></div>
-  <label id="infra-row">
-    <input type="checkbox" id="infra-toggle">
-    <span id="infra-swatch"></span>
-    Bike infrastructure
-  </label>
 </div>
 
 <script>
@@ -192,7 +178,6 @@ let filterHi = Infinity;
 let sqrtMax = 1;
 let fullMaxCount = 1;
 let geoLayer = null;
-let infraMode = false;
 
 function countInRange(idxs) {
   if (filterLo === 0 && filterHi === Infinity) return idxs.length;
@@ -201,17 +186,7 @@ function countInRange(idxs) {
   return n;
 }
 
-function styleFor(count, hw) {
-  if (infraMode) {
-    const isBike = hw === 'bike';
-    return {
-      color: isBike ? '#2ecc71' : '#555',
-      weight: isBike ? 3 : 1.5,
-      opacity: isBike ? 0.95 : 0.45,
-      lineJoin: 'round',
-      lineCap: 'round',
-    };
-  }
+function styleFor(count) {
   const t = Math.sqrt(count) / sqrtMax;
   return {
     color: plasmaColor(t),
@@ -260,7 +235,7 @@ function applyFilter(renormalize = true) {
       map.removeLayer(layer);
     } else {
       if (!map.hasLayer(layer)) layer.addTo(map);
-      layer.setStyle(styleFor(c, layer.feature.properties.hw));
+      layer.setStyle(styleFor(c));
     }
   });
   restackLayers();
@@ -275,10 +250,7 @@ function applyFilter(renormalize = true) {
 function restackLayers() {
   const visible = [];
   geoLayer.eachLayer(l => { if (l._filteredCount > 0) visible.push(l); });
-  const key = infraMode
-    ? l => (l.feature.properties.hw === 'bike' ? 1e9 : 0) + l._filteredCount
-    : l => l._filteredCount;
-  visible.sort((a, b) => key(a) - key(b));
+  visible.sort((a, b) => a._filteredCount - b._filteredCount);
   for (const l of visible) l.bringToFront();
 }
 
@@ -401,21 +373,23 @@ fetch('rides.geojson.gz')
     if (totalKm != null) {
       document.getElementById('stat-km').textContent = Math.round(totalKm).toLocaleString();
     }
-    const bikeKm = data.properties?.km_by_class?.bike;
-    if (bikeKm != null && totalKm) {
-      document.getElementById('stat-infra').textContent =
-        `${Math.round(bikeKm).toLocaleString()} km (${Math.round(100 * bikeKm / totalKm)}%)`;
-      document.getElementById('stat-infra-row').style.display = 'block';
-    }
     const ridesPerYear = data.properties?.rides_per_year;
     const riding = data.properties?.riding;
+    const coverage = data.properties?.coverage;
+    if (coverage?.pct != null) {
+      document.getElementById('stat-explored').textContent =
+        `${coverage.pct}% of ${coverage.network_km.toLocaleString()} km`;
+      document.getElementById('stat-explored-row').style.display = 'block';
+    }
     if (ridesPerYear && Object.keys(ridesPerYear).length) {
       const kmByYear = riding?.km_by_year || {};
+      const newByYear = coverage?.new_km_by_year || {};
       const el = document.getElementById('stat-years');
       el.innerHTML = Object.entries(ridesPerYear)
         .map(([y, n]) => {
-          const km = kmByYear[y] != null ? ` <span class="label">&middot; ${Math.round(kmByYear[y]).toLocaleString()} km</span>` : '';
-          return `<div class="year-row"><span class="label">${y}</span><span><strong>${n}</strong>${km}</span></div>`;
+          const km = kmByYear[y] != null ? ` &middot; ${Math.round(kmByYear[y]).toLocaleString()} km` : '';
+          const nw = newByYear[y] != null ? ` &middot; +${Math.round(newByYear[y])} new` : '';
+          return `<div class="year-row"><span class="label">${y}</span><span><strong>${n}</strong><span class="label">${km}${nw}</span></span></div>`;
         })
         .join('');
       el.style.display = 'block';
@@ -449,7 +423,7 @@ fetch('rides.geojson.gz')
     fullMaxCount = maxCount;
 
     geoLayer = L.geoJSON(data, {
-      style: feature => styleFor((feature.properties.ride_dates || []).length || 1, feature.properties.hw),
+      style: feature => styleFor((feature.properties.ride_dates || []).length || 1),
       onEachFeature: (feature, layer) => {
         const idxs = feature.properties.ride_dates || [];
         layer._filteredCount = idxs.length;
@@ -467,15 +441,6 @@ fetch('rides.geojson.gz')
     }).addTo(map);
 
     initDateFilter();
-
-    if (bikeKm != null) {
-      const toggle = document.getElementById('infra-toggle');
-      toggle.addEventListener('change', () => {
-        infraMode = toggle.checked;
-        applyFilter();
-      });
-      document.getElementById('infra-row').style.display = 'flex';
-    }
   })
   .catch(err => {
     document.getElementById('stat-rides').textContent = 'Error loading data';

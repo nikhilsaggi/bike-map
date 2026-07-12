@@ -98,10 +98,14 @@ def test_missing_stamp_adopts_current_versions(tmp_path, monkeypatch):
 
 def test_legacy_render_cache_treated_as_missing(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    # Old format: bare geometry dict, no highway classes
+    # Oldest format: bare geometry dict, no highway data
     with (tmp_path / br.RENDER_CACHE_PATH.name).open("wb") as f:
         pickle.dump({(1, 2): [(0.0, 0.0), (1.0, 1.0)]}, f)
+    assert br._get_render_data() is None
 
+    # Interim format: (geometry, binary-class) 2-tuple without raw tags
+    with (tmp_path / br.RENDER_CACHE_PATH.name).open("wb") as f:
+        pickle.dump(({(1, 2): [(0.0, 0.0), (1.0, 1.0)]}, {(1, 2): "bike"}), f)
     assert br._get_render_data() is None
 
 
@@ -113,7 +117,8 @@ def test_render_cache_roundtrip(tmp_path, monkeypatch):
     G.add_edge(1, 2, length=100.0, highway="cycleway")
 
     edge_geom, edge_hw = br._build_render_cache(G)
-    assert edge_hw[(1, 2)] == "bike"
+    assert edge_hw[(1, 2)] == "cycleway"
+    assert br._classify_hw(edge_hw[(1, 2)]) == "bike"
 
     loaded_geom, loaded_hw = br._get_render_data()
     assert loaded_geom == edge_geom

@@ -87,6 +87,22 @@ INFRA_CLASS: dict[str, str] = {
 }
 INFRA_DEFAULT = "road"
 
+# Highway types excluded from the rideable-street coverage denominator
+# (not streets a ride would plausibly cover). Approximate by design.
+COVERAGE_EXCLUDE = {
+    "footway",
+    "steps",
+    "pedestrian",
+    "corridor",
+    "elevator",
+    "escalator",
+    "motorway",
+    "motorway_link",
+    "service",
+    "construction",
+    "proposed",
+}
+
 # Rides with no coordinates inside this bbox are skipped entirely.
 NYC_BBOX = (40.49, -74.30, 41.0, -73.60)  # (lat_min, lon_min, lat_max, lon_max)
 
@@ -960,10 +976,26 @@ def _classify_hw(hw: str | list[str]) -> str:
     return INFRA_CLASS.get(hw, INFRA_DEFAULT)
 
 
+def _primary_hw_tag(hw: str | list[str]) -> str:
+    """Pick one highway tag for an edge, preferring a bike-classified tag."""
+    if isinstance(hw, list):
+        for h in hw:
+            if INFRA_CLASS.get(h) == "bike":
+                return h
+        return hw[0] if hw else ""
+    return hw or ""
+
+
+# Render cache format marker. The cache stores raw highway tags (needed by
+# the coverage denominator); older caches stored binary classes or geometry
+# only and are rebuilt.
+_RENDER_CACHE_FORMAT = "hw-raw-v1"
+
+
 def _build_render_cache(
     G: nx.MultiDiGraph,
 ) -> tuple[dict[tuple[int, int], list[tuple[float, float]]], dict[tuple[int, int], str]]:
-    """Extract one canonical geometry and highway class per node pair.
+    """Extract one canonical geometry and highway tag per node pair.
 
     When multiple parallel edges exist between the same nodes (from
     composing bike/drive/walk networks), keeps only the shortest edge's
@@ -976,10 +1008,10 @@ def _build_render_cache(
     for u, v, _key, data in G.edges(data=True, keys=True):
         canon = (min(u, v), max(u, v))
         length = data.get("length", float("inf"))
-        cls = _classify_hw(data.get("highway", ""))
+        tag = _primary_hw_tag(data.get("highway", ""))
         if canon in edge_geom:
-            if cls == "bike" and edge_hw[canon] != "bike":
-                edge_hw[canon] = "bike"
+            if _classify_hw(tag) == "bike" and _classify_hw(edge_hw[canon]) != "bike":
+                edge_hw[canon] = tag
             if edge_len[canon] <= length:
                 continue
         if "geometry" in data:
@@ -992,10 +1024,12 @@ def _build_render_cache(
             ]
         edge_len[canon] = length
         if canon not in edge_hw:
-            edge_hw[canon] = cls
+            edge_hw[canon] = tag
 
     with RENDER_CACHE_PATH.open("wb") as f:
-        pickle.dump((edge_geom, edge_hw), f, protocol=pickle.HIGHEST_PROTOCOL)
+        pickle.dump(
+            (_RENDER_CACHE_FORMAT, edge_geom, edge_hw), f, protocol=pickle.HIGHEST_PROTOCOL
+        )
     print(f"  Cached {len(edge_geom):,} edge geometries")
     return edge_geom, edge_hw
 
@@ -1008,15 +1042,18 @@ def _get_render_data(
 ] | None:
     """Load render cache, or build it from graph if missing.
 
-    A legacy cache (geometry only, no highway classes) is treated as
-    missing so it rebuilds with classes rather than silently dropping
-    the infrastructure data from the export.
+    A cache in any older format is treated as missing so it rebuilds with
+    the data newer features need, rather than silently exporting without it.
     """
     if RENDER_CACHE_PATH.exists():
         with RENDER_CACHE_PATH.open("rb") as f:
             cached = pickle.load(f)
-        if isinstance(cached, tuple):
-            edge_geom, edge_hw = cached
+        if (
+            isinstance(cached, tuple)
+            and len(cached) == 3
+            and cached[0] == _RENDER_CACHE_FORMAT
+        ):
+            _fmt, edge_geom, edge_hw = cached
             print(f"Loaded render cache ({len(edge_geom):,} edges)")
             return edge_geom, edge_hw
         print("Render cache in legacy format -- rebuilding")
@@ -1379,11 +1416,8 @@ def _merge_parallel_features(
     merged: list[dict[str, Any]] = []
     for members in clusters.values():
         rides: set[str] = set()
-        hw = INFRA_DEFAULT
         for i in members:
             rides |= features[i]["properties"]["_rides"]
-            if features[i]["properties"].get("_hw") == "bike":
-                hw = "bike"
         if len(members) == 1:
             keep = members
         else:
@@ -1429,7 +1463,7 @@ def _merge_parallel_features(
                     "type": "LineString",
                     "coordinates": features[m]["geometry"]["coordinates"],
                 },
-                "properties": {"_rides": set(rides), "_hw": hw},
+                "properties": {"_rides": set(rides)},
             }
             for m in keep
         )
@@ -1511,10 +1545,9 @@ def _merge_parallel_features(
     for f in survivors:
         rides = f["properties"].pop("_rides")
         f["properties"]["ride_count"] = len(rides)
+        # One date per ride (duplicates preserved) so clients can compute
+        # exact per-date-range counts.
         f["properties"]["ride_dates"] = sorted(r[:10] for r in rides)
-        hw = f["properties"].pop("_hw", None)
-        if hw is not None:
-            f["properties"]["hw"] = hw
         out.append(f)
 
     print(
@@ -1596,6 +1629,54 @@ def _audit_merge(features: list[dict[str, Any]]) -> None:
         print("  WARNING: merge regression suspected -- metrics well above baseline")
 
 
+def _geom_len_m(coords: list[tuple[float, float]]) -> float:
+    """Length in metres of a (lon, lat) coordinate sequence."""
+    return sum(
+        math.hypot((lon1 - lon0) * _M_PER_LON, (lat1 - lat0) * _M_PER_LAT)
+        for (lon0, lat0), (lon1, lat1) in zip(coords, coords[1:])
+    )
+
+
+def _coverage_summary(
+    edge_geom: dict[tuple[int, int], list[tuple[float, float]]],
+    edge_hw: dict[tuple[int, int], str],
+    state: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Fraction of the mapped rideable street network that has been ridden.
+
+    The denominator is every graph edge whose highway tag is plausibly
+    rideable (COVERAGE_EXCLUDE filters footways, steps, motorways, service
+    ways, ...); the numerator is the ridden subset.  new_km_by_year
+    attributes each ridden edge to the year of its first traversal.
+    """
+    if not edge_hw:
+        return None
+    edge_counts = state["edge_counts"]
+    edge_rides: dict[tuple[int, int], list[str]] = state.get("edge_rides", {})
+    network_m = 0.0
+    ridden_m = 0.0
+    new_by_year: dict[str, float] = {}
+    for key, coords in edge_geom.items():
+        if edge_hw.get(key, "") in COVERAGE_EXCLUDE:
+            continue
+        length = _geom_len_m(coords)
+        network_m += length
+        if key in edge_counts:
+            ridden_m += length
+            rides = edge_rides.get(key)
+            if rides:
+                year = min(rides)[:4]
+                new_by_year[year] = new_by_year.get(year, 0.0) + length
+    if network_m == 0:
+        return None
+    return {
+        "pct": round(100 * ridden_m / network_m, 1),
+        "ridden_km": round(ridden_m / 1000, 1),
+        "network_km": round(network_m / 1000),
+        "new_km_by_year": {y: round(v / 1000, 1) for y, v in sorted(new_by_year.items())},
+    }
+
+
 def _export_geojson(
     edge_geom: dict[tuple[int, int], list[tuple[float, float]]],
     state: dict[str, Any],
@@ -1614,8 +1695,6 @@ def _export_geojson(
             continue
         coords = [(round(lon, 6), round(lat, 6)) for lon, lat in edge_geom[edge_key]]
         props: dict[str, Any] = {"_rides": set(edge_rides.get(edge_key, ()))}
-        if edge_hw:
-            props["_hw"] = edge_hw.get(edge_key, INFRA_DEFAULT)
         features.append(
             {
                 "type": "Feature",
@@ -1639,23 +1718,10 @@ def _export_geojson(
         props = f["properties"]
         props["ride_dates"] = [date_idx[d] for d in props["ride_dates"]]
         del props["ride_count"]
-        if props.get("hw") == INFRA_DEFAULT:
-            del props["hw"]
 
-    km_by_class: dict[str, float] = {}
-    total_km = 0.0
-    for f in features:
-        length = sum(
-            math.hypot((lon1 - lon0) * _M_PER_LON, (lat1 - lat0) * _M_PER_LAT)
-            for (lon0, lat0), (lon1, lat1) in zip(
-                f["geometry"]["coordinates"], f["geometry"]["coordinates"][1:]
-            )
-        )
-        total_km += length
-        cls = f["properties"].get("hw", INFRA_DEFAULT)
-        km_by_class[cls] = km_by_class.get(cls, 0) + length
-    total_km /= 1000
-    km_by_class = {k: round(v / 1000, 1) for k, v in km_by_class.items()}
+    total_km = (
+        sum(_geom_len_m(f["geometry"]["coordinates"]) for f in features) / 1000
+    )
 
     rides_per_year: dict[str, int] = {}
     for fname in sorted(state["processed_files"]):
@@ -1668,9 +1734,9 @@ def _export_geojson(
             "total_edges": len(features),
             "max_count": max_count,
             "total_km": round(total_km, 1),
-            "km_by_class": km_by_class,
             "rides_per_year": rides_per_year,
             "riding": _riding_summary(state.get("ride_stats", {})),
+            "coverage": _coverage_summary(edge_geom, edge_hw or {}, state),
             "dates": all_dates,
             "updated": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
         },
