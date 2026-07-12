@@ -96,6 +96,78 @@ def test_merge_keeps_most_ridden_geometry():
     assert out[0]["properties"]["ride_count"] == 3
 
 
+def test_redundant_ring_dropped():
+    # Long corridor carrying both rides, with a small closed box (matched
+    # onto the parallel way and back) hanging off it.
+    corridor = _feature(_line(0, 400, 0.0), {R1, R2})
+    box = _feature(
+        [(200.0, 0.0), (230.0, 0.0), (230.0, 15.0), (200.0, 15.0), (200.0, 0.5)],
+        {R1},
+    )
+    out = br._drop_redundant_rings([corridor, box])
+    assert out == [corridor]
+
+
+def test_ring_with_unique_ride_kept():
+    corridor = _feature(_line(0, 400, 0.0), {R1})
+    # Ring carries a ride the corridor doesn't -- dropping it would lose data
+    box = _feature(
+        [(200.0, 0.0), (230.0, 0.0), (230.0, 15.0), (200.0, 15.0), (200.0, 0.5)],
+        {R2},
+    )
+    out = br._drop_redundant_rings([corridor, box])
+    assert len(out) == 2
+
+
+def test_isolated_ring_kept():
+    # A ring with no nearby feature (e.g. a loop around a park) stays
+    box = _feature(
+        [(0.0, 0.0), (60.0, 0.0), (60.0, 60.0), (0.0, 60.0), (0.0, 0.5)],
+        {R1},
+    )
+    out = br._drop_redundant_rings([box])
+    assert len(out) == 1
+
+
+def test_snap_moves_endpoint_for_short_gaps():
+    # Feature ending 10m laterally from a corridor: endpoint moves onto it
+    # (no elbow vertex added), so vertex count stays the same.
+    corridor = _feature(_line(0, 400, 0.0), {R1})
+    stub = _feature([(500.0, 10.0), (450.0, 10.0), (300.0, 10.0)], {R2})
+    n_before = len(stub["geometry"]["coordinates"])
+    br._snap_endpoints([corridor, stub])
+    coords = stub["geometry"]["coordinates"]
+    assert len(coords) == n_before
+    # Moved endpoint now lies on the corridor (y=0)
+    end_y_m = coords[-1][1] * br._M_PER_LAT
+    corridor_y_m = corridor["geometry"]["coordinates"][0][1] * br._M_PER_LAT
+    assert abs(end_y_m - corridor_y_m) < 1.0
+
+
+def test_snap_appends_connector_for_long_gaps():
+    corridor = _feature(_line(0, 400, 0.0), {R1})
+    stub = _feature([(500.0, 30.0), (450.0, 30.0), (300.0, 30.0)], {R2})
+    n_before = len(stub["geometry"]["coordinates"])
+    br._snap_endpoints([corridor, stub])
+    # 30m gap: connector appended, original endpoint preserved
+    assert len(stub["geometry"]["coordinates"]) == n_before + 1
+
+
+def test_alternating_corridor_harmonized():
+    # Two consecutive blocks, each a cluster of two parallel ways (y=0 and
+    # y=10). Ride counts alone would pick y=0 for block one and y=10 for
+    # block two, drawing a lateral jog; the continuity pass aligns them.
+    a0 = _feature(_line(0, 300, 0.0), {R1, R2})
+    a1 = _feature(_line(0, 300, 10.0), {R1})
+    b0 = _feature(_line(300, 600, 0.0), {R3})
+    b1 = _feature(_line(300, 600, 10.0), {R2, R3})
+    out = br._merge_parallel_features([a0, a1, b0, b1])
+    assert len(out) == 2
+    # The kept geometries connect end-to-end: they share an endpoint
+    ends = [tuple(f["geometry"]["coordinates"][i]) for f in out for i in (0, -1)]
+    assert len(ends) != len(set(ends))
+
+
 def test_redundant_span_absorbed():
     """A long way covered by two already-kept halves is absorbed into them."""
     left = _feature(_line(0, 300, 0.0), {R1})

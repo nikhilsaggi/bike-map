@@ -1209,6 +1209,11 @@ MERGE_TRANSFER_COV = 0.80  # coverage needed to receive an absorbed feature's ri
 MERGE_KEEP_COV = 0.97  # cluster extent that kept geometries must cover
 MERGE_SNAP_M = 40.0  # reconnect feature endpoints to neighbours within this
 MERGE_CONNECT_M = 6.0  # endpoints this close to another feature stay put
+MERGE_MOVE_M = 15.0  # endpoint gaps up to this close by moving the endpoint
+RING_MAX_GAP_M = 15.0  # endpoints closer than this make a feature a closed ring
+RING_MIN_LEN_M = 30.0  # shorter features are corridor pieces, not rings
+RING_MAX_LEN_M = 300.0  # rings up to this perimeter may be dropped as redundant
+RING_NEAR_M = 40.0  # rings must hug covering features within this distance
 
 _M_PER_LON = 111_320 * np.cos(np.radians(40.73))
 _M_PER_LAT = 110_540
@@ -1307,22 +1312,140 @@ def _dense_point_grid(
     return grid
 
 
+def _drop_redundant_rings(features: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Drop small closed-ring features whose rides all appear nearby.
+
+    Map-matching a ride onto both ways of a parallel pair (roadway + bike
+    lane) plus two crossing links yields a small closed box hanging off the
+    corridor.  Rings add nothing -- merged ride sets already count their
+    rides on the adjacent corridor -- but draw as boxy notches along
+    avenues and greenways.  A ring is dropped only when every one of its
+    rides appears on a non-ring feature within RING_NEAR_M, so no ride
+    disappears from the map.
+    """
+    def is_ring(f: dict[str, Any]) -> bool:
+        c = f["geometry"]["coordinates"]
+        gap = math.hypot(
+            (c[-1][0] - c[0][0]) * _M_PER_LON, (c[-1][1] - c[0][1]) * _M_PER_LAT
+        )
+        # Min length keeps short straight corridor pieces (whose endpoints
+        # are trivially close together) from being mistaken for rings.
+        return gap <= RING_MAX_GAP_M and RING_MIN_LEN_M <= _geom_len_m(c) <= RING_MAX_LEN_M
+
+    ring_idx = {i for i, f in enumerate(features) if is_ring(f)}
+    if not ring_idx:
+        return features
+
+    others = [f for i, f in enumerate(features) if i not in ring_idx]
+    grid = _dense_point_grid(others, RING_NEAR_M)
+    near_sq = RING_NEAR_M * RING_NEAR_M
+
+    out = []
+    dropped = 0
+    for i, f in enumerate(features):
+        if i not in ring_idx:
+            out.append(f)
+            continue
+        rides = f["properties"]["_rides"]
+        covered: set[str] = set()
+        for (x, y, _h) in _sample_line(f["geometry"]["coordinates"]):
+            gx, gy = int(x // RING_NEAR_M), int(y // RING_NEAR_M)
+            for dx in (-1, 0, 1):
+                for dy in (-1, 0, 1):
+                    for (j, jx, jy, _lon, _lat) in grid.get((gx + dx, gy + dy), ()):
+                        if (jx - x) ** 2 + (jy - y) ** 2 <= near_sq:
+                            covered |= others[j]["properties"]["_rides"]
+            if rides <= covered:
+                break
+        if rides <= covered:
+            dropped += 1
+        else:
+            out.append(f)
+    print(f"  Dropped {dropped:,} redundant ring features")
+    return out
+
+
+def _harmonize_representatives(features: list[dict[str, Any]]) -> None:
+    """Swap cluster representatives to maximise endpoint continuity (in place).
+
+    Per-cluster selection prefers the most-ridden member, which along a
+    corridor of parallel ways can still alternate sides block by block --
+    every alternation draws a lateral Z-jog.  Consecutive edges of the same
+    physical way share graph nodes, so their endpoints match exactly.  Each
+    feature re-picks from its recorded alternative geometries ("_alts") the
+    one whose endpoints touch the most neighbouring features, iterating
+    until stable so consistent chains propagate along the corridor.
+    """
+
+    def ekey(pt: list | tuple) -> tuple[float, float]:
+        return (round(pt[0], 6), round(pt[1], 6))
+
+    n_swapped = 0
+    for _ in range(4):
+        counts: dict[tuple[float, float], int] = {}
+        for f in features:
+            c = f["geometry"]["coordinates"]
+            for end in (0, -1):
+                k = ekey(c[end])
+                counts[k] = counts.get(k, 0) + 1
+
+        changed = 0
+        for f in features:
+            alts = f["properties"].get("_alts")
+            if not alts:
+                continue
+            cur = f["geometry"]["coordinates"]
+
+            def score(c: list, cur: list = cur, counts: dict = counts) -> int:
+                s = 0
+                for end in (0, -1):
+                    k = ekey(c[end])
+                    n = counts.get(k, 0)
+                    if ekey(cur[end]) == k:
+                        n -= 1  # don't count this feature's own endpoint
+                    if n > 0:
+                        s += 1
+                return s
+
+            best_c, best_s = cur, score(cur)
+            for a in alts:
+                if a is cur:
+                    continue
+                s = score(a)
+                if s > best_s:
+                    best_s, best_c = s, a
+            if best_c is not cur:
+                for end in (0, -1):
+                    counts[ekey(cur[end])] -= 1
+                    k = ekey(best_c[end])
+                    counts[k] = counts.get(k, 0) + 1
+                f["geometry"]["coordinates"] = best_c
+                changed += 1
+        n_swapped += changed
+        if not changed:
+            break
+    print(f"  Harmonized {n_swapped:,} cluster representatives for continuity")
+
+
 def _snap_endpoints(features: list[dict[str, Any]]) -> None:
     """Reconnect merged features at junctions (in place).
 
     Merging keeps one geometry per parallel cluster, so adjacent features
     along a corridor can come from different parallel ways offset 10-20m
     laterally, leaving gaps and jogs at junctions.  Any endpoint that is
-    not already touching another feature gets a short connector segment
-    appended, bridging to the nearest point on a neighbouring feature
-    within MERGE_SNAP_M.  The original endpoint is kept (extending rather
-    than moving it) so the line's true geometry is not distorted.
+    not already touching another feature is bridged to the nearest point
+    on a neighbouring feature within MERGE_SNAP_M.  Short gaps (up to
+    MERGE_MOVE_M) move the endpoint itself, slightly rotating the last
+    segment; longer gaps append a connector segment so the line's true
+    geometry is not distorted -- an appended right-angle elbow on a short
+    gap reads as a notch in the corridor.
     """
     cell = MERGE_SNAP_M
     grid = _dense_point_grid(features, cell)
 
     snap_sq = MERGE_SNAP_M * MERGE_SNAP_M
     connect_sq = MERGE_CONNECT_M * MERGE_CONNECT_M
+    move_sq = MERGE_MOVE_M * MERGE_MOVE_M
     for i, f in enumerate(features):
         coords = f["geometry"]["coordinates"]
         for end in (0, -1):
@@ -1342,7 +1465,9 @@ def _snap_endpoints(features: list[dict[str, Any]]) -> None:
                             best = (jlon, jlat)
             if best is not None and best_d > connect_sq:
                 new_pt = (round(best[0], 6), round(best[1], 6))
-                if end == 0:
+                if best_d <= move_sq and len(coords) > 2:
+                    coords[end] = new_pt
+                elif end == 0:
                     coords.insert(0, new_pt)
                 else:
                     coords.append(new_pt)
@@ -1418,6 +1543,7 @@ def _merge_parallel_features(
         rides: set[str] = set()
         for i in members:
             rides |= features[i]["properties"]["_rides"]
+        alts: list[list] = []
         if len(members) == 1:
             keep = members
         else:
@@ -1456,6 +1582,17 @@ def _merge_parallel_features(
                 if mark(m, all_pts, cov_flags) == 0 and keep:
                     continue
                 keep.append(m)
+
+            if len(keep) == 1:
+                # Alternative representatives for the continuity pass: any
+                # member that alone covers the cluster extent as well as
+                # the chosen one could stand in for it.
+                for m in members:
+                    flags = [False] * len(all_pts)
+                    if mark(m, all_pts, flags) / len(all_pts) >= MERGE_KEEP_COV:
+                        alts.append(features[m]["geometry"]["coordinates"])
+                if len(alts) < 2:
+                    alts = []
         merged.extend(
             {
                 "type": "Feature",
@@ -1463,7 +1600,7 @@ def _merge_parallel_features(
                     "type": "LineString",
                     "coordinates": features[m]["geometry"]["coordinates"],
                 },
-                "properties": {"_rides": set(rides)},
+                "properties": {"_rides": set(rides), "_alts": alts},
             }
             for m in keep
         )
@@ -1539,11 +1676,20 @@ def _merge_parallel_features(
             break
 
     survivors = [f for i, f in enumerate(merged) if active[i]]
+    _harmonize_representatives(survivors)
+    # Snap first: the box artifacts only become closed rings once their
+    # endpoints are bridged to the corridor.  Snap again after dropping so
+    # endpoints that had bridged onto a dropped ring re-attach to the
+    # corridor (a moved endpoint can also invalidate another endpoint's
+    # attachment; the second pass heals those too).
+    _snap_endpoints(survivors)
+    survivors = _drop_redundant_rings(survivors)
     _snap_endpoints(survivors)
 
     out = []
     for f in survivors:
         rides = f["properties"].pop("_rides")
+        f["properties"].pop("_alts", None)
         f["properties"]["ride_count"] = len(rides)
         # One date per ride (duplicates preserved) so clients can compute
         # exact per-date-range counts.
