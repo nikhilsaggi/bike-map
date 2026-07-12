@@ -96,7 +96,7 @@
 <div id="stats">
   <div><span class="label">Rides:</span> <strong id="stat-rides">—</strong></div>
   <div><span class="label">Edges:</span> <strong id="stat-edges">—</strong></div>
-  <div><span class="label">Street km:</span> <strong id="stat-km">—</strong></div>
+  <div><span class="label">Street mi:</span> <strong id="stat-km">—</strong></div>
   <div id="stat-explored-row" style="display:none" title="Share of plausibly rideable streets in the mapped area (footways, motorways, service ways excluded)"><span class="label">Explored:</span> <strong id="stat-explored">—</strong></div>
   <div><span class="label">Updated:</span> <strong id="stat-updated">—</strong></div>
   <div id="stat-years"></div>
@@ -369,16 +369,19 @@ fetch('rides.geojson.gz')
     document.getElementById('stat-updated').textContent = updated;
     document.getElementById('legend-max').textContent = maxCount;
 
+    // Pipeline data is metric; convert to miles for display only.
+    const KM_TO_MI = 0.621371;
+    const mi = km => km * KM_TO_MI;
     const totalKm = data.properties?.total_km;
     if (totalKm != null) {
-      document.getElementById('stat-km').textContent = Math.round(totalKm).toLocaleString();
+      document.getElementById('stat-km').textContent = Math.round(mi(totalKm)).toLocaleString();
     }
     const ridesPerYear = data.properties?.rides_per_year;
     const riding = data.properties?.riding;
     const coverage = data.properties?.coverage;
     if (coverage?.pct != null) {
       document.getElementById('stat-explored').textContent =
-        `${coverage.pct}% of ${coverage.network_km.toLocaleString()} km`;
+        `${coverage.pct}% of ${Math.round(mi(coverage.network_km)).toLocaleString()} mi`;
       document.getElementById('stat-explored-row').style.display = 'block';
     }
     if (ridesPerYear && Object.keys(ridesPerYear).length) {
@@ -387,8 +390,8 @@ fetch('rides.geojson.gz')
       const el = document.getElementById('stat-years');
       el.innerHTML = Object.entries(ridesPerYear)
         .map(([y, n]) => {
-          const km = kmByYear[y] != null ? ` &middot; ${Math.round(kmByYear[y]).toLocaleString()} km` : '';
-          const nw = newByYear[y] != null ? ` &middot; +${Math.round(newByYear[y])} new` : '';
+          const km = kmByYear[y] != null ? ` &middot; ${Math.round(mi(kmByYear[y])).toLocaleString()} mi` : '';
+          const nw = newByYear[y] != null ? ` &middot; +${Math.round(mi(newByYear[y]))} new` : '';
           return `<div class="year-row"><span class="label">${y}</span><span><strong>${n}</strong><span class="label">${km}${nw}</span></span></div>`;
         })
         .join('');
@@ -404,10 +407,10 @@ fetch('rides.geojson.gz')
         return `<div class="histo">${bars}</div><div class="histo-labels">${labels}</div>`;
       };
       const rows = [
-        ['Distance', `${Math.round(riding.total_km).toLocaleString()} km`],
+        ['Distance', `${Math.round(mi(riding.total_km)).toLocaleString()} mi`],
         ['Time', `${Math.round(riding.total_h).toLocaleString()} h`],
-        riding.avg_kmh != null ? ['Avg speed', `${riding.avg_kmh} km/h`] : null,
-        ['Longest ride', `${Math.round(riding.longest_km)} km`],
+        riding.avg_kmh != null ? ['Avg speed', `${(mi(riding.avg_kmh)).toFixed(1)} mph`] : null,
+        ['Longest ride', `${Math.round(mi(riding.longest_km))} mi`],
       ].filter(Boolean)
         .map(([k, v]) => `<div class="r-row"><span class="label">${k}</span><strong>${v}</strong></div>`)
         .join('');

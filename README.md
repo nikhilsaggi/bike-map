@@ -16,10 +16,11 @@ The pipeline exports a compressed GeoJSON that powers an interactive
 - Coloring by ride frequency
 - Hover for ride count, click for the full list of ride dates
 - Date-range slider with time-lapse playback (watch the network grow)
-- Stats panel with total rides, edges covered, street km, and % of the
-  rideable street network explored
+- Stats panel with total rides, edges covered, street miles, and % of
+  the rideable street network explored
 - Riding stats: distance/time totals, average speed, longest ride,
-  km and new-street km per year, rides-by-hour and weekday histograms
+  miles and new-street miles per year, rides-by-hour and weekday
+  histograms (data is stored metric; the UI displays miles)
 
 To view locally:
 
