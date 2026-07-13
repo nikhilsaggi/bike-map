@@ -157,6 +157,19 @@ The workflow runs every Monday at 9am UTC and can be triggered manually from
 the Actions tab. It syncs GPX files via rclone, converts to CSV, runs the
 pipeline, and commits the updated GeoJSON.
 
+## Weather Correlation
+
+`weather_correlation.py` joins the exported ride index against
+[Open-Meteo](https://open-meteo.com/) historical daily weather (keyless)
+and reports how temperature and precipitation affect ride probability and
+distance:
+
+```bash
+python weather_correlation.py
+```
+
+![Weather correlation](sample_output/weather_correlation.png)
+
 ## Cache Files
 
 The pipeline creates several cache files (auto-managed, gitignored):
