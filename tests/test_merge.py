@@ -85,14 +85,16 @@ def test_perpendicular_lines_stay_separate():
     assert len(out) == 2
 
 
-def test_merge_keeps_most_ridden_geometry():
+def test_merge_draws_cluster_centerline():
     busy = _feature(_line(0, 300, 0.0), {R1, R2, R3})
     quiet = _feature(_line(0, 300, 10.0), {R1})
     out = br._merge_parallel_features([busy, quiet])
     assert len(out) == 1
-    # Kept geometry is the busy feature's line (y=0)
-    _lon0, lat0 = lonlat(0.0, 0.0)
-    assert abs(out[0]["geometry"]["coordinates"][0][1] - lat0) < 1e-9
+    # Drawn geometry is the unweighted centerline between the parallel
+    # ways (y=5), so adjacent clusters of the same ways line up exactly.
+    _lon0, lat5 = lonlat(0.0, 5.0)
+    for _lon, lat in out[0]["geometry"]["coordinates"]:
+        assert abs(lat - lat5) < 1e-6  # within coordinate rounding (~0.1m)
     assert out[0]["properties"]["ride_count"] == 3
 
 

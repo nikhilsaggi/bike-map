@@ -1427,6 +1427,62 @@ def _harmonize_representatives(features: list[dict[str, Any]]) -> None:
     print(f"  Harmonized {n_swapped:,} cluster representatives for continuity")
 
 
+def _average_parallel_geometry(features: list[dict[str, Any]]) -> None:
+    """Replace representatives with their cluster's lateral centerline (in place).
+
+    A cluster of parallel ways is drawn with one member's geometry, so the
+    line sits on whichever way was picked -- and where the pick changes
+    along a corridor, the drawn line steps sideways.  Averaging each vertex
+    with the nearest heading-aligned point on every other cluster member
+    puts the line midway between the parallel ways instead.  The average is
+    unweighted: adjacent clusters of the same physical ways then land on
+    the same centerline regardless of their ride balance, and junction
+    endpoints averaged from the same nodes coincide exactly.
+    """
+    tol_sq = MERGE_TOL_M * MERGE_TOL_M
+    n_avg = 0
+    for f in features:
+        cluster = f["properties"].get("_cluster")
+        if not cluster or len(cluster) < 2:
+            continue
+        base = f["geometry"]["coordinates"]
+        others = [g for g in cluster if g is not base]
+        if not others:
+            continue
+        other_samples = [_sample_line(g) for g in others]
+        pts = [(c[0] * _M_PER_LON, c[1] * _M_PER_LAT) for c in base]
+        new_coords = []
+        pulled = False
+        for vi, (x, y) in enumerate(pts):
+            x0, y0 = pts[max(vi - 1, 0)]
+            x1, y1 = pts[min(vi + 1, len(pts) - 1)]
+            hdg = math.degrees(math.atan2(y1 - y0, x1 - x0)) % 180.0
+            acc_x, acc_y, k = x, y, 1
+            for samples in other_samples:
+                best = None
+                best_d = tol_sq
+                for (sx, sy, sh) in samples:
+                    if _heading_diff(hdg, sh) > MERGE_HEADING_DEG:
+                        continue
+                    d = (sx - x) ** 2 + (sy - y) ** 2
+                    if d < best_d:
+                        best_d = d
+                        best = (sx, sy)
+                if best is not None:
+                    acc_x += best[0]
+                    acc_y += best[1]
+                    k += 1
+            if k > 1:
+                pulled = True
+            new_coords.append(
+                (round(acc_x / k / _M_PER_LON, 6), round(acc_y / k / _M_PER_LAT, 6))
+            )
+        if pulled:
+            f["geometry"]["coordinates"] = new_coords
+            n_avg += 1
+    print(f"  Averaged {n_avg:,} representatives onto cluster centerlines")
+
+
 def _snap_endpoints(features: list[dict[str, Any]]) -> None:
     """Reconnect merged features at junctions (in place).
 
@@ -1593,6 +1649,11 @@ def _merge_parallel_features(
                         alts.append(features[m]["geometry"]["coordinates"])
                 if len(alts) < 2:
                     alts = []
+        cluster_geoms = (
+            [features[i]["geometry"]["coordinates"] for i in members]
+            if len(members) > 1
+            else []
+        )
         merged.extend(
             {
                 "type": "Feature",
@@ -1600,7 +1661,7 @@ def _merge_parallel_features(
                     "type": "LineString",
                     "coordinates": features[m]["geometry"]["coordinates"],
                 },
-                "properties": {"_rides": set(rides), "_alts": alts},
+                "properties": {"_rides": set(rides), "_alts": alts, "_cluster": cluster_geoms},
             }
             for m in keep
         )
@@ -1677,6 +1738,7 @@ def _merge_parallel_features(
 
     survivors = [f for i, f in enumerate(merged) if active[i]]
     _harmonize_representatives(survivors)
+    _average_parallel_geometry(survivors)
     # Snap first: the box artifacts only become closed rings once their
     # endpoints are bridged to the corridor.  Snap again after dropping so
     # endpoints that had bridged onto a dropped ring re-attach to the
@@ -1690,6 +1752,7 @@ def _merge_parallel_features(
     for f in survivors:
         rides = f["properties"].pop("_rides")
         f["properties"].pop("_alts", None)
+        f["properties"].pop("_cluster", None)
         f["properties"]["ride_count"] = len(rides)
         # Sorted ride filenames; the export maps them to ride indices.
         f["properties"]["rides"] = sorted(rides)
@@ -1709,7 +1772,8 @@ def _audit_merge(features: list[dict[str, Any]]) -> None:
     other (should have been merged).  Dangling endpoints: endpoints near
     another feature (within MERGE_SNAP_M) but not touching it (beyond
     MERGE_CONNECT_M) -- broken corridor joins.  Healthy baseline as of
-    2026-07: ~34 duplicate pairs, ~0.4% dangling.
+    2026-07: ~50 duplicate pairs (mostly cluster siblings converged onto
+    the same centerline by averaging), ~0.0% dangling.
     """
     samples = [_sample_line(f["geometry"]["coordinates"]) for f in features]
     hits = _sample_hits(samples)
