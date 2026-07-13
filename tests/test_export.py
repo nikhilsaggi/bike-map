@@ -15,7 +15,7 @@ R2 = "2025-06-01_12-00-00_-0400.csv"
 
 def test_export_geojson(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(br, "GEOJSON_OUTPUT_PATH", tmp_path / "docs" / "rides.geojson.gz")
+    monkeypatch.setattr(br.config, "GEOJSON_OUTPUT_PATH", tmp_path / "docs" / "rides.geojson.gz")
 
     edge_geom = {
         (1, 2): [lonlat(0.0, 0.0), lonlat(300.0, 0.0)],
@@ -56,6 +56,6 @@ def test_export_geojson(tmp_path, monkeypatch):
 
 def test_export_geojson_no_edges_is_noop(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(br, "GEOJSON_OUTPUT_PATH", tmp_path / "docs" / "rides.geojson.gz")
+    monkeypatch.setattr(br.config, "GEOJSON_OUTPUT_PATH", tmp_path / "docs" / "rides.geojson.gz")
     br._export_geojson({}, {"edge_counts": {}, "processed_files": set()})
     assert not (tmp_path / "docs" / "rides.geojson.gz").exists()

@@ -25,7 +25,7 @@ The pipeline exports a compressed GeoJSON that powers an interactive
 To view locally:
 
 ```bash
-python bike_routes.py          # generates docs/rides.geojson.gz
+python -m bike_routes         # generates docs/rides.geojson.gz
 python -m http.server 8000 --directory docs
 ```
 
@@ -73,7 +73,7 @@ python gpx_to_csv.py incoming/ rides/
 3. Run the pipeline:
 
 ```bash
-python bike_routes.py
+python -m bike_routes
 ```
 
 Optional flags:
@@ -106,7 +106,7 @@ longitude,latitude,timestamp
 
 ## Configuration
 
-Key parameters at the top of `bike_routes.py`:
+Key parameters in `bike_routes/config.py`:
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|

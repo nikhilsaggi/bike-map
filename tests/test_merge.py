@@ -36,7 +36,7 @@ def test_sample_line_spacing():
     coords = [lonlat(0.0, 0.0), lonlat(80.0, 0.0)]
     samples = br._sample_line(coords)
     assert len(samples) >= 10  # ~every 8m over 80m
-    assert abs(samples[0][0] - coords[0][0] * br._M_PER_LON) < 1e-6
+    assert abs(samples[0][0] - coords[0][0] * br.M_PER_LON) < 1e-6
     # Heading of an east-west line is ~0 (mod 180)
     assert all(br._heading_diff(h, 0.0) < 1.0 for _x, _y, h in samples)
 
@@ -141,8 +141,8 @@ def test_snap_moves_endpoint_for_short_gaps():
     coords = stub["geometry"]["coordinates"]
     assert len(coords) == n_before
     # Moved endpoint now lies on the corridor (y=0)
-    end_y_m = coords[-1][1] * br._M_PER_LAT
-    corridor_y_m = corridor["geometry"]["coordinates"][0][1] * br._M_PER_LAT
+    end_y_m = coords[-1][1] * br.M_PER_LAT
+    corridor_y_m = corridor["geometry"]["coordinates"][0][1] * br.M_PER_LAT
     assert abs(end_y_m - corridor_y_m) < 1.0
 
 

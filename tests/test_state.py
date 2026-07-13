@@ -37,7 +37,7 @@ def test_config_change_invalidates_state(tmp_path, monkeypatch):
     # Route cache must be discarded alongside the state
     (tmp_path / br.ROUTE_CACHE_PATH.name).write_bytes(b"stale")
 
-    monkeypatch.setattr(br, "SNAP_TOLERANCE_M", 999)
+    monkeypatch.setattr(br.config, "SNAP_TOLERANCE_M", 999)
     loaded = br._load_state()
     assert loaded["processed_files"] == set()
     assert not (tmp_path / br.ROUTE_CACHE_PATH.name).exists()
@@ -50,7 +50,7 @@ def test_network_type_change_invalidates_graph_caches(tmp_path, monkeypatch):
     for p in (br.GRAPH_CACHE_PATH, br.RENDER_CACHE_PATH, br.ROUTE_CACHE_PATH):
         (tmp_path / p.name).write_bytes(b"stale")
 
-    monkeypatch.setattr(br, "NETWORK_TYPES", ["bike"])
+    monkeypatch.setattr(br.config, "NETWORK_TYPES", ["bike"])
     loaded = br._load_state()
     assert loaded["processed_files"] == set()
     for p in (br.GRAPH_CACHE_PATH, br.RENDER_CACHE_PATH, br.ROUTE_CACHE_PATH):
@@ -61,7 +61,7 @@ def test_config_hash_stable(monkeypatch):
     h1 = br._config_hash()
     h2 = br._config_hash()
     assert h1 == h2
-    monkeypatch.setattr(br, "HEADING_PENALTY", 0.5)
+    monkeypatch.setattr(br.config, "HEADING_PENALTY", 0.5)
     assert br._config_hash() != h1
 
 
@@ -131,7 +131,7 @@ def test_unreadable_graph_cache_refetches(tmp_path, monkeypatch):
     br._write_cache_versions()
 
     sentinel = object()
-    monkeypatch.setattr(br, "_fetch_graph", lambda _bbox: sentinel)
+    monkeypatch.setattr(br.graph, "_fetch_graph", lambda _bbox: sentinel)
     state = {"graph_bbox": (-74.0, 40.7, -73.9, 40.8)}
 
     assert br._load_graph([], state) is sentinel

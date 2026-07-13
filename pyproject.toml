@@ -16,7 +16,8 @@ dependencies = [
 ]
 
 [tool.setuptools]
-py-modules = ["bike_routes", "gpx_to_csv"]
+packages = ["bike_routes"]
+py-modules = ["gpx_to_csv"]
 
 [dependency-groups]
 dev = ["ruff>=0.11", "ty>=0.0.1a7", "pytest>=8.0"]
@@ -50,6 +51,9 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
+"bike_routes/__init__.py" = [
+    "F401",     # compatibility re-exports of the package surface
+]
 "tests/*" = [
     "D",        # docstrings not required in tests
     "ANN",      # type annotations not required in tests

@@ -56,7 +56,7 @@ jobs:
       - name: Run pipeline
         env:
           SKIP_PNG_RENDER: '1'
-        run: python bike_routes.py
+        run: python -m bike_routes
 
       - name: Commit and push if changed
         run: |
