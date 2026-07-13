@@ -1855,21 +1855,27 @@ def _export_geojson(
     max_count = max((f["properties"]["ride_count"] for f in features), default=0)
 
     # Global ride index: one entry per processed ride, chronological by
-    # filename, as [date_index, "HH:MM"].  Features reference rides by
-    # index (repeated filename/date strings would dominate the payload),
-    # and a single ride's full route is reconstructable client-side.
+    # filename, as [date_index, "HH:MM", distance_km].  Features reference
+    # rides by index (repeated filename/date strings would dominate the
+    # payload), a single ride's full route is reconstructable client-side,
+    # and per-ride distances power the yearly recap.
     # ride_count is dropped from features since it equals len(rides).
     all_fnames = sorted(state["processed_files"])
     ride_id = {fname: i for i, fname in enumerate(all_fnames)}
     all_dates = sorted({fname[:10] for fname in all_fnames})
     date_idx = {d: i for i, d in enumerate(all_dates)}
-    rides_meta = [
-        [
-            date_idx[fname[:10]],
-            f"{fname[11:13]}:{fname[14:16]}" if len(fname) >= 16 else "",
-        ]
-        for fname in all_fnames
-    ]
+    ride_stats = state.get("ride_stats", {})
+    rides_meta = []
+    for fname in all_fnames:
+        rs = ride_stats.get(fname) or {}
+        dist = round(rs["dist_m"] / 1000, 1) if rs.get("dist_m") else None
+        rides_meta.append(
+            [
+                date_idx[fname[:10]],
+                f"{fname[11:13]}:{fname[14:16]}" if len(fname) >= 16 else "",
+                dist,
+            ]
+        )
     for f in features:
         props = f["properties"]
         props["rides"] = [ride_id[r] for r in props["rides"] if r in ride_id]

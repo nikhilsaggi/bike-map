@@ -106,6 +106,45 @@
   }
   #ride-view-exit:hover { color: #fff; }
 
+  #wrapped-btn {
+    display: none; width: 100%; margin-top: 10px; background: #1a1a1a;
+    color: #ccc; border: 1px solid #333; border-radius: 6px; padding: 5px 0;
+    font-size: 11px; cursor: pointer;
+  }
+  #wrapped-btn:hover { color: #fff; border-color: #555; }
+  #wrapped-overlay {
+    display: none; position: fixed; inset: 0; z-index: 2000;
+    background: rgba(0, 0, 0, 0.55); align-items: center; justify-content: center;
+  }
+  #wrapped-card {
+    position: relative; background: #121212; border: 1px solid #3a3a3a;
+    border-radius: 12px; padding: 22px 26px; width: 320px; color: #ccc;
+    box-shadow: 0 8px 40px rgba(0, 0, 0, 0.6);
+    font-family: inherit;
+  }
+  #wrapped-close {
+    position: absolute; top: 8px; right: 12px; background: none; border: none;
+    color: #888; font-size: 16px; cursor: pointer; line-height: 1;
+  }
+  #wrapped-close:hover { color: #fff; }
+  #wrapped-head {
+    display: flex; align-items: center; justify-content: center; gap: 14px;
+    margin-bottom: 14px;
+  }
+  #wrapped-head .year { font-size: 22px; font-weight: 700; color: #fff; }
+  #wrapped-head button {
+    background: none; border: none; color: #888; font-size: 18px; cursor: pointer;
+  }
+  #wrapped-head button:disabled { opacity: 0.25; cursor: default; }
+  #wrapped-head button:hover:not(:disabled) { color: #fff; }
+  .wrapped-row { display: flex; justify-content: space-between; margin: 8px 0; font-size: 13px; }
+  .wrapped-row .k { color: #888; }
+  .wrapped-row .v { color: #fff; font-weight: 600; text-align: right; }
+  .wrapped-row .delta { font-size: 11px; font-weight: 400; color: #7bd88f; }
+  .wrapped-row .delta.neg { color: #e07a7a; }
+  .wrapped-link { color: #9fd8ff; cursor: pointer; }
+  .wrapped-link:hover { text-decoration: underline; }
+
   .ride-popup .leaflet-popup-content-wrapper {
     background: rgba(13, 13, 13, 0.92); color: #fff; border-radius: 8px;
     border: 1px solid #444; backdrop-filter: blur(6px);
@@ -133,6 +172,19 @@
     <div><span class="label">Updated:</span> <strong id="stat-updated">—</strong></div>
     <div id="stat-years"></div>
     <div id="stat-riding"></div>
+    <button id="wrapped-btn">Year recap</button>
+  </div>
+</div>
+
+<div id="wrapped-overlay">
+  <div id="wrapped-card">
+    <button id="wrapped-close" title="Close (Esc)">&times;</button>
+    <div id="wrapped-head">
+      <button id="wrapped-prev" title="Previous year">&#8249;</button>
+      <span class="year" id="wrapped-year">—</span>
+      <button id="wrapped-next" title="Next year">&#8250;</button>
+    </div>
+    <div id="wrapped-body"></div>
   </div>
 </div>
 
@@ -221,9 +273,16 @@ try {
 // Each feature's properties.rides holds indices into the global rideList
 // ([dateIndex, "HH:MM"] per ride); [filterLo, filterHi] selects the active
 // date-index range.
+// Pipeline data is metric; convert to miles for display only.
+const KM_TO_MI = 0.621371;
+const mi = km => km * KM_TO_MI;
+
 let dateList = [];
 let rideList = [];
 let rideDateIdx = [];
+let newKmByYear = {};
+let wrappedYears = [];
+let wrappedIdx = 0;
 let filterLo = 0;
 let filterHi = Infinity;
 let sqrtMax = 1;
@@ -313,8 +372,104 @@ function exitRideView() {
   applyFilter();
 }
 
-document.addEventListener('keydown', e => { if (e.key === 'Escape') exitRideView(); });
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  const overlay = document.getElementById('wrapped-overlay');
+  if (overlay.style.display === 'flex') closeWrapped();
+  else exitRideView();
+});
 document.getElementById('ride-view-exit').addEventListener('click', exitRideView);
+
+// -- Yearly recap ------------------------------------------------------------
+
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
+                'August', 'September', 'October', 'November', 'December'];
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+function yearRecap(year) {
+  const prevYear = String(+year - 1);
+  const cur = { n: 0, km: 0, longest: null, months: {}, wd: new Array(7).fill(0),
+                hours: new Array(24).fill(0) };
+  let prevN = 0, prevKm = 0;
+  rideList.forEach((r, i) => {
+    const d = dateList[r[0]] || '';
+    if (d.startsWith(prevYear)) { prevN++; prevKm += r[2] || 0; return; }
+    if (!d.startsWith(year)) return;
+    cur.n++;
+    cur.km += r[2] || 0;
+    if (r[2] != null && (!cur.longest || r[2] > cur.longest.km)) {
+      cur.longest = { id: i, km: r[2], date: d };
+    }
+    const m = +d.slice(5, 7) - 1;
+    cur.months[m] = (cur.months[m] || 0) + 1;
+    cur.wd[new Date(d + 'T12:00:00').getDay()]++;
+    if (r[1]) cur.hours[+r[1].slice(0, 2)]++;
+  });
+  return { cur, prevN, prevKm };
+}
+
+function fmtDelta(cur, prev) {
+  if (!prev) return '';
+  const pct = Math.round(100 * (cur - prev) / prev);
+  const cls = pct < 0 ? 'delta neg' : 'delta';
+  return ` <span class="${cls}">${pct >= 0 ? '+' : ''}${pct}%</span>`;
+}
+
+function renderWrapped() {
+  const year = wrappedYears[wrappedIdx];
+  document.getElementById('wrapped-year').textContent = year;
+  document.getElementById('wrapped-prev').disabled = wrappedIdx === 0;
+  document.getElementById('wrapped-next').disabled = wrappedIdx === wrappedYears.length - 1;
+  const { cur, prevN, prevKm } = yearRecap(year);
+  const newKm = newKmByYear[year];
+  let bigM = null;
+  for (const m in cur.months) if (bigM === null || cur.months[m] > cur.months[bigM]) bigM = m;
+  const topWd = cur.wd.indexOf(Math.max(...cur.wd));
+  const topH = cur.hours.indexOf(Math.max(...cur.hours));
+  const hourLabel = h => h === 0 ? '12am' : h < 12 ? `${h}am` : h === 12 ? '12pm' : `${h - 12}pm`;
+  const rows = [
+    ['Rides', `${cur.n.toLocaleString()}${fmtDelta(cur.n, prevN)}`],
+    cur.km ? ['Distance', `${Math.round(mi(cur.km)).toLocaleString()} mi${fmtDelta(cur.km, prevKm)}`] : null,
+    newKm != null ? ['New streets', `${Math.round(mi(newKm))} mi`] : null,
+    cur.longest ? ['Longest ride',
+      `<span class="wrapped-link" onclick="wrappedViewRide(${cur.longest.id})"` +
+      ` title="Show this ride's route">${cur.longest.date} &middot; ${Math.round(mi(cur.longest.km))} mi</span>`] : null,
+    bigM !== null ? ['Biggest month', `${MONTHS[bigM]} &middot; ${cur.months[bigM]} rides`] : null,
+    cur.n ? ['Favorite time', `${WEEKDAYS[topWd]}s &middot; ${hourLabel(topH)}`] : null,
+  ].filter(Boolean);
+  document.getElementById('wrapped-body').innerHTML = rows
+    .map(([k, v]) => `<div class="wrapped-row"><span class="k">${k}</span><span class="v">${v}</span></div>`)
+    .join('');
+}
+
+function openWrapped() {
+  if (!wrappedYears.length) return;
+  exitRideView();
+  wrappedIdx = wrappedYears.length - 1;
+  renderWrapped();
+  document.getElementById('wrapped-overlay').style.display = 'flex';
+}
+
+function closeWrapped() {
+  document.getElementById('wrapped-overlay').style.display = 'none';
+}
+
+function wrappedViewRide(id) {
+  closeWrapped();
+  viewRide(id);
+}
+
+document.getElementById('wrapped-btn').addEventListener('click', openWrapped);
+document.getElementById('wrapped-close').addEventListener('click', closeWrapped);
+document.getElementById('wrapped-overlay').addEventListener('click', e => {
+  if (e.target === document.getElementById('wrapped-overlay')) closeWrapped();
+});
+document.getElementById('wrapped-prev').addEventListener('click', () => {
+  if (wrappedIdx > 0) { wrappedIdx--; renderWrapped(); }
+});
+document.getElementById('wrapped-next').addEventListener('click', () => {
+  if (wrappedIdx < wrappedYears.length - 1) { wrappedIdx++; renderWrapped(); }
+});
 
 // renormalize=true rescales colors to the filtered max and restyles every
 // layer; renormalize=false keeps the current scale and only restyles layers
@@ -470,15 +625,17 @@ fetch('rides.geojson.gz')
     dateList = data.properties?.dates ?? [];
     rideList = data.properties?.rides ?? [];
     rideDateIdx = rideList.map(r => r[0]);
+    newKmByYear = data.properties?.coverage?.new_km_by_year ?? {};
+    wrappedYears = Object.keys(data.properties?.rides_per_year ?? {}).sort();
+    if (wrappedYears.length && rideList.length) {
+      document.getElementById('wrapped-btn').style.display = 'block';
+    }
 
     document.getElementById('stat-rides').textContent = totalRides.toLocaleString();
     document.getElementById('stat-edges').textContent = totalEdges.toLocaleString();
     document.getElementById('stat-updated').textContent = updated;
     document.getElementById('legend-max').textContent = maxCount;
 
-    // Pipeline data is metric; convert to miles for display only.
-    const KM_TO_MI = 0.621371;
-    const mi = km => km * KM_TO_MI;
     const totalKm = data.properties?.total_km;
     if (totalKm != null) {
       document.getElementById('stat-km').textContent = Math.round(mi(totalKm)).toLocaleString();

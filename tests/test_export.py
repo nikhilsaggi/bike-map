@@ -25,6 +25,7 @@ def test_export_geojson(tmp_path, monkeypatch):
         "processed_files": {R1, R2},
         "edge_counts": {(1, 2): 2, (3, 4): 1},
         "edge_rides": {(1, 2): [R1, R2], (3, 4): [R1]},
+        "ride_stats": {R1: {"dist_m": 12345.6, "duration_s": 3600, "start": None}},
     }
 
     br._export_geojson(edge_geom, state)
@@ -39,8 +40,9 @@ def test_export_geojson(tmp_path, monkeypatch):
     assert props["total_edges"] == 2
     assert props["max_count"] == 2
     assert props["dates"] == ["2024-01-05", "2025-06-01"]
-    # Global ride index: [date_index, "HH:MM"] per ride, chronological
-    assert props["rides"] == [[0, "08:00"], [1, "12:00"]]
+    # Global ride index: [date_index, "HH:MM", dist_km] per ride,
+    # chronological; distance is None when ride_stats are absent
+    assert props["rides"] == [[0, "08:00", 12.3], [1, "12:00", None]]
     assert props["rides_per_year"] == {"2024": 1, "2025": 1}
     assert abs(props["total_km"] - 0.6) < 0.05
     assert props["updated"] >= "2026-01-01"
