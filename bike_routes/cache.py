@@ -18,6 +18,7 @@ def _processing_config() -> dict[str, Any]:
     return {
         "snap_tolerance_m": config.SNAP_TOLERANCE_M,
         "max_routing_distance_m": config.MAX_ROUTING_DISTANCE_M,
+        "max_route_detour": config.MAX_ROUTE_DETOUR,
         "max_gps_gap_m": config.MAX_GPS_GAP_M,
         "snap_method": "edge_heading",
         "heading_penalty": config.HEADING_PENALTY,

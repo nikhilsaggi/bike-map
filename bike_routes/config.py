@@ -14,6 +14,7 @@ RESAMPLE_SPACING_M = 20
 NETWORK_TYPES = ["bike", "drive", "walk"]
 SNAP_TOLERANCE_M = 80
 MAX_ROUTING_DISTANCE_M = 2500
+MAX_ROUTE_DETOUR = 3.0  # reject routes longer than this × straight-line distance
 MAX_GPS_GAP_M = 300  # split ride into segments at raw GPS gaps larger than this
 HEADING_PENALTY = 0.15  # metres of snap penalty per degree of edge-heading mismatch
 LOOP_WINDOW = 6  # remove short loops (A->...->A) within this many nodes
@@ -25,7 +26,7 @@ HW_PENALTY = {
     "cycleway": -5,
     "path": -2,
     "track": -1,
-    "footway": 8,
+    "footway": 25,
     "steps": 40,
     "pedestrian": 5,
     "service": 3,

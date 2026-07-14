@@ -21,12 +21,18 @@ if TYPE_CHECKING:
 
 
 def _path_to_edges(
-    G: nx.MultiDiGraph, path_nodes: list[int], max_dist: float
+    G: nx.MultiDiGraph,
+    path_nodes: list[int],
+    max_dist: float,
+    straight_dist: float = 0.0,
 ) -> list[tuple[int, int]] | None:
     """Convert path nodes to canonical edge pairs in a single pass.
 
-    Returns edge list or None if cumulative length exceeds max_dist.
+    Returns edge list or None if cumulative length exceeds max_dist or
+    the detour ratio (route length / straight-line distance) exceeds
+    MAX_ROUTE_DETOUR.
     """
+    max_by_detour = straight_dist * config.MAX_ROUTE_DETOUR if straight_dist > 0 else float("inf")
     length = 0.0
     result = []
     for a, b in zip(path_nodes[:-1], path_nodes[1:]):
@@ -34,7 +40,7 @@ def _path_to_edges(
         edge_data = G[canon[0]][canon[1]] if G.has_edge(canon[0], canon[1]) else G[a][b]
         key = min(edge_data, key=lambda k: edge_data[k].get("length", 0))
         length += edge_data[key].get("length", 0)
-        if length > max_dist:
+        if length > max_dist or length > max_by_detour:
             return None
         result.append(canon)
     return result
@@ -285,18 +291,79 @@ def _map_match_ride(
         for idx, path in zip(pending_idx, paths):
             u, v = deduped[idx], deduped[idx + 1]
             canon = (min(u, v), max(u, v))
-            result = None if path is None else _path_to_edges(G, path, config.MAX_ROUTING_DISTANCE_M)
+            straight = float(
+                haversine_m(G.nodes[u]["y"], G.nodes[u]["x"], G.nodes[v]["y"], G.nodes[v]["x"])
+            )
+            result = (
+                None
+                if path is None
+                else _path_to_edges(G, path, config.MAX_ROUTING_DISTANCE_M, straight)
+            )
             route_cache[canon] = result
             pairs[idx] = result
 
-    # Phase 3: assemble
+    # Phase 3: bridge across failed segments
+    #
+    # When routing between consecutive nodes A→B fails (no path or
+    # excessive detour), the node sequence may contain a "bad" node
+    # that's on a disconnected subnetwork (e.g. a footway parallel to
+    # a road).  Instead of leaving a gap, try to connect the last good
+    # node directly to the node after the failed one.
+    def _try_route(u: int, v: int) -> list[tuple[int, int]] | None:
+        canon = (min(u, v), max(u, v))
+        if G.has_edge(u, v):
+            return [(canon[0], canon[1])]
+        if canon in route_cache:
+            return route_cache[canon]
+        straight = float(
+            haversine_m(G.nodes[u]["y"], G.nodes[u]["x"], G.nodes[v]["y"], G.nodes[v]["x"])
+        )
+        if straight > config.MAX_ROUTING_DISTANCE_M:
+            return None
+        try:
+            path = ox.shortest_path(G, u, v, weight="length", cpus=1)
+        except Exception:
+            path = None
+        result = (
+            None if path is None else _path_to_edges(G, path, config.MAX_ROUTING_DISTANCE_M, straight)
+        )
+        route_cache[canon] = result
+        return result
+
     edges: list[tuple[int, int]] = []
     skipped = 0
-    for r in pairs:
-        if r is None:
-            skipped += 1
-        elif r is not _PENDING:
+    last_good = deduped[0]
+    i = 0
+    while i < len(pairs):
+        src = deduped[i]
+        dst = deduped[i + 1]
+        r = pairs[i]
+        if r is not None and r is not _PENDING and last_good == src:
             edges.extend(r)
+            last_good = dst
+            i += 1
+            continue
+        # Either the pre-computed route failed, or we haven't reached
+        # deduped[i] (last_good != src).  Try to bridge from last_good
+        # to subsequent nodes.
+        bridged = False
+        for j in range(i, min(i + 4, len(pairs))):
+            target = deduped[j + 1]
+            if target == last_good:
+                i = j + 1
+                bridged = True
+                break
+            bridge = _try_route(last_good, target)
+            if bridge is not None:
+                edges.extend(bridge)
+                last_good = target
+                i = j + 1
+                bridged = True
+                break
+        if not bridged:
+            skipped += 1
+            i += 1
+
     return edges, skipped
 _worker_graph_ctx: tuple[Any, ...] | None = None
 _worker_route_cache: dict[tuple[int, int], list[tuple[int, int]] | None] | None = None
