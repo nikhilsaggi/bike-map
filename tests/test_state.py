@@ -37,7 +37,7 @@ def test_config_change_invalidates_state(tmp_path, monkeypatch):
     # Route cache must be discarded alongside the state
     (tmp_path / br.ROUTE_CACHE_PATH.name).write_bytes(b"stale")
 
-    monkeypatch.setattr(br.config, "SNAP_TOLERANCE_M", 999)
+    monkeypatch.setattr(br.config, "HMM_MAX_DIST", 999)
     loaded = br._load_state()
     assert loaded["processed_files"] == set()
     assert not (tmp_path / br.ROUTE_CACHE_PATH.name).exists()
@@ -61,7 +61,10 @@ def test_config_hash_stable(monkeypatch):
     h1 = br._config_hash()
     h2 = br._config_hash()
     assert h1 == h2
-    monkeypatch.setattr(br.config, "HEADING_PENALTY", 0.5)
+    monkeypatch.setattr(br.config, "HMM_OBS_NOISE", 99)
+    assert br._config_hash() != h1
+    # Switching matchers also invalidates
+    monkeypatch.setattr(br.config, "MATCHER", "heuristic")
     assert br._config_hash() != h1
 
 

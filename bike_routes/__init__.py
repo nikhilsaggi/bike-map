@@ -16,7 +16,7 @@ Dependencies:
 
 from __future__ import annotations
 
-from . import cache, cli, config, export, gps, graph, matching, merge, render, ride_stats
+from . import cache, cli, config, export, gps, graph, hmm, matching, merge, render, ride_stats
 from .cache import (
     _config_hash,
     _empty_state,
@@ -101,6 +101,12 @@ from .graph import (
     _fetch_graph,
     _load_graph,
     _remove_subsumed_edges,
+)
+from .hmm import (
+    _build_inmem_map,
+    _build_matcher_context,
+    _map_match_ride_hmm,
+    _match_one,
 )
 from .matching import (
     _build_snap_tree,

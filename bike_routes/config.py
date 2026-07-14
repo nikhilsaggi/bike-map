@@ -14,7 +14,7 @@ RESAMPLE_SPACING_M = 20
 NETWORK_TYPES = ["bike", "drive", "walk"]
 SNAP_TOLERANCE_M = 80
 MAX_ROUTING_DISTANCE_M = 2500
-MAX_ROUTE_DETOUR = 3.0  # reject routes longer than this × straight-line distance
+MAX_ROUTE_DETOUR = 3.0  # reject routes longer than this multiple of straight-line distance
 MAX_GPS_GAP_M = 300  # split ride into segments at raw GPS gaps larger than this
 HEADING_PENALTY = 0.15  # metres of snap penalty per degree of edge-heading mismatch
 LOOP_WINDOW = 6  # remove short loops (A->...->A) within this many nodes
@@ -22,6 +22,18 @@ LOOP_MAX_DETOUR_M = 50  # only remove loops where detour nodes are within this d
 DENSIFY_M = 150  # add virtual snap points on edges longer than this (metres)
 MATCH_PARALLEL_MIN_RIDES = 50  # match on worker processes when this many new rides
 MATCH_CHUNK_SIZE = 20  # rides per parallel work unit
+
+# Matcher selection: "hmm" (leuvenmapmatching Viterbi; issue #11) or the
+# original "heuristic" edge-snapping matcher (kept for comparison/fallback).
+MATCHER = "hmm"
+HMM_MAX_DIST = 80  # max GPS-to-edge distance considered (metres)
+HMM_OBS_NOISE = 15  # expected GPS noise for emitting states (metres)
+HMM_OBS_NOISE_NE = 30  # noise for non-emitting (interpolated) states
+HMM_MIN_PROB_NORM = 0.001  # prune lattice states below this normalized prob
+HMM_LATTICE_WIDTH = 8  # Viterbi beam width on the first attempt
+HMM_LATTICE_WIDTH_RETRY = 24  # widened beam when a match stops early
+HMM_FAIL_SKIP_POINTS = 5  # points (~100m) skipped past a dead-end before rematching
+
 HW_PENALTY = {
     "cycleway": -5,
     "path": -2,
