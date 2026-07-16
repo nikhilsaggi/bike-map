@@ -178,6 +178,8 @@ python weather_correlation.py
 The pipeline creates several cache files (auto-managed, gitignored):
 
 - `osm_graph_cache.pkl` — merged OSM street graph (~260 MB)
+- `hmm_map_cache.pkl` — HMM matcher's map index (nodes + adjacency); lets
+  runs and worker processes skip loading the full graph
 - `state.pkl` — processed filenames, edge counts, config snapshot
 - `render_cache.pkl` — pre-extracted edge geometries + highway classes
 - `route_cache.pkl` — shortest-path results between node pairs

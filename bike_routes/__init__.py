@@ -7,6 +7,7 @@ After that: processes only new rides added to the rides/ folder (~1-2 min).
 
 Cache files (auto-managed, delete any to force rebuild):
   osm_graph_cache.pkl  -- OSM street graph (bike + drive + walk networks)
+  hmm_map_cache.pkl    -- HMM matcher's map index (nodes + adjacency)
   state.pkl            -- processed filenames, edge counts, config snapshot
   render_cache.pkl     -- pre-extracted edge geometries for fast rendering
 
@@ -16,7 +17,20 @@ Dependencies:
 
 from __future__ import annotations
 
-from . import cache, cli, config, export, gps, graph, hmm, matching, merge, render, ride_stats, weather
+from . import (
+    cache,
+    cli,
+    config,
+    export,
+    gps,
+    graph,
+    hmm,
+    matching,
+    merge,
+    render,
+    ride_stats,
+    weather,
+)
 from .cache import (
     _config_hash,
     _empty_state,
@@ -42,6 +56,7 @@ from .config import (
     GEOJSON_OUTPUT_PATH,
     GRAPH_CACHE_PATH,
     HEADING_PENALTY,
+    HMM_MAP_CACHE_PATH,
     HW_PENALTY,
     INFRA_CLASS,
     INFRA_DEFAULT,
@@ -105,8 +120,11 @@ from .graph import (
 from .hmm import (
     _build_inmem_map,
     _build_matcher_context,
+    _inmem_map_from_graph,
+    _load_cached_inmem_map,
     _map_match_ride_hmm,
     _match_one,
+    _save_inmem_map_cache,
 )
 from .matching import (
     _build_snap_tree,

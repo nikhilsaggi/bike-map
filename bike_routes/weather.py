@@ -79,7 +79,6 @@ def _get_weather(start: str, end: str) -> dict[str, dict[str, float]] | None:
     try:
         weather = _fetch_weather(start, end)
         _save_weather_cache(weather)
-        return weather
     except Exception as exc:
         print(f"  Weather API unavailable ({exc}); trying cache...")
         cached = _load_cached_weather()
@@ -88,6 +87,8 @@ def _get_weather(start: str, end: str) -> dict[str, dict[str, float]] | None:
         else:
             print("  No weather cache available; skipping weather stats")
         return cached
+    else:
+        return weather
 
 
 def _weather_summary(

@@ -20,8 +20,8 @@ HEADING_PENALTY = 0.15  # metres of snap penalty per degree of edge-heading mism
 LOOP_WINDOW = 6  # remove short loops (A->...->A) within this many nodes
 LOOP_MAX_DETOUR_M = 50  # only remove loops where detour nodes are within this distance of anchor
 DENSIFY_M = 150  # add virtual snap points on edges longer than this (metres)
-MATCH_PARALLEL_MIN_RIDES = 50  # match on worker processes when this many new rides
-MATCH_CHUNK_SIZE = 20  # rides per parallel work unit
+MATCH_PARALLEL_MIN_RIDES = 20  # match on worker processes when this many new rides
+MATCH_CHUNK_SIZE = 10  # rides per parallel work unit
 
 # Matcher selection: "hmm" (leuvenmapmatching Viterbi; issue #11) or the
 # original "heuristic" edge-snapping matcher (kept for comparison/fallback).
@@ -76,6 +76,7 @@ OUTPUT_PATH_WEIGHTED = "bike_routes_frequency.png"
 GEOJSON_OUTPUT_PATH = Path("docs/rides.geojson.gz")
 SKIP_PNG_RENDER = os.environ.get("SKIP_PNG_RENDER") == "1"
 GRAPH_CACHE_PATH = Path("osm_graph_cache.pkl")
+HMM_MAP_CACHE_PATH = Path("hmm_map_cache.pkl")
 STATE_CACHE_PATH = Path("state.pkl")
 RENDER_CACHE_PATH = Path("render_cache.pkl")
 ROUTE_CACHE_PATH = Path("route_cache.pkl")

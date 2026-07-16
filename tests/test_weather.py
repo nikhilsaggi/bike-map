@@ -6,14 +6,13 @@ import gzip
 import json
 
 import weather_correlation as wc
-
 from bike_routes.weather import (
+    RAIN_BANDS,
+    TEMP_BANDS,
     _band,
     _load_cached_weather,
     _save_weather_cache,
     _weather_summary,
-    RAIN_BANDS,
-    TEMP_BANDS,
 )
 
 
@@ -102,7 +101,7 @@ def test_weather_summary_with_mock_api(monkeypatch):
 
     monkeypatch.setattr(
         "bike_routes.weather._get_weather",
-        lambda start, end: fake_weather,
+        lambda _start, _end: fake_weather,
     )
 
     result = _weather_summary(ride_stats)

@@ -368,10 +368,23 @@ def _map_match_ride(
 _worker_graph_ctx: tuple[Any, ...] | None = None
 _worker_route_cache: dict[tuple[int, int], list[tuple[int, int]] | None] | None = None
 def _match_worker_init() -> None:
-    """Load the graph and build the matcher context once per worker process."""
+    """Build the matcher context once per worker process.
+
+    HMM workers load the prebuilt map-index cache directly -- the OSM graph
+    pickle (slow to load, ~2 GB in memory) is only needed by the heuristic
+    matcher's routing fallback, or to rebuild a missing map cache.
+    """
+    global _worker_graph_ctx, _worker_route_cache  # noqa: PLW0603 -- pool initializer pattern
+    if config.MATCHER == "hmm":
+        from .hmm import _load_cached_inmem_map  # noqa: PLC0415 -- avoid circular import
+
+        mmap = _load_cached_inmem_map()
+        if mmap is not None:
+            _worker_graph_ctx = (None, ("hmm", mmap))
+            _worker_route_cache = {}
+            return
     from .hmm import _build_matcher_context  # noqa: PLC0415 -- avoid circular import
 
-    global _worker_graph_ctx, _worker_route_cache  # noqa: PLW0603 -- pool initializer pattern
     with config.GRAPH_CACHE_PATH.open("rb") as f:
         G = pickle.load(f)
     _worker_graph_ctx = (G, _build_matcher_context(G))
@@ -403,15 +416,21 @@ def _match_chunk(
 def _match_worker_count(n_rides: int) -> int:
     """Worker processes to use for map matching.
 
-    Overridable via the MATCH_WORKERS env var (1 = sequential).  Parallel
-    matching only pays off when many rides amortize each worker's graph
-    load (tens of seconds and ~1-2 GB RAM per worker), so small batches
-    run sequentially and workers are capped at 4.
+    Overridable via the MATCH_WORKERS env var (1 = sequential).  HMM workers
+    start from the map-index cache (a few seconds, a few hundred MB each), so
+    they scale to most of the machine; heuristic workers each load the full
+    OSM graph (tens of seconds, ~1-2 GB RAM), so they stay capped at 4.
     """
     env = os.environ.get("MATCH_WORKERS")
     if env is not None:
         return max(1, int(env))
-    if n_rides < config.MATCH_PARALLEL_MIN_RIDES or not config.GRAPH_CACHE_PATH.exists():
+    if n_rides < config.MATCH_PARALLEL_MIN_RIDES:
+        return 1
+    if config.MATCHER == "hmm":
+        if not (config.HMM_MAP_CACHE_PATH.exists() or config.GRAPH_CACHE_PATH.exists()):
+            return 1
+        return min(6, max(1, (os.cpu_count() or 2) - 2))
+    if not config.GRAPH_CACHE_PATH.exists():
         return 1
     return min(4, os.cpu_count() or 1)
 def _match_rides_parallel(
@@ -423,17 +442,34 @@ def _match_rides_parallel(
 
     Route-cache entries are merged into `route_cache` as chunks complete.
     """
-    chunks = [
-        new_rides[i : i + config.MATCH_CHUNK_SIZE]
-        for i in range(0, len(new_rides), config.MATCH_CHUNK_SIZE)
-    ]
+    # Longest rides first, striped across chunks so each chunk gets a
+    # similar mix of sizes: a couple of giant rides landing in the same
+    # chunk (or in the last one) would otherwise set the tail latency.
+    # Results are applied in filename order later, so order here is free.
+    ordered = sorted(new_rides, key=lambda r: len(r[1]), reverse=True)
+    n_chunks = max(1, -(-len(ordered) // config.MATCH_CHUNK_SIZE))
+    chunks = [ordered[i::n_chunks] for i in range(n_chunks)]
     results: list[tuple[str, list[tuple[int, int]], int]] = []
-    with ProcessPoolExecutor(max_workers=n_workers, initializer=_match_worker_init) as pool:
-        for chunk_results, new_entries in pool.map(_match_chunk, chunks):
-            route_cache.update(new_entries)
-            results.extend(chunk_results)
-            print(
-                f"  {len(results)}/{len(new_rides)} rides "
-                f"(route cache: {len(route_cache):,} entries)"
-            )
+    # Workers run with PYTHONOPTIMIZE so leuvenmapmatching skips its
+    # `if __debug__:` logging blocks, which eagerly format lattice-state
+    # strings (~15% of match time when left enabled).  The recompile under
+    # -O resurfaces the library's SyntaxWarnings, so silence those.
+    had_opt = "PYTHONOPTIMIZE" in os.environ
+    had_warn = "PYTHONWARNINGS" in os.environ
+    os.environ.setdefault("PYTHONOPTIMIZE", "1")
+    os.environ.setdefault("PYTHONWARNINGS", "ignore::SyntaxWarning")
+    try:
+        with ProcessPoolExecutor(max_workers=n_workers, initializer=_match_worker_init) as pool:
+            for chunk_results, new_entries in pool.map(_match_chunk, chunks):
+                route_cache.update(new_entries)
+                results.extend(chunk_results)
+                print(
+                    f"  {len(results)}/{len(new_rides)} rides "
+                    f"(route cache: {len(route_cache):,} entries)"
+                )
+    finally:
+        if not had_opt:
+            os.environ.pop("PYTHONOPTIMIZE", None)
+        if not had_warn:
+            os.environ.pop("PYTHONWARNINGS", None)
     return results

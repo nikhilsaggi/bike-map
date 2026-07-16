@@ -128,8 +128,9 @@ def main(argv: list[str] | None = None) -> None:
     # 5. Load or fetch graph
     G = _load_graph(new_rides, state)
 
-    # 6. Build the matcher context (HMM map index or heuristic snap tree)
-    ctx = _build_matcher_context(G)
+    # 6. Build the matcher context (HMM map index or heuristic snap tree).
+    # use_cache also refreshes the on-disk map index for worker processes.
+    ctx = _build_matcher_context(G, use_cache=True)
 
     # 7. Map-match new rides
     print(f"Map-matching ({config.MATCHER})...")
