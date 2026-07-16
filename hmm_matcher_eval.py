@@ -41,8 +41,9 @@ def _gps_len(coords: np.ndarray) -> float:
 def main() -> None:
     """Run the benchmark and print per-ride and summary stats."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--rides", type=int, default=12, metavar="N",
-                        help="number of ride files to sample")
+    parser.add_argument(
+        "--rides", type=int, default=12, metavar="N", help="number of ride files to sample"
+    )
     args = parser.parse_args()
 
     print("Loading graph...", flush=True)
@@ -79,8 +80,11 @@ def main() -> None:
         m = path_len(edges) if edges else 0.0
         if g and m:
             cur_ratios.append(m / g)
-        print(f"  CUR {fname[:16]} gps={g / 1000:.1f}km matched={m / 1000:.1f}km "
-              f"ratio={m / g if g else 0:.3f} skip={skipped}", flush=True)
+        print(
+            f"  CUR {fname[:16]} gps={g / 1000:.1f}km matched={m / 1000:.1f}km "
+            f"ratio={m / g if g else 0:.3f} skip={skipped}",
+            flush=True,
+        )
 
     # -- leuvenmapmatching HMM --
     print("Building InMemMap (bbox around sample rides)...", flush=True)
@@ -106,14 +110,20 @@ def main() -> None:
     for fname, coords in rides:
         track = [(float(la), float(lo)) for la, lo in coords]
         matcher = DistanceMatcher(
-            mmap, max_dist=80, max_dist_init=80, obs_noise=15, obs_noise_ne=30,
-            min_prob_norm=0.001, non_emitting_states=True, max_lattice_width=8,
+            mmap,
+            max_dist=80,
+            max_dist_init=80,
+            obs_noise=15,
+            obs_noise_ne=30,
+            min_prob_norm=0.001,
+            non_emitting_states=True,
+            max_lattice_width=8,
         )
         t0 = time.time()
         try:
             states, last_idx = matcher.match(track)
             edges = []
-            for (u, v) in states:
+            for u, v in states:
                 if u != v and (not edges or edges[-1] != (u, v)):
                     edges.append((u, v))
             m = path_len(edges)
@@ -127,16 +137,23 @@ def main() -> None:
             n_complete += 1
             if g and m:
                 hmm_ratios.append(m / g)
-        print(f"  HMM {fname[:16]} gps={g / 1000:.1f}km matched={m / 1000:.1f}km "
-              f"ratio={m / g if g else 0:.3f} complete={done} "
-              f"({last_idx + 1}/{len(track)})", flush=True)
+        print(
+            f"  HMM {fname[:16]} gps={g / 1000:.1f}km matched={m / 1000:.1f}km "
+            f"ratio={m / g if g else 0:.3f} complete={done} "
+            f"({last_idx + 1}/{len(track)})",
+            flush=True,
+        )
 
     print("\n=== SUMMARY ===")
-    print(f"heuristic: {len(cur_ratios)}/{len(rides)} matched, "
-          f"median ratio {sorted(cur_ratios)[len(cur_ratios) // 2]:.3f}, {cur_time:.1f}s")
+    print(
+        f"heuristic: {len(cur_ratios)}/{len(rides)} matched, "
+        f"median ratio {sorted(cur_ratios)[len(cur_ratios) // 2]:.3f}, {cur_time:.1f}s"
+    )
     if hmm_ratios:
-        print(f"HMM:       {n_complete}/{len(rides)} complete, "
-              f"median ratio {sorted(hmm_ratios)[len(hmm_ratios) // 2]:.3f}, {hmm_time:.1f}s")
+        print(
+            f"HMM:       {n_complete}/{len(rides)} complete, "
+            f"median ratio {sorted(hmm_ratios)[len(hmm_ratios) // 2]:.3f}, {hmm_time:.1f}s"
+        )
 
 
 if __name__ == "__main__":

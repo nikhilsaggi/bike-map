@@ -72,9 +72,7 @@ def test_version_mismatch_invalidates_graph_caches(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     for p in (br.GRAPH_CACHE_PATH, br.RENDER_CACHE_PATH, br.ROUTE_CACHE_PATH):
         (tmp_path / p.name).write_bytes(b"stale")
-    (tmp_path / br.CACHE_VERSIONS_PATH.name).write_text(
-        '{"osmnx": "0.0", "networkx": "0.0"}'
-    )
+    (tmp_path / br.CACHE_VERSIONS_PATH.name).write_text('{"osmnx": "0.0", "networkx": "0.0"}')
 
     assert br._graph_cache_valid() is False
     for p in (br.GRAPH_CACHE_PATH, br.RENDER_CACHE_PATH, br.ROUTE_CACHE_PATH):

@@ -25,6 +25,8 @@ def _compute_bbox(all_pts: np.ndarray) -> tuple[float, float, float, float]:
 
     buf = 0.005
     return (lon_min - buf, lat_min - buf, lon_max + buf, lat_max + buf)
+
+
 def _remove_subsumed_edges(G: nx.MultiDiGraph) -> int:
     """Remove edges whose geometry passes through intermediate graph nodes.
 
@@ -64,6 +66,8 @@ def _remove_subsumed_edges(G: nx.MultiDiGraph) -> int:
 
     G.remove_edges_from(to_remove)
     return len(to_remove)
+
+
 def _fetch_graph(bbox: tuple[float, float, float, float]) -> nx.MultiDiGraph:
     """Fetch OSM networks for bbox, merge, and cache."""
     graphs = []
@@ -85,6 +89,8 @@ def _fetch_graph(bbox: tuple[float, float, float, float]) -> nx.MultiDiGraph:
     _write_cache_versions()
     print(f"  Cached to {config.GRAPH_CACHE_PATH}")
     return G
+
+
 def _load_graph(new_rides: list[tuple[str, np.ndarray]], state: dict[str, Any]) -> nx.MultiDiGraph:
     """Load graph from cache or fetch from OSM."""
     if config.GRAPH_CACHE_PATH.exists() and _graph_cache_valid():

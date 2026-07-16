@@ -12,8 +12,8 @@ interactive Leaflet map (`docs/`, served via GitHub Pages) plus static PNGs.
 - Lint: `ruff check .` (CI enforces this; config is `select = ["ALL"]` with a
   curated ignore list in pyproject.toml -- keep new code clean rather than
   adding ignores)
-- `ruff format` is NOT adopted (would reformat many files); match the
-  surrounding style by hand.
+- Format: `ruff format .` -- run after every change; CI fails on
+  unformatted code (`ruff format --check .`).
 - `ty check` runs but is not enforced; ~28 known diagnostics, mostly
   Optional-narrowing in tests.
 

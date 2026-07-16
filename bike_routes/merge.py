@@ -30,9 +30,13 @@ def _sample_line(coords: list) -> list[tuple[float, float, float]]:
         carry = seg - (d - config.MERGE_SAMPLE_M)
     out.append((pts[-1][0], pts[-1][1], head(*pts[-2], *pts[-1])))
     return out
+
+
 def _heading_diff(a: float, b: float) -> float:
     d = abs(a - b) % 180.0
     return min(d, 180.0 - d)
+
+
 def _sample_hits(
     samples: list[list[tuple[float, float, float]]],
 ) -> list[list[set[int]]]:
@@ -44,18 +48,18 @@ def _sample_hits(
     cell = config.MERGE_TOL_M
     grid: dict[tuple[int, int], list[tuple[int, float, float, float]]] = {}
     for i, pts in enumerate(samples):
-        for (x, y, h) in pts:
+        for x, y, h in pts:
             grid.setdefault((int(x // cell), int(y // cell)), []).append((i, x, y, h))
     tol_sq = config.MERGE_TOL_M * config.MERGE_TOL_M
     hits: list[list[set[int]]] = []
     for i, pts in enumerate(samples):
         rows = []
-        for (x, y, h) in pts:
+        for x, y, h in pts:
             gx, gy = int(x // cell), int(y // cell)
             hit: set[int] = set()
             for dx in (-1, 0, 1):
                 for dy in (-1, 0, 1):
-                    for (j, jx, jy, jh) in grid.get((gx + dx, gy + dy), ()):
+                    for j, jx, jy, jh in grid.get((gx + dx, gy + dy), ()):
                         if j == i or j in hit:
                             continue
                         ddx, ddy = jx - x, jy - y
@@ -67,6 +71,8 @@ def _sample_hits(
             rows.append(hit)
         hits.append(rows)
     return hits
+
+
 def _dense_point_grid(
     features: list[dict[str, Any]], cell: float, step: float = 4.0
 ) -> dict[tuple[int, int], list[tuple[int, float, float, float, float]]]:
@@ -93,12 +99,16 @@ def _dense_point_grid(
             (i, x, y, coords[-1][0], coords[-1][1])
         )
     return grid
+
+
 def _geom_len_m(coords: list[tuple[float, float]]) -> float:
     """Length in metres of a (lon, lat) coordinate sequence."""
     return sum(
         math.hypot((lon1 - lon0) * config.M_PER_LON, (lat1 - lat0) * config.M_PER_LAT)
         for (lon0, lat0), (lon1, lat1) in zip(coords, coords[1:])
     )
+
+
 def _drop_redundant_rings(features: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Drop small closed-ring features whose rides all appear nearby.
 
@@ -110,6 +120,7 @@ def _drop_redundant_rings(features: list[dict[str, Any]]) -> list[dict[str, Any]
     rides appears on a non-ring feature within config.RING_NEAR_M, so no ride
     disappears from the map.
     """
+
     def is_ring(f: dict[str, Any]) -> bool:
         c = f["geometry"]["coordinates"]
         gap = math.hypot(
@@ -117,7 +128,10 @@ def _drop_redundant_rings(features: list[dict[str, Any]]) -> list[dict[str, Any]
         )
         # Min length keeps short straight corridor pieces (whose endpoints
         # are trivially close together) from being mistaken for rings.
-        return gap <= config.RING_MAX_GAP_M and config.RING_MIN_LEN_M <= _geom_len_m(c) <= config.RING_MAX_LEN_M
+        return (
+            gap <= config.RING_MAX_GAP_M
+            and config.RING_MIN_LEN_M <= _geom_len_m(c) <= config.RING_MAX_LEN_M
+        )
 
     ring_idx = {i for i, f in enumerate(features) if is_ring(f)}
     if not ring_idx:
@@ -135,11 +149,11 @@ def _drop_redundant_rings(features: list[dict[str, Any]]) -> list[dict[str, Any]
             continue
         rides = f["properties"]["_rides"]
         covered: set[str] = set()
-        for (x, y, _h) in _sample_line(f["geometry"]["coordinates"]):
+        for x, y, _h in _sample_line(f["geometry"]["coordinates"]):
             gx, gy = int(x // config.RING_NEAR_M), int(y // config.RING_NEAR_M)
             for dx in (-1, 0, 1):
                 for dy in (-1, 0, 1):
-                    for (j, jx, jy, _lon, _lat) in grid.get((gx + dx, gy + dy), ()):
+                    for j, jx, jy, _lon, _lat in grid.get((gx + dx, gy + dy), ()):
                         if (jx - x) ** 2 + (jy - y) ** 2 <= near_sq:
                             covered |= others[j]["properties"]["_rides"]
             if rides <= covered:
@@ -150,6 +164,8 @@ def _drop_redundant_rings(features: list[dict[str, Any]]) -> list[dict[str, Any]
             out.append(f)
     print(f"  Dropped {dropped:,} redundant ring features")
     return out
+
+
 def _harmonize_representatives(features: list[dict[str, Any]]) -> None:
     """Swap cluster representatives to maximise endpoint continuity (in place).
 
@@ -210,6 +226,8 @@ def _harmonize_representatives(features: list[dict[str, Any]]) -> None:
         if not changed:
             break
     print(f"  Harmonized {n_swapped:,} cluster representatives for continuity")
+
+
 def _average_parallel_geometry(features: list[dict[str, Any]]) -> None:
     """Replace representatives with their cluster's lateral centerline (in place).
 
@@ -244,7 +262,7 @@ def _average_parallel_geometry(features: list[dict[str, Any]]) -> None:
             for samples in other_samples:
                 best = None
                 best_d = tol_sq
-                for (sx, sy, sh) in samples:
+                for sx, sy, sh in samples:
                     if _heading_diff(hdg, sh) > config.MERGE_HEADING_DEG:
                         continue
                     d = (sx - x) ** 2 + (sy - y) ** 2
@@ -264,6 +282,8 @@ def _average_parallel_geometry(features: list[dict[str, Any]]) -> None:
             f["geometry"]["coordinates"] = new_coords
             n_avg += 1
     print(f"  Averaged {n_avg:,} representatives onto cluster centerlines")
+
+
 def _snap_endpoints(features: list[dict[str, Any]]) -> None:
     """Reconnect merged features at junctions (in place).
 
@@ -293,7 +313,7 @@ def _snap_endpoints(features: list[dict[str, Any]]) -> None:
             best_d = snap_sq
             for dx in (-1, 0, 1):
                 for dy in (-1, 0, 1):
-                    for (j, jx, jy, jlon, jlat) in grid.get((gx + dx, gy + dy), ()):
+                    for j, jx, jy, jlon, jlat in grid.get((gx + dx, gy + dy), ()):
                         if j == i:
                             continue
                         d = (jx - x) ** 2 + (jy - y) ** 2
@@ -308,6 +328,8 @@ def _snap_endpoints(features: list[dict[str, Any]]) -> None:
                     coords.insert(0, new_pt)
                 else:
                     coords.append(new_pt)
+
+
 def _merge_parallel_features(
     features: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
@@ -359,7 +381,11 @@ def _merge_parallel_features(
     n_pairs = 0
     for i, row_counts in enumerate(covered):
         for j in row_counts:
-            if j > i and cov(i, j) >= config.MERGE_MUTUAL_COV and cov(j, i) >= config.MERGE_MUTUAL_COV:
+            if (
+                j > i
+                and cov(i, j) >= config.MERGE_MUTUAL_COV
+                and cov(j, i) >= config.MERGE_MUTUAL_COV
+            ):
                 ri, rj = find(i), find(j)
                 if ri != rj:
                     parent[rj] = ri
@@ -405,14 +431,16 @@ def _merge_parallel_features(
                 for k, (x, y) in enumerate(all_pts):
                     if cov_flags[k]:
                         continue
-                    for (jx, jy, _jh) in samples[m]:
+                    for jx, jy, _jh in samples[m]:
                         if (jx - x) ** 2 + (jy - y) ** 2 <= tol_sq:
                             cov_flags[k] = True
                             gained += 1
                             break
                 return gained
 
-            while remaining and (not keep or sum(cov_flags) / len(cov_flags) < config.MERGE_KEEP_COV):
+            while remaining and (
+                not keep or sum(cov_flags) / len(cov_flags) < config.MERGE_KEEP_COV
+            ):
                 m = remaining.pop(0)
                 if mark(m, all_pts, cov_flags) == 0 and keep:
                     continue
@@ -429,9 +457,7 @@ def _merge_parallel_features(
                 if len(alts) < 2:
                     alts = []
         cluster_geoms = (
-            [features[i]["geometry"]["coordinates"] for i in members]
-            if len(members) > 1
-            else []
+            [features[i]["geometry"]["coordinates"] for i in members] if len(members) > 1 else []
         )
         merged.extend(
             {
@@ -466,6 +492,7 @@ def _merge_parallel_features(
         range(len(merged)),
         key=lambda i: (len(merged[i]["properties"]["_rides"]), -len(m_samples[i])),
     )
+
     def union_cov(i: int) -> float:
         """Fraction of i's samples covered by comparably-ridden active features.
 
@@ -478,10 +505,7 @@ def _merge_parallel_features(
         n = sum(
             1
             for hit in rows
-            if any(
-                active[j] and len(merged[j]["properties"]["_rides"]) >= min_rides
-                for j in hit
-            )
+            if any(active[j] and len(merged[j]["properties"]["_rides"]) >= min_rides for j in hit)
         )
         return n / len(rows)
 
@@ -542,6 +566,8 @@ def _merge_parallel_features(
         f"({n_pairs:,} mutual pairs, {n_absorbed:,} redundant spans absorbed)"
     )
     return out
+
+
 def _audit_merge(features: list[dict[str, Any]]) -> None:
     """Print post-merge regression metrics.
 
@@ -567,9 +593,7 @@ def _audit_merge(features: list[dict[str, Any]]) -> None:
             (c[0] * config.M_PER_LON, c[1] * config.M_PER_LAT)
             for c in features[i]["geometry"]["coordinates"]
         ]
-        return sum(
-            math.hypot(x1 - x0, y1 - y0) for (x0, y0), (x1, y1) in zip(pts, pts[1:])
-        )
+        return sum(math.hypot(x1 - x0, y1 - y0) for (x0, y0), (x1, y1) in zip(pts, pts[1:]))
 
     lens = [length_m(i) for i in range(len(features))]
     dup_pairs = 0
@@ -597,7 +621,7 @@ def _audit_merge(features: list[dict[str, Any]]) -> None:
             best = snap_sq
             for dx in (-1, 0, 1):
                 for dy in (-1, 0, 1):
-                    for (j, jx, jy, _jlon, _jlat) in grid.get((gx + dx, gy + dy), ()):
+                    for j, jx, jy, _jlon, _jlat in grid.get((gx + dx, gy + dy), ()):
                         if j == i:
                             continue
                         d = (jx - x) ** 2 + (jy - y) ** 2

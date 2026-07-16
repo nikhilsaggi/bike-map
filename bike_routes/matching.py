@@ -44,6 +44,8 @@ def _path_to_edges(
             return None
         result.append(canon)
     return result
+
+
 def _build_snap_tree(
     G: nx.MultiDiGraph,
 ) -> tuple[
@@ -79,7 +81,11 @@ def _build_snap_tree(
     edge_hw = {}
     for u, v, data in G.edges(data=True):
         hw = data.get("highway", "")
-        p = min(config.HW_PENALTY.get(h, 0) for h in hw) if isinstance(hw, list) else config.HW_PENALTY.get(hw, 0)
+        p = (
+            min(config.HW_PENALTY.get(h, 0) for h in hw)
+            if isinstance(hw, list)
+            else config.HW_PENALTY.get(hw, 0)
+        )
         for key in ((u, v), (v, u)):
             if key not in edge_hw or p < edge_hw[key]:
                 edge_hw[key] = p
@@ -118,6 +124,8 @@ def _build_snap_tree(
 
     tree = cKDTree(np.column_stack([tree_xs, tree_ys]))
     return tree, tree_nids, mean_lat_rad, real_xs, real_ys, node_idx, adj, edge_hw
+
+
 def _map_match_ride(
     G: nx.MultiDiGraph,
     coords: np.ndarray,
@@ -325,7 +333,9 @@ def _map_match_ride(
         except Exception:
             path = None
         result = (
-            None if path is None else _path_to_edges(G, path, config.MAX_ROUTING_DISTANCE_M, straight)
+            None
+            if path is None
+            else _path_to_edges(G, path, config.MAX_ROUTING_DISTANCE_M, straight)
         )
         route_cache[canon] = result
         return result
@@ -365,8 +375,12 @@ def _map_match_ride(
             i += 1
 
     return edges, skipped
+
+
 _worker_graph_ctx: tuple[Any, ...] | None = None
 _worker_route_cache: dict[tuple[int, int], list[tuple[int, int]] | None] | None = None
+
+
 def _match_worker_init() -> None:
     """Build the matcher context once per worker process.
 
@@ -389,6 +403,8 @@ def _match_worker_init() -> None:
         G = pickle.load(f)
     _worker_graph_ctx = (G, _build_matcher_context(G))
     _worker_route_cache = _load_route_cache()
+
+
 def _match_chunk(
     chunk: list[tuple[str, np.ndarray]],
 ) -> tuple[
@@ -413,6 +429,8 @@ def _match_chunk(
         results.append((fname, edges, skipped))
     _worker_route_cache.update(new_entries)
     return results, new_entries
+
+
 def _match_worker_count(n_rides: int) -> int:
     """Worker processes to use for map matching.
 
@@ -433,6 +451,8 @@ def _match_worker_count(n_rides: int) -> int:
     if not config.GRAPH_CACHE_PATH.exists():
         return 1
     return min(4, os.cpu_count() or 1)
+
+
 def _match_rides_parallel(
     new_rides: list[tuple[str, np.ndarray]],
     route_cache: dict[tuple[int, int], list[tuple[int, int]] | None],

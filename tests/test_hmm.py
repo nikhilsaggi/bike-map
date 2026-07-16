@@ -42,9 +42,11 @@ def test_l_shaped_ride(grid_mmap):
 def test_gps_teleport_becomes_skipped_gap(grid_mmap):
     # Points jump far outside the grid mid-ride (matcher dead-end), then
     # return: the unmatched stretch is skipped, both ends still match.
-    pts = ([(x, 0.0) for x in range(0, 101, 20)]
-           + [(5000.0, 5000.0)] * 3
-           + [(x, 400.0) for x in range(100, 201, 20)])
+    pts = (
+        [(x, 0.0) for x in range(0, 101, 20)]
+        + [(5000.0, 5000.0)] * 3
+        + [(x, 400.0) for x in range(100, 201, 20)]
+    )
     edges, skipped = br._map_match_ride_hmm(grid_mmap, _track(pts))
     assert skipped >= 1
     assert (0, 1) in edges  # start matched
@@ -116,9 +118,11 @@ def test_long_offgrid_stretch_fast_forwards(grid_mmap):
     # A long teleported stretch (300 off-grid points) is fast-forwarded with
     # the cheap rtree test rather than a match attempt every few points, and
     # the on-grid tail is still recovered in full.
-    pts = ([(x, 0.0) for x in range(0, 101, 20)]
-           + [(50000.0, 50000.0)] * 300
-           + [(x, 400.0) for x in range(0, 201, 20)])
+    pts = (
+        [(x, 0.0) for x in range(0, 101, 20)]
+        + [(50000.0, 50000.0)] * 300
+        + [(x, 400.0) for x in range(0, 201, 20)]
+    )
     edges, skipped = br._map_match_ride_hmm(grid_mmap, _track(pts))
     assert skipped >= 1
     assert (0, 1) in edges  # start matched

@@ -36,10 +36,10 @@ def test_load_rides(tmp_path):
 def test_summarize_bands():
     per_day = {"2024-06-01": 20.0, "2024-06-02": 10.0}
     weather = {
-        "2024-06-01": {"tmax": 70.0, "precip": 0.0},   # warm + dry: rode
-        "2024-06-02": {"tmax": 72.0, "precip": 0.5},   # warm + wet: rode
-        "2024-06-03": {"tmax": 75.0, "precip": 0.0},   # warm + dry: no ride
-        "2024-01-15": {"tmax": 20.0, "precip": 0.0},   # freezing: no ride
+        "2024-06-01": {"tmax": 70.0, "precip": 0.0},  # warm + dry: rode
+        "2024-06-02": {"tmax": 72.0, "precip": 0.5},  # warm + wet: rode
+        "2024-06-03": {"tmax": 75.0, "precip": 0.0},  # warm + dry: no ride
+        "2024-01-15": {"tmax": 20.0, "precip": 0.0},  # freezing: no ride
     }
     s = wc.summarize(per_day, weather)
     assert s["temp"]["65-80°F"]["days"] == 3
@@ -59,6 +59,7 @@ def test_band_edges():
 
 
 # --- bike_routes.weather module tests ---
+
 
 def test_module_band_classification():
     assert _band(25.0, TEMP_BANDS) == "<32°F"

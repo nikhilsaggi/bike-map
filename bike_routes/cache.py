@@ -44,9 +44,13 @@ def _processing_config() -> dict[str, Any]:
         "loop_max_detour_m": config.LOOP_MAX_DETOUR_M,
         "hw_penalty": sorted(config.HW_PENALTY.items()),
     }
+
+
 def _config_hash() -> str:
     """Return a hash of the current processing config."""
     return hashlib.sha1(json.dumps(_processing_config(), sort_keys=True).encode()).hexdigest()
+
+
 def _empty_state() -> dict[str, Any]:
     """Return a fresh pipeline state dict."""
     return {
@@ -58,6 +62,8 @@ def _empty_state() -> dict[str, Any]:
         "edge_rides": {},
         "graph_bbox": None,
     }
+
+
 def _load_state() -> dict[str, Any]:
     """Load cached state, invalidating if processing config changed."""
     if not config.STATE_CACHE_PATH.exists():
@@ -80,18 +86,26 @@ def _load_state() -> dict[str, Any]:
         config.ROUTE_CACHE_PATH.unlink()
     print("Processing config changed -- full reprocess required")
     return _empty_state()
+
+
 def _save_state(state: dict[str, Any]) -> None:
     """Persist pipeline state to disk."""
     state["config_hash"] = _config_hash()
     state["config"] = _processing_config()
     with config.STATE_CACHE_PATH.open("wb") as f:
         pickle.dump(state, f, protocol=pickle.HIGHEST_PROTOCOL)
+
+
 def _lib_versions() -> dict[str, str]:
     """Library versions the pickled graph cache depends on."""
     return {"osmnx": ox.__version__, "networkx": nx.__version__}
+
+
 def _write_cache_versions() -> None:
     """Stamp the current library versions alongside the graph cache."""
     config.CACHE_VERSIONS_PATH.write_text(json.dumps(_lib_versions()))
+
+
 def _graph_cache_valid() -> bool:
     """Check the graph cache was written by the current library versions.
 
@@ -111,10 +125,17 @@ def _graph_cache_valid() -> bool:
     if stamped == current:
         return True
     print(f"Library versions changed ({stamped} -> {current}) -- refetching graph")
-    for p in [config.GRAPH_CACHE_PATH, config.RENDER_CACHE_PATH, config.ROUTE_CACHE_PATH, config.CACHE_VERSIONS_PATH]:
+    for p in [
+        config.GRAPH_CACHE_PATH,
+        config.RENDER_CACHE_PATH,
+        config.ROUTE_CACHE_PATH,
+        config.CACHE_VERSIONS_PATH,
+    ]:
         if p.exists():
             p.unlink()
     return False
+
+
 def _load_route_cache() -> dict[tuple[int, int], list[tuple[int, int]] | None]:
     """Load cached shortest-path results between node pairs."""
     if not config.ROUTE_CACHE_PATH.exists():
@@ -124,6 +145,8 @@ def _load_route_cache() -> dict[tuple[int, int], list[tuple[int, int]] | None]:
             return pickle.load(f)
     except Exception:
         return {}
+
+
 def _save_route_cache(
     route_cache: dict[tuple[int, int], list[tuple[int, int]] | None],
 ) -> None:

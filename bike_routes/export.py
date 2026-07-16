@@ -51,6 +51,8 @@ def _coverage_summary(
         "network_km": round(network_m / 1000),
         "new_km_by_year": {y: round(v / 1000, 1) for y, v in sorted(new_by_year.items())},
     }
+
+
 def _export_geojson(
     edge_geom: dict[tuple[int, int], list[tuple[float, float]]],
     state: dict[str, Any],
@@ -110,9 +112,7 @@ def _export_geojson(
         props["rides"] = [ride_id[r] for r in props["rides"] if r in ride_id]
         del props["ride_count"]
 
-    total_km = (
-        sum(_geom_len_m(f["geometry"]["coordinates"]) for f in features) / 1000
-    )
+    total_km = sum(_geom_len_m(f["geometry"]["coordinates"]) for f in features) / 1000
 
     rides_per_year: dict[str, int] = {}
     for fname in all_fnames:

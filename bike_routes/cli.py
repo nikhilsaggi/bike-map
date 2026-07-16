@@ -37,6 +37,8 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="worker processes for map matching (1 = sequential)",
     )
     return parser.parse_args(argv)
+
+
 def main(argv: list[str] | None = None) -> None:
     """Run the full bike route pipeline."""
     t0 = time.time()

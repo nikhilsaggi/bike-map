@@ -108,9 +108,7 @@ def _new_matcher(mmap: InMemMap) -> DistanceMatcher:
     )
 
 
-def _map_match_ride_hmm(
-    mmap: InMemMap, coords: np.ndarray
-) -> tuple[list[tuple[int, int]], int]:
+def _map_match_ride_hmm(mmap: InMemMap, coords: np.ndarray) -> tuple[list[tuple[int, int]], int]:
     """Match one resampled ride; returns (canonical edge sequence, skipped gaps).
 
     Consecutive duplicate edges are collapsed (the lattice emits one state
@@ -128,7 +126,10 @@ def _map_match_ride_hmm(
         try:
             matcher = _new_matcher(mmap)
             states, last_idx = matcher.match(sub)
-            if last_idx < len(sub) - 1 and config.HMM_LATTICE_WIDTH_RETRY > config.HMM_LATTICE_WIDTH:
+            if (
+                last_idx < len(sub) - 1
+                and config.HMM_LATTICE_WIDTH_RETRY > config.HMM_LATTICE_WIDTH
+            ):
                 states, last_idx = matcher.increase_max_lattice_width(
                     config.HMM_LATTICE_WIDTH_RETRY
                 )

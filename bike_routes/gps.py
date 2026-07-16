@@ -19,6 +19,8 @@ def haversine_m(
     dlam = np.radians(lon2 - lon1)
     a = np.sin(dphi / 2) ** 2 + np.cos(phi1) * np.cos(phi2) * np.sin(dlam / 2) ** 2
     return 2 * R * np.arcsin(np.sqrt(a))
+
+
 def resample_ride_by_distance(coords: np.ndarray, spacing_m: float) -> np.ndarray:
     """Resample (N,2) [lat,lon] array to ~spacing_m metre intervals."""
     if len(coords) < 2:
@@ -37,6 +39,8 @@ def resample_ride_by_distance(coords: np.ndarray, spacing_m: float) -> np.ndarra
             np.interp(targets, dists, coords[:, 1]),
         ]
     )
+
+
 def _split_at_gaps(coords: np.ndarray, max_gap_m: float) -> list[np.ndarray]:
     """Split (N,2) [lat,lon] into sub-arrays wherever consecutive points exceed max_gap_m."""
     if len(coords) < 2:
@@ -46,6 +50,8 @@ def _split_at_gaps(coords: np.ndarray, max_gap_m: float) -> list[np.ndarray]:
     if len(gap_idx) == 0:
         return [coords]
     return np.split(coords, gap_idx)
+
+
 def _is_nyc_ride(coords: np.ndarray) -> bool:
     """Check if any point in the ride falls within config.NYC_BBOX."""
     lat_min, lon_min, lat_max, lon_max = config.NYC_BBOX
@@ -56,6 +62,8 @@ def _is_nyc_ride(coords: np.ndarray) -> bool:
         & (coords[:, 1] <= lon_max)
     )
     return in_bbox.any()
+
+
 def _load_and_resample(
     filenames: list[str],
 ) -> tuple[list[tuple[str, np.ndarray]], int]:

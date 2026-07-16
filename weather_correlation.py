@@ -33,8 +33,13 @@ CHART_PATH = Path("sample_output/weather_correlation.png")
 NYC_LAT, NYC_LON = 40.78, -73.97  # Central Park
 KM_TO_MI = 0.621371
 
-TEMP_BANDS = [(-100, 32, "<32°F"), (32, 50, "32-50°F"), (50, 65, "50-65°F"),
-              (65, 80, "65-80°F"), (80, 200, ">80°F")]
+TEMP_BANDS = [
+    (-100, 32, "<32°F"),
+    (32, 50, "32-50°F"),
+    (50, 65, "50-65°F"),
+    (65, 80, "65-80°F"),
+    (80, 200, ">80°F"),
+]
 RAIN_BANDS = [(0.0, 0.04, "dry"), (0.04, 0.2, "light rain"), (0.2, 100.0, "wet")]
 
 
@@ -52,23 +57,26 @@ def load_rides(path: Path) -> dict[str, float]:
 
 def fetch_weather(start: str, end: str) -> dict[str, dict[str, float]]:
     """Fetch daily max temperature (°F) and precipitation (in) for NYC."""
-    params = urllib.parse.urlencode({
-        "latitude": NYC_LAT,
-        "longitude": NYC_LON,
-        "start_date": start,
-        "end_date": end,
-        "daily": "temperature_2m_max,precipitation_sum",
-        "temperature_unit": "fahrenheit",
-        "precipitation_unit": "inch",
-        "timezone": "America/New_York",
-    })
+    params = urllib.parse.urlencode(
+        {
+            "latitude": NYC_LAT,
+            "longitude": NYC_LON,
+            "start_date": start,
+            "end_date": end,
+            "daily": "temperature_2m_max,precipitation_sum",
+            "temperature_unit": "fahrenheit",
+            "precipitation_unit": "inch",
+            "timezone": "America/New_York",
+        }
+    )
     url = f"https://archive-api.open-meteo.com/v1/archive?{params}"
     with urllib.request.urlopen(url, timeout=60) as resp:  # noqa: S310 -- fixed https host
         payload = json.load(resp)
     daily = payload["daily"]
     out: dict[str, dict[str, float]] = {}
-    for d, tmax, precip in zip(daily["time"], daily["temperature_2m_max"],
-                               daily["precipitation_sum"]):
+    for d, tmax, precip in zip(
+        daily["time"], daily["temperature_2m_max"], daily["precipitation_sum"]
+    ):
         if tmax is None:
             continue
         out[d] = {"tmax": tmax, "precip": precip or 0.0}
@@ -152,13 +160,17 @@ def main(argv: list[str] | None = None) -> None:
     summary = summarize(per_day, weather)
     total_days = sum(r["days"] for r in summary["temp"].values())
     total_ride_days = sum(r["ride_days"] for r in summary["temp"].values())
-    print(f"\n{total_days} days, {total_ride_days} with a ride "
-          f"({100 * total_ride_days / total_days:.0f}% overall)\n")
+    print(
+        f"\n{total_days} days, {total_ride_days} with a ride "
+        f"({100 * total_ride_days / total_days:.0f}% overall)\n"
+    )
     for kind, title in (("temp", "By max temperature"), ("rain", "By precipitation")):
         print(title)
         for label, row in summary[kind].items():
-            print(f"  {label:>10}: rode {row['pct']:5.1f}% of {row['days']:4d} days"
-                  f"   ({row['mi_per_ride_day']:.1f} mi per riding day)")
+            print(
+                f"  {label:>10}: rode {row['pct']:5.1f}% of {row['days']:4d} days"
+                f"   ({row['mi_per_ride_day']:.1f} mi per riding day)"
+            )
         print()
 
     if not args.no_chart:

@@ -36,16 +36,18 @@ def _band(value: float, bands: list[tuple[float, float, str]]) -> str:
 
 
 def _fetch_weather(start: str, end: str) -> dict[str, dict[str, float]]:
-    params = urllib.parse.urlencode({
-        "latitude": NYC_LAT,
-        "longitude": NYC_LON,
-        "start_date": start,
-        "end_date": end,
-        "daily": "temperature_2m_max,precipitation_sum",
-        "temperature_unit": "fahrenheit",
-        "precipitation_unit": "inch",
-        "timezone": "America/New_York",
-    })
+    params = urllib.parse.urlencode(
+        {
+            "latitude": NYC_LAT,
+            "longitude": NYC_LON,
+            "start_date": start,
+            "end_date": end,
+            "daily": "temperature_2m_max,precipitation_sum",
+            "temperature_unit": "fahrenheit",
+            "precipitation_unit": "inch",
+            "timezone": "America/New_York",
+        }
+    )
     url = f"https://archive-api.open-meteo.com/v1/archive?{params}"
     with urllib.request.urlopen(url, timeout=30) as resp:  # noqa: S310
         payload = json.load(resp)

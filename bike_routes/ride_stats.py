@@ -17,6 +17,8 @@ try:
     _NYC_TZ = ZoneInfo("America/New_York")
 except Exception:  # tz database unavailable; timestamps keep their own offset
     _NYC_TZ = None
+
+
 def _parse_ride_timestamp(ts: str) -> datetime | None:
     """Parse a ride CSV timestamp.
 
@@ -37,6 +39,8 @@ def _parse_ride_timestamp(ts: str) -> datetime | None:
             return None
         return dt
     return None
+
+
 def _ride_stats_for_file(path: Path) -> dict[str, Any] | None:
     """Compute {start, duration_s, dist_m} for one ride CSV.
 
@@ -81,6 +85,8 @@ def _ride_stats_for_file(path: Path) -> dict[str, Any] | None:
         "duration_s": duration_s,
         "dist_m": round(dist_m, 1),
     }
+
+
 def _backfill_ride_stats(state: dict[str, Any]) -> int:
     """Compute stats for processed rides that don't have them yet.
 
@@ -97,6 +103,8 @@ def _backfill_ride_stats(state: dict[str, Any]) -> int:
         stats[fname] = _ride_stats_for_file(path)
         n += 1
     return n
+
+
 def _riding_summary(ride_stats: dict[str, dict[str, Any] | None]) -> dict[str, Any] | None:
     """Aggregate per-ride stats into the map's riding-summary property."""
     by_hour = [0] * 24

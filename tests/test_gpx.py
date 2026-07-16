@@ -15,8 +15,7 @@ GPX_TEMPLATE = """<?xml version="1.0" encoding="UTF-8"?>
 
 def _write_gpx(path, points):
     body = "\n".join(
-        f'    <trkpt lat="{lat}" lon="{lon}"><time>{ts}</time></trkpt>'
-        for lon, lat, ts in points
+        f'    <trkpt lat="{lat}" lon="{lon}"><time>{ts}</time></trkpt>' for lon, lat, ts in points
     )
     path.write_text(GPX_TEMPLATE.format(points=body))
 

@@ -24,6 +24,8 @@ def _classify_hw(hw: str | list[str]) -> str:
         classes = [config.INFRA_CLASS.get(h, config.INFRA_DEFAULT) for h in hw]
         return "bike" if "bike" in classes else config.INFRA_DEFAULT
     return config.INFRA_CLASS.get(hw, config.INFRA_DEFAULT)
+
+
 def _primary_hw_tag(hw: str | list[str]) -> str:
     """Pick one highway tag for an edge, preferring a bike-classified tag."""
     if isinstance(hw, list):
@@ -32,6 +34,8 @@ def _primary_hw_tag(hw: str | list[str]) -> str:
                 return h
         return hw[0] if hw else ""
     return hw or ""
+
+
 def _build_render_cache(
     G: nx.MultiDiGraph,
 ) -> tuple[dict[tuple[int, int], list[tuple[float, float]]], dict[tuple[int, int], str]]:
@@ -72,12 +76,17 @@ def _build_render_cache(
         )
     print(f"  Cached {len(edge_geom):,} edge geometries")
     return edge_geom, edge_hw
+
+
 def _get_render_data(
     G: nx.MultiDiGraph | None = None,
-) -> tuple[
-    dict[tuple[int, int], list[tuple[float, float]]],
-    dict[tuple[int, int], str],
-] | None:
+) -> (
+    tuple[
+        dict[tuple[int, int], list[tuple[float, float]]],
+        dict[tuple[int, int], str],
+    ]
+    | None
+):
     """Load render cache, or build it from graph if missing.
 
     A cache in any older format is treated as missing so it rebuilds with
@@ -98,6 +107,8 @@ def _get_render_data(
     if G is None:
         return None
     return _build_render_cache(G)
+
+
 def _make_fig(
     skeleton_lines: list[list[tuple[float, float]]],
 ) -> tuple[plt.Figure, plt.Axes]:
@@ -110,12 +121,16 @@ def _make_fig(
     ax.add_collection(lc)
     ax.autoscale_view()
     return fig, ax
+
+
 def _save_fig(fig: plt.Figure, path: str) -> None:
     """Save figure to disk and close it."""
     fig.subplots_adjust(bottom=0.10)
     fig.savefig(path, dpi=180, bbox_inches="tight", facecolor=fig.get_facecolor())
     print(f"  Saved -> {path}")
     plt.close(fig)
+
+
 def _render(
     edge_geom: dict[tuple[int, int], list[tuple[float, float]]],
     state: dict[str, Any],
@@ -166,7 +181,9 @@ def _render(
         lines_u.append(edge_geom[edge_key])
         rgba = cmap(scale(count))
         colors_u.append((rgba[0], rgba[1], rgba[2], 0.25))
-    ax.add_collection(LineCollection(lines_u, colors=colors_u, linewidths=config.LINE_WIDTH_MIN, zorder=2))
+    ax.add_collection(
+        LineCollection(lines_u, colors=colors_u, linewidths=config.LINE_WIDTH_MIN, zorder=2)
+    )
 
     # Pass 2: overlay, rare -> frequent
     sorted_items = sorted(
