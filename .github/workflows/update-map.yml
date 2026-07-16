@@ -26,6 +26,7 @@ jobs:
         with:
           path: |
             osm_graph_cache.pkl
+            hmm_map_cache.pkl
             state.pkl
             render_cache.pkl
             route_cache.pkl
