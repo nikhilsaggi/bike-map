@@ -29,8 +29,9 @@ build/
 # Development artifacts
 coords_*.csv
 
-# Claude Code
-.claude/
+# Claude Code (keep committed skills, ignore local settings/worktrees)
+.claude/*
+!.claude/skills/
 memory/
 
 # OS

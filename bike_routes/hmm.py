@@ -193,12 +193,16 @@ def _build_matcher_context(G: nx.MultiDiGraph, *, use_cache: bool = False) -> tu
 
 
 def _match_one(
-    G: nx.MultiDiGraph,
+    G: nx.MultiDiGraph | None,
     ctx: tuple[str, Any],
     coords: np.ndarray,
     route_cache: dict[tuple[int, int], list[tuple[int, int]] | None],
 ) -> tuple[list[tuple[int, int]], int]:
-    """Match one ride with whichever matcher the context was built for."""
+    """Match one ride with whichever matcher the context was built for.
+
+    G may be None for the HMM matcher (cache-only workers); the heuristic
+    matcher requires the full graph for its routing fallback.
+    """
     kind, data = ctx
     if kind == "hmm":
         return _map_match_ride_hmm(data, coords)
