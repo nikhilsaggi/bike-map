@@ -7,6 +7,15 @@ import json
 
 import weather_correlation as wc
 
+from bike_routes.weather import (
+    _band,
+    _load_cached_weather,
+    _save_weather_cache,
+    _weather_summary,
+    RAIN_BANDS,
+    TEMP_BANDS,
+)
+
 
 def test_load_rides(tmp_path):
     geojson = {
@@ -48,3 +57,61 @@ def test_band_edges():
     assert wc._band(31.9, wc.TEMP_BANDS) == "<32°F"
     assert wc._band(150.0, wc.TEMP_BANDS) == ">80°F"
     assert wc._band(0.0, wc.RAIN_BANDS) == "dry"
+
+
+# --- bike_routes.weather module tests ---
+
+def test_module_band_classification():
+    assert _band(25.0, TEMP_BANDS) == "<32°F"
+    assert _band(55.0, TEMP_BANDS) == "50-65°F"
+    assert _band(90.0, TEMP_BANDS) == ">80°F"
+    assert _band(0.0, RAIN_BANDS) == "Dry"
+    assert _band(0.1, RAIN_BANDS) == "Light rain"
+    assert _band(0.5, RAIN_BANDS) == "Wet"
+
+
+def test_cache_roundtrip(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    data = {"2024-06-01": {"tmax": 75.0, "precip": 0.0}}
+    _save_weather_cache(data)
+    loaded = _load_cached_weather()
+    assert loaded == data
+
+
+def test_cache_missing_returns_none(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    assert _load_cached_weather() is None
+
+
+def test_weather_summary_too_few_rides():
+    ride_stats = {
+        "2024-06-01_12-00-00_-0400.csv": {"start": "2024-06-01T12:00:00-04:00", "dist_m": 5000.0},
+    }
+    assert _weather_summary(ride_stats) is None
+
+
+def test_weather_summary_with_mock_api(monkeypatch):
+    ride_stats = {}
+    for i in range(1, 21):
+        fname = f"2024-06-{i:02d}_12-00-00_-0400.csv"
+        ride_stats[fname] = {"start": f"2024-06-{i:02d}T12:00:00-04:00", "dist_m": 10000.0}
+
+    fake_weather = {}
+    for i in range(1, 31):
+        fake_weather[f"2024-06-{i:02d}"] = {"tmax": 72.0, "precip": 0.0}
+
+    monkeypatch.setattr(
+        "bike_routes.weather._get_weather",
+        lambda start, end: fake_weather,
+    )
+
+    result = _weather_summary(ride_stats)
+    assert result is not None
+    assert "temp" in result
+    assert "rain" in result
+    assert len(result["temp"]) == 5
+    assert len(result["rain"]) == 3
+    band_65_80 = next(r for r in result["temp"] if r["label"] == "65-80°F")
+    assert band_65_80["pct"] > 0
+    dry = next(r for r in result["rain"] if r["label"] == "Dry")
+    assert dry["pct"] > 0

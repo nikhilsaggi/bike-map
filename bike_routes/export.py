@@ -10,6 +10,7 @@ from typing import Any
 from . import config
 from .merge import _audit_merge, _geom_len_m, _merge_parallel_features
 from .ride_stats import _riding_summary
+from .weather import _weather_summary
 
 
 def _coverage_summary(
@@ -127,6 +128,7 @@ def _export_geojson(
             "rides_per_year": rides_per_year,
             "riding": _riding_summary(state.get("ride_stats", {})),
             "coverage": _coverage_summary(edge_geom, edge_hw or {}, state),
+            "weather": _weather_summary(state.get("ride_stats", {})),
             "dates": all_dates,
             "rides": rides_meta,
             "updated": datetime.now(timezone.utc).strftime("%Y-%m-%d"),

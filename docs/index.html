@@ -43,6 +43,16 @@
   .histo div { flex: 1; background: #7b3ff2; border-radius: 1px 1px 0 0; min-height: 1px; }
   .histo-labels { display: flex; justify-content: space-between; font-size: 9px; color: #666; }
   .histo-title { color: #888; margin-top: 6px; }
+  #stat-weather {
+    display: none; margin-top: 8px; padding-top: 8px; border-top: 1px solid #333;
+    font-size: 11px; line-height: 1.6;
+  }
+  .weather-section-title { color: #888; margin-top: 6px; margin-bottom: 2px; }
+  .weather-bar-row { display: flex; align-items: center; gap: 6px; margin: 2px 0; }
+  .weather-bar-label { width: 62px; text-align: right; color: #888; font-size: 10px; flex: none; }
+  .weather-bar-track { flex: 1; height: 10px; background: #1a1a1a; border-radius: 3px; overflow: hidden; }
+  .weather-bar-fill { height: 100%; background: #7b3ff2; border-radius: 3px; }
+  .weather-bar-val { width: 32px; color: #ccc; font-size: 10px; flex: none; }
 
   #legend {
     position: absolute; bottom: 28px; left: 12px; z-index: 1000;
@@ -172,6 +182,7 @@
     <div><span class="label">Updated:</span> <strong id="stat-updated">—</strong></div>
     <div id="stat-years"></div>
     <div id="stat-riding"></div>
+    <div id="stat-weather"></div>
     <button id="wrapped-btn">Year recap</button>
   </div>
 </div>
@@ -679,6 +690,24 @@ fetch('rides.geojson.gz')
         `<div class="histo-title">Rides by weekday</div>` +
         histo(riding.by_weekday, '<span>Mon</span><span>Sun</span>');
       document.getElementById('stat-riding').style.display = 'block';
+    }
+
+    const weather = data.properties?.weather;
+    if (weather) {
+      const weatherBars = (rows) => rows.map(r =>
+        `<div class="weather-bar-row">` +
+        `<span class="weather-bar-label">${r.label}</span>` +
+        `<div class="weather-bar-track"><div class="weather-bar-fill" style="width:${r.pct}%"></div></div>` +
+        `<span class="weather-bar-val">${Math.round(r.pct)}%</span>` +
+        `</div>`
+      ).join('');
+      const el = document.getElementById('stat-weather');
+      el.innerHTML =
+        `<div class="weather-section-title">Ride days by temperature</div>` +
+        weatherBars(weather.temp) +
+        `<div class="weather-section-title">Ride days by precipitation</div>` +
+        weatherBars(weather.rain);
+      el.style.display = 'block';
     }
 
     sqrtMax = Math.sqrt(maxCount);

@@ -2,6 +2,7 @@
 *.pkl
 cache/
 cache_versions.json
+weather_cache.json
 
 # Ride data (personal GPS traces)
 rides/*.csv

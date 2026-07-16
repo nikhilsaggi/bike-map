@@ -16,7 +16,7 @@ Dependencies:
 
 from __future__ import annotations
 
-from . import cache, cli, config, export, gps, graph, hmm, matching, merge, render, ride_stats
+from . import cache, cli, config, export, gps, graph, hmm, matching, merge, render, ride_stats, weather
 from .cache import (
     _config_hash,
     _empty_state,
@@ -145,4 +145,8 @@ from .ride_stats import (
     _parse_ride_timestamp,
     _ride_stats_for_file,
     _riding_summary,
+)
+from .weather import (
+    _get_weather,
+    _weather_summary,
 )
