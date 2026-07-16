@@ -368,11 +368,13 @@ def _map_match_ride(
 _worker_graph_ctx: tuple[Any, ...] | None = None
 _worker_route_cache: dict[tuple[int, int], list[tuple[int, int]] | None] | None = None
 def _match_worker_init() -> None:
-    """Load the graph and build snap structures once per worker process."""
+    """Load the graph and build the matcher context once per worker process."""
+    from .hmm import _build_matcher_context  # noqa: PLC0415 -- avoid circular import
+
     global _worker_graph_ctx, _worker_route_cache  # noqa: PLW0603 -- pool initializer pattern
     with config.GRAPH_CACHE_PATH.open("rb") as f:
         G = pickle.load(f)
-    _worker_graph_ctx = (G, _build_snap_tree(G))
+    _worker_graph_ctx = (G, _build_matcher_context(G))
     _worker_route_cache = _load_route_cache()
 def _match_chunk(
     chunk: list[tuple[str, np.ndarray]],
@@ -383,16 +385,18 @@ def _match_chunk(
     """Match one chunk of rides in a worker.
 
     Returns per-ride results and the route-cache entries first computed
-    during this chunk.
+    during this chunk (always empty for the HMM matcher).
     """
+    from .hmm import _match_one  # noqa: PLC0415 -- avoid circular import
+
     assert _worker_graph_ctx is not None
     assert _worker_route_cache is not None
-    G, snap_data = _worker_graph_ctx
+    G, ctx = _worker_graph_ctx
     new_entries: dict[tuple[int, int], list[tuple[int, int]] | None] = {}
     cache = ChainMap(new_entries, _worker_route_cache)
     results = []
     for fname, coords in chunk:
-        edges, skipped = _map_match_ride(G, coords, config.SNAP_TOLERANCE_M, cache, *snap_data)
+        edges, skipped = _match_one(G, ctx, coords, cache)
         results.append((fname, edges, skipped))
     _worker_route_cache.update(new_entries)
     return results, new_entries

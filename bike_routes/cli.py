@@ -12,7 +12,8 @@ from .cache import _load_route_cache, _load_state, _save_route_cache, _save_stat
 from .export import _export_geojson
 from .gps import _load_and_resample
 from .graph import _load_graph
-from .matching import _build_snap_tree, _map_match_ride, _match_rides_parallel, _match_worker_count
+from .hmm import _build_matcher_context, _match_one
+from .matching import _match_rides_parallel, _match_worker_count
 from .render import _build_render_cache, _get_render_data, _render
 from .ride_stats import _backfill_ride_stats
 
@@ -127,15 +128,12 @@ def main(argv: list[str] | None = None) -> None:
     # 5. Load or fetch graph
     G = _load_graph(new_rides, state)
 
-    # 6. Build spatial index once for all rides
-    snap_tree, tree_node_ids, mean_lat_rad, node_xs, node_ys, node_idx_map, adj, edge_hw = (
-        _build_snap_tree(G)
-    )
+    # 6. Build the matcher context (HMM map index or heuristic snap tree)
+    ctx = _build_matcher_context(G)
 
     # 7. Map-match new rides
-    print("Map-matching...")
+    print(f"Map-matching ({config.MATCHER})...")
     route_cache = _load_route_cache()
-    print(f"  Route cache: {len(route_cache):,} entries loaded")
 
     results: list[tuple[str, list[tuple[int, int]], int]] | None = None
     n_workers = _match_worker_count(len(new_rides))
@@ -150,23 +148,10 @@ def main(argv: list[str] | None = None) -> None:
     if results is None:
         results = []
         for i, (fname, coords) in enumerate(new_rides, 1):
-            edges, skipped = _map_match_ride(
-                G,
-                coords,
-                config.SNAP_TOLERANCE_M,
-                route_cache,
-                snap_tree,
-                tree_node_ids,
-                mean_lat_rad,
-                node_xs,
-                node_ys,
-                node_idx_map,
-                adj,
-                edge_hw,
-            )
+            edges, skipped = _match_one(G, ctx, coords, route_cache)
             results.append((fname, edges, skipped))
             if i % 20 == 0 or i == len(new_rides):
-                print(f"  {i}/{len(new_rides)} rides (route cache: {len(route_cache):,} entries)")
+                print(f"  {i}/{len(new_rides)} rides")
 
     # Apply results in filename order so state is identical regardless of
     # how matching was scheduled.

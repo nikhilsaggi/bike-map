@@ -13,6 +13,8 @@ dependencies = [
     "numpy>=1.24",
     "matplotlib>=3.6",
     "scipy>=1.10",
+    "leuvenmapmatching>=1.1",
+    "rtree>=1.0",
 ]
 
 [tool.setuptools]

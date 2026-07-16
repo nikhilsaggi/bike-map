@@ -15,19 +15,34 @@ from . import config
 
 def _processing_config() -> dict[str, Any]:
     """Return params that affect map-matching results (change triggers full reprocess)."""
+    shared = {
+        "matcher": config.MATCHER,
+        "max_gps_gap_m": config.MAX_GPS_GAP_M,
+        "resample_spacing_m": config.RESAMPLE_SPACING_M,
+        "network_types": sorted(config.NETWORK_TYPES),
+        "edge_key_format": "node_pair",
+    }
+    if config.MATCHER == "hmm":
+        return {
+            **shared,
+            "hmm_max_dist": config.HMM_MAX_DIST,
+            "hmm_obs_noise": config.HMM_OBS_NOISE,
+            "hmm_obs_noise_ne": config.HMM_OBS_NOISE_NE,
+            "hmm_min_prob_norm": config.HMM_MIN_PROB_NORM,
+            "hmm_lattice_width": config.HMM_LATTICE_WIDTH,
+            "hmm_lattice_width_retry": config.HMM_LATTICE_WIDTH_RETRY,
+            "hmm_fail_skip_points": config.HMM_FAIL_SKIP_POINTS,
+        }
     return {
+        **shared,
         "snap_tolerance_m": config.SNAP_TOLERANCE_M,
         "max_routing_distance_m": config.MAX_ROUTING_DISTANCE_M,
         "max_route_detour": config.MAX_ROUTE_DETOUR,
-        "max_gps_gap_m": config.MAX_GPS_GAP_M,
         "snap_method": "edge_heading",
         "heading_penalty": config.HEADING_PENALTY,
         "loop_window": config.LOOP_WINDOW,
         "loop_max_detour_m": config.LOOP_MAX_DETOUR_M,
         "hw_penalty": sorted(config.HW_PENALTY.items()),
-        "resample_spacing_m": config.RESAMPLE_SPACING_M,
-        "network_types": sorted(config.NETWORK_TYPES),
-        "edge_key_format": "node_pair",
     }
 def _config_hash() -> str:
     """Return a hash of the current processing config."""

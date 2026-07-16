@@ -110,35 +110,38 @@ Key parameters in `bike_routes/config.py`:
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
+| `MATCHER` | hmm | Map-matcher: `hmm` (Viterbi) or `heuristic` (edge snapping) |
+| `HMM_MAX_DIST` | 80 | Max GPS-to-edge distance considered (meters) |
+| `HMM_OBS_NOISE` | 15 | Expected GPS noise (meters) |
+| `HMM_LATTICE_WIDTH` | 8 | Viterbi beam width (widened to 24 on retry) |
 | `RESAMPLE_SPACING_M` | 20 | Resample GPS points to this spacing (meters) |
-| `SNAP_TOLERANCE_M` | 80 | Max distance to snap a GPS point to a street edge |
-| `MAX_ROUTING_DISTANCE_M` | 2500 | Max route length between consecutive snapped nodes |
 | `MAX_GPS_GAP_M` | 300 | Split ride into segments at gaps larger than this |
-| `HEADING_PENALTY` | 0.15 | Penalty per degree of heading mismatch during snap |
-| `HW_PENALTY` | (see code) | Per-highway-type snap bias (negative = prefer) |
 | `NETWORK_TYPES` | bike, drive, walk | OSM network types to fetch |
 | `SAMPLE_SIZE` | None | Limit number of rides processed (for testing) |
 
-## Map-Matching Techniques
+Heuristic-matcher parameters (`SNAP_TOLERANCE_M`, `HEADING_PENALTY`,
+`HW_PENALTY`, ...) remain in `bike_routes/config.py` and apply when
+`MATCHER = "heuristic"`.
+
+## Map-Matching
 
 Raw GPS traces are noisy — points drift to sidewalks, parallel service roads,
-or the wrong side of an intersection. The pipeline uses several techniques to
-produce clean route matches:
+or the wrong side of an intersection. Traces are matched with a hidden
+Markov model matcher
+([leuvenmapmatching](https://github.com/wannesm/LeuvenMapMatching)): each
+observation gets candidate street edges, transitions are scored by route
+plausibility, and the most likely path through the street network is decoded
+jointly. Compared to per-point snapping this eliminates parallel-way
+oscillation and block-sized routing detours — matched path length is ~1.1x
+the GPS track length vs ~2x with the previous heuristic. Stretches the
+model cannot explain (off-network riding, GPS teleports) are retried with a
+wider beam, then skipped, and matching resumes past them.
 
-- **Edge-based snapping** — GPS points snap to the nearest *edge* (perpendicular
-  projection), not the nearest node, giving much more accurate placement.
-- **Heading-aware snapping** — edges misaligned with the GPS travel direction are
-  penalized (`HEADING_PENALTY` m/degree), preventing snaps to perpendicular
-  cross-streets.
-- **Highway-type preference** — `HW_PENALTY` biases snapping toward cycleways
-  and away from footways, service roads, and motorways.
-- **Edge densification** — virtual points are added every 150m along long edges
-  so GPS traces on bridges and highways can find the correct edge even when its
-  endpoints are far away.
-- **Distance-gated loop removal** — detects A→...→A loops within a sliding
-  window and collapses them, but only when all intermediate nodes stay within
-  `LOOP_MAX_DETOUR_M` of the anchor. This cleans up zigzag noise from parallel
-  footways without stripping legitimate forward-progress segments.
+The original heuristic matcher (heading-aware edge snapping with
+highway-type penalties, shortest-path routing, and loop removal) is kept
+and selectable with `MATCHER = "heuristic"` in `bike_routes/config.py`.
+Changing the matcher or its parameters triggers a full reprocess
+automatically.
 
 ## Auto-Updating via GitHub Actions
 
