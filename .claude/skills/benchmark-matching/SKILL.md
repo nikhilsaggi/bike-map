@@ -49,6 +49,11 @@ the real OSM graph and ride corpus.
 - Bulk InMemMap build ~8s vs ~115s incremental; cache load ~4s.
 - XY-projected matching (use_latlon=False) is NOT faster than latlon; tested,
   rejected -- do not revisit.
-- Remaining lever: the wide-beam retry re-runs the whole track at 3x width.
+- Windowed wide-beam retry (keep narrow prefix, re-decode a window around
+  the dead end): tested, REJECTED. Only ~1.25x faster and quality regressed
+  (p90 length ratio 1.129 -> 1.167; worst ride 1.002 -> 1.209, jaccard
+  0.58). The narrow-beam path is worse over the WHOLE ride when it
+  dead-ends; the full-track wide retry silently rescues it. Do not revisit
+  without a fundamentally different idea.
 - 123-ride parallel batch on 6 workers: 110s wall (~18 min projected for the
   full corpus).

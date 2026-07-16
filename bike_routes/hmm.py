@@ -108,12 +108,33 @@ def _new_matcher(mmap: InMemMap) -> DistanceMatcher:
     )
 
 
+def _trim_overshoot(states: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    """Trim single-observation overshoot at either end of a matched pass.
+
+    The first/last GPS point often projects exactly onto a node, tying with
+    a perpendicular edge that the beam then picks, adding a spurious
+    ~1-block spur.
+    """
+    if len(states) >= 2 and states[-1] != states[-2]:
+        states = states[:-1]
+    if len(states) >= 2 and states[0] != states[1]:
+        states = states[1:]
+    return states
+
+
 def _map_match_ride_hmm(mmap: InMemMap, coords: np.ndarray) -> tuple[list[tuple[int, int]], int]:
     """Match one resampled ride; returns (canonical edge sequence, skipped gaps).
 
     Consecutive duplicate edges are collapsed (the lattice emits one state
     per observation); repeated traversals elsewhere in the ride survive,
     matching the heuristic's output shape.
+
+    The full-segment wide-beam retry is deliberate: a windowed retry (keep
+    the narrow-beam prefix, re-decode only around the dead end) was
+    evaluated in July 2026 and rejected -- on rides where the narrow beam
+    dead-ends, its path is measurably worse over the WHOLE ride (p90 length
+    ratio 1.129 -> 1.167, one ride 1.002 -> 1.209), and the retry's full
+    re-decode is what rescues it.  The speedup was only ~1.25x.
     """
     track: list[tuple[float, float]] = [(float(la), float(lo)) for la, lo in coords]
     edges: list[tuple[int, int]] = []
@@ -135,14 +156,7 @@ def _map_match_ride_hmm(mmap: InMemMap, coords: np.ndarray) -> tuple[list[tuple[
                 )
         except Exception:  # a failed stretch becomes a skipped gap
             states, last_idx = [], 0
-        # Trim single-observation overshoot at either end: the first/last GPS
-        # point often projects exactly onto a node, tying with a perpendicular
-        # edge that the beam then picks, adding a spurious ~1-block spur.
-        if len(states) >= 2 and states[-1] != states[-2]:
-            states = states[:-1]
-        if len(states) >= 2 and states[0] != states[1]:
-            states = states[1:]
-        for u, v in states:
+        for u, v in _trim_overshoot(states):
             if u == v:
                 continue
             canon = (u, v) if u < v else (v, u)

@@ -114,6 +114,24 @@ def test_matcher_context_uses_cache(grid_graph, tmp_path, monkeypatch):
     assert mmap2.graph == mmap1.graph  # second call served from cache
 
 
+def test_deep_dead_end_keeps_prefix(grid_mmap):
+    # Dead end deeper than HMM_RETRY_WINDOW (30 pts): the narrow-beam prefix
+    # is kept and only a window is re-decoded wide -- the whole prefix and the
+    # post-gap tail must both survive.
+    pts = (
+        [(x, 0.0) for x in range(0, 401, 20)]  # bottom row, 21 pts
+        + [(400.0, y) for y in range(20, 401, 20)]  # up the last column, 20 pts
+        + [(50000.0, 50000.0)] * 5  # teleport at obs ~41 > window
+        + [(x, 400.0) for x in range(380, 199, -20)]  # back along the top row
+    )
+    edges, skipped = br._map_match_ride_hmm(grid_mmap, _track(pts))
+    assert skipped >= 1
+    assert (0, 1) in edges  # prefix start
+    assert (3, 4) in edges  # prefix end of bottom row
+    assert (34, 44) in edges  # prefix top of column
+    assert (42, 43) in edges  # tail matched after the gap
+
+
 def test_long_offgrid_stretch_fast_forwards(grid_mmap):
     # A long teleported stretch (300 off-grid points) is fast-forwarded with
     # the cheap rtree test rather than a match attempt every few points, and

@@ -58,10 +58,12 @@ reads everything from `rides.geojson.gz` top-level `properties`.
 - Build the HMM InMemMap by passing a prebuilt graph dict to the constructor
   (bulk rtree load); never via add_node/add_edge in a loop (~15x slower).
 - XY-projected matching (use_latlon=False) was benchmarked and is NOT faster;
-  don't revisit. The remaining lever is the wide-beam retry
-  (`increase_max_lattice_width` re-runs the whole track at 3x width) -- any
-  change there alters match results and needs a quality eval first
-  (`hmm_matcher_eval.py`, matched/GPS length-ratio metric).
+  don't revisit. A windowed wide-beam retry (keep the narrow prefix,
+  re-decode only around the dead end) was also evaluated and REJECTED: the
+  narrow-beam path is measurably worse over the whole ride when it
+  dead-ends (p90 length ratio 1.129 -> 1.167) for only ~1.25x speedup --
+  the full-track wide retry is what rescues ride quality. Any future retry
+  change needs the same eval (matched/GPS length-ratio on 50+ real rides).
 
 ## Workflow
 
