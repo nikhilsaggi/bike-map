@@ -9,6 +9,12 @@ interactive Leaflet map (`docs/`, served via GitHub Pages) plus static PNGs.
 - Run pipeline: `python -m bike_routes` (flags: `--sample N`, `--rides FILE...`,
   `--no-png`, `--workers N`)
 - Tests: `pytest -q` (synthetic grid graphs only -- no network, no OSM data)
+- Map E2E tests: `npx playwright test` (needs `npm install` +
+  `npx playwright install chromium` once). Hermetic: `tests/e2e/fixture.js`
+  builds a synthetic rides.geojson (exact schema of `export.py`), Leaflet is
+  served from node_modules, tiles are stubbed -- no network, no real ride
+  data. Keep fixture expectations hand-computable; when `docs/index.html`
+  behavior changes, update/extend `tests/e2e/*.spec.js`.
 - Lint: `ruff check .` (CI enforces this; config is `select = ["ALL"]` with a
   curated ignore list in pyproject.toml -- keep new code clean rather than
   adding ignores)
