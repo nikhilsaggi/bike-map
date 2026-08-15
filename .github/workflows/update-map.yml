@@ -35,13 +35,16 @@ jobs:
             bike-pipeline-
 
       - name: Install Python dependencies
-        run: pip install .
+        run: pip install '.[garmin]'
 
       - name: Install rclone
         run: |
           curl -fsSL https://rclone.org/install.sh | sudo bash
 
-      - name: Sync rides from Dropbox
+      # Dropbox is the ride archive, not just a transfer path: rides/*.csv is
+      # gitignored and state.pkl only lives in the Actions cache, so a cache
+      # eviction is only survivable because every ride can be re-read from here.
+      - name: Sync ride archive from Dropbox
         env:
           RCLONE_CONFIG_DROPBOX_TYPE: dropbox
           RCLONE_CONFIG_DROPBOX_CLIENT_ID: ${{ secrets.DROPBOX_APP_KEY }}
@@ -50,6 +53,19 @@ jobs:
         run: |
           mkdir -p incoming
           rclone sync dropbox:Apps/bike-rides/ incoming/ --verbose
+
+      - name: Fetch new rides from Garmin Connect
+        env:
+          GARMINTOKENS: ${{ secrets.GARMINTOKENS }}
+        run: python garmin_sync.py incoming/
+
+      - name: Push new rides back to the Dropbox archive
+        env:
+          RCLONE_CONFIG_DROPBOX_TYPE: dropbox
+          RCLONE_CONFIG_DROPBOX_CLIENT_ID: ${{ secrets.DROPBOX_APP_KEY }}
+          RCLONE_CONFIG_DROPBOX_CLIENT_SECRET: ${{ secrets.DROPBOX_APP_SECRET }}
+          RCLONE_CONFIG_DROPBOX_TOKEN: '{"access_token":"","token_type":"bearer","refresh_token":"${{ secrets.DROPBOX_REFRESH_TOKEN }}","expiry":"2000-01-01T00:00:00.000Z"}'
+        run: rclone copy incoming/ dropbox:Apps/bike-rides/ --verbose
 
       - name: Convert GPX to CSV
         run: python gpx_to_csv.py incoming/ rides/

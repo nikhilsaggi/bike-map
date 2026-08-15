@@ -77,5 +77,11 @@ reads everything from `rides.geojson.gz` top-level `properties`.
   branches unless explicitly requested).
 - CI (`tests.yml`) runs ruff + pytest on every push; `update-map.yml`
   regenerates the map weekly.
+- Ride ingest is Garmin Connect (`garmin_sync.py`, token-only auth via
+  `GARMINTOKENS`) writing GPX into the Dropbox archive. Dropbox is the only
+  complete copy of the 2021-2025 rides -- `rides/*.csv` is gitignored and
+  `state.pkl` only lives in the Actions cache -- so any change to
+  `update-map.yml` must keep new rides flowing *back up* to Dropbox, or a
+  cache eviction becomes permanent data loss.
 - Personal data (`rides/*.csv`, caches, `weather_cache.json`) is gitignored --
   never commit ride files or force-add ignored paths.

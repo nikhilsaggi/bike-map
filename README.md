@@ -63,7 +63,8 @@ Tests also run in CI on every push and pull request.
 
 ## Usage
 
-1. Place GPS ride CSVs in the `rides/` folder (or GPX files in `incoming/`)
+1. Place GPS ride CSVs in the `rides/` folder (or GPX files in `incoming/` —
+   `python garmin_sync.py incoming/` fetches them from Garmin Connect)
 2. If using GPX files, convert them first:
 
 ```bash
@@ -145,20 +146,62 @@ automatically.
 
 ## Auto-Updating via GitHub Actions
 
-A GitHub Actions workflow (`.github/workflows/update-map.yml`) can
-automatically sync new rides from Dropbox and update the map weekly:
+A GitHub Actions workflow (`.github/workflows/update-map.yml`) runs every
+Monday at 9am UTC (and on demand from the Actions tab). Each run:
+
+1. syncs the ride archive down from Dropbox with rclone,
+2. downloads new outdoor rides from Garmin Connect (`garmin_sync.py`),
+3. pushes those new rides back up to the Dropbox archive,
+4. converts GPX to CSV, runs the pipeline, and commits the updated GeoJSON.
+
+Dropbox is the **archive**, not just a transfer path: `rides/*.csv` is
+gitignored and `state.pkl` only lives in the Actions cache, so a cache
+eviction is survivable only because every ride can be re-read from Dropbox.
+Step 3 is what keeps that true as new rides arrive.
+
+### Setup
 
 1. **Dropbox**: Create an app at [developers.dropbox.com](https://www.dropbox.com/developers)
-   and save GPX files to `Apps/bike-rides/`
-2. **GitHub Secrets**: Add `DROPBOX_APP_KEY`, `DROPBOX_APP_SECRET`, and
-   `DROPBOX_REFRESH_TOKEN` as repository Actions secrets
-3. **GitHub Pages**: Enable in repo Settings → Pages → main branch → `/docs`
-4. **iOS Shortcut** (optional): Create a Personal Automation that saves the
-   workout GPX to `Apps/bike-rides/` in Dropbox when a cycling workout ends
+   pointed at `Apps/bike-rides/`. Add `DROPBOX_APP_KEY`, `DROPBOX_APP_SECRET`,
+   and `DROPBOX_REFRESH_TOKEN` as repository Actions secrets.
+2. **Garmin**: mint a token blob locally (below) and store it as the
+   `GARMINTOKENS` secret.
+3. **GitHub Pages**: enable in Settings → Pages → main branch → `/docs`.
 
-The workflow runs every Monday at 9am UTC and can be triggered manually from
-the Actions tab. It syncs GPX files via rclone, converts to CSV, runs the
-pipeline, and commits the updated GeoJSON.
+### Minting the Garmin token
+
+Garmin has no personal-use API — the Connect Developer Program only accepts
+legal entities — so `garmin_sync.py` uses the endpoints the Connect web UI
+uses, via [python-garminconnect](https://github.com/cyberjunky/python-garminconnect).
+Log in once on a machine where you can complete MFA:
+
+```bash
+pip install '.[garmin]'
+python -c "
+from garminconnect import Garmin
+Garmin(input('email: '), input('password: '),
+       prompt_mfa=lambda: input('MFA code: ')).login('~/.garminconnect')
+"
+cat ~/.garminconnect/garmin_tokens.json   # paste as the GARMINTOKENS secret
+```
+
+`GARMINTOKENS` accepts either a path or the JSON itself. Tokens matter for
+more than convenience: they skip Garmin's SSO endpoint, which is behind
+Cloudflare TLS fingerprinting that tends to block datacenter IPs like CI
+runners. The token is good for about a year; when it expires the workflow
+fails loudly with a re-mint message rather than silently syncing nothing.
+
+**If Cloudflare blocks the runner anyway**, run the same script from home on a
+cron and write straight into your Dropbox folder — the workflow needs no
+change, since it already reads whatever is in `Apps/bike-rides/`:
+
+```bash
+python garmin_sync.py ~/Dropbox/Apps/bike-rides/
+```
+
+Rides are saved as `garmin_<activityId>.gpx`, so the activity id is the dedup
+key and re-runs only fetch what's missing. Indoor and virtual rides are
+skipped. `--days N` controls how far back to look (default 365).
 
 ## Weather Correlation
 

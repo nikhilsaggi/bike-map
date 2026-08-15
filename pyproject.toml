@@ -21,6 +21,10 @@ dependencies = [
 packages = ["bike_routes"]
 py-modules = ["gpx_to_csv"]
 
+[project.optional-dependencies]
+# Only the weekly sync needs a Garmin client; the pipeline and tests don't.
+garmin = ["garminconnect>=0.3.0"]
+
 [dependency-groups]
 dev = ["ruff>=0.11", "ty>=0.0.1a7", "pytest>=8.0"]
 
