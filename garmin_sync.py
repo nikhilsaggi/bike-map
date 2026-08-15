@@ -4,9 +4,10 @@ Garmin offers no Dropbox export and no personal-use API (the Connect Developer
 Program only accepts legal entities), so this talks to the same endpoints the
 Connect web UI uses, via python-garminconnect.
 
-Authentication is token-only: mint a token blob once on a machine you can do
-MFA on, and pass it as ``GARMINTOKENS`` (a path, or the JSON itself). Tokens
-skip Garmin's SSO endpoint, which is Cloudflare-fingerprinted and often blocks
+Authentication is token-only: log in once (see README) to leave a token in
+``~/.garminconnect``, which is where this looks by default. ``GARMINTOKENS``
+overrides that with another path, or with the token JSON itself. Tokens skip
+Garmin's SSO endpoint, which is Cloudflare-fingerprinted and often blocks
 datacenter IPs like CI runners.
 
 Files are written as ``garmin_<activityId>.gpx``: the activity id is the dedup
@@ -20,6 +21,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -32,9 +34,21 @@ INDOOR_TYPES = frozenset({"indoor_cycling", "virtual_ride"})
 # per-activity file check keeps the cost to one listing call plus new rides.
 DEFAULT_LOOKBACK_DAYS = 365
 
+# Where python-garminconnect writes tokens by default. Passing this explicitly
+# matters: login() falls back to GARMINTOKENS alone, so with that unset it
+# would ignore an existing token and attempt a credential-less fresh login.
+DEFAULT_TOKENSTORE = "~/.garminconnect"
+
+RE_MINT = "Log in again to refresh the token (see README)."
+
+
+def _tokenstore() -> str:
+    """Return the token store to log in with: GARMINTOKENS, else the default."""
+    return os.getenv("GARMINTOKENS") or DEFAULT_TOKENSTORE
+
 
 def _connect() -> Any:  # noqa: ANN401 -- garminconnect.Garmin, imported lazily
-    """Log in to Garmin Connect using the GARMINTOKENS token store.
+    """Log in to Garmin Connect from a stored token.
 
     Imported here rather than at module scope so the pipeline's own CI, which
     installs the package without the ``garmin`` extra, can still import and
@@ -44,12 +58,12 @@ def _connect() -> Any:  # noqa: ANN401 -- garminconnect.Garmin, imported lazily
 
     client = Garmin()
     try:
-        needs_mfa, _ = client.login()
+        needs_mfa, _ = client.login(_tokenstore())
     except Exception as exc:
-        msg = f"Garmin login failed: {exc}\nRe-mint GARMINTOKENS (see README)."
+        msg = f"Garmin login failed: {exc}\n{RE_MINT}"
         raise SystemExit(msg) from exc
     if needs_mfa:
-        msg = "Garmin demanded MFA, so the stored token is no longer valid.\nRe-mint GARMINTOKENS (see README)."
+        msg = f"Garmin demanded MFA, so the stored token is no longer valid.\n{RE_MINT}"
         raise SystemExit(msg)
     return client
 

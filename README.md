@@ -144,36 +144,29 @@ and selectable with `MATCHER = "heuristic"` in `bike_routes/config.py`.
 Changing the matcher or its parameters triggers a full reprocess
 automatically.
 
-## Auto-Updating via GitHub Actions
+## Updating the Map
 
-A GitHub Actions workflow (`.github/workflows/update-map.yml`) runs every
-Monday at 9am UTC (and on demand from the Actions tab). Each run:
+Rides come off a Garmin watch. `./update.sh` does the whole loop — fetch new
+rides, convert, reprocess, commit:
 
-1. syncs the ride archive down from Dropbox with rclone,
-2. downloads new outdoor rides from Garmin Connect (`garmin_sync.py`),
-3. pushes those new rides back up to the Dropbox archive,
-4. converts GPX to CSV, runs the pipeline, and commits the updated GeoJSON.
+```bash
+./update.sh              # or ./update.sh --days 30 to narrow the lookback
+git push                 # GitHub Pages serves docs/ straight from main
+```
 
-Dropbox is the **archive**, not just a transfer path: `rides/*.csv` is
-gitignored and `state.pkl` only lives in the Actions cache, so a cache
-eviction is survivable only because every ride can be re-read from Dropbox.
-Step 3 is what keeps that true as new rides arrive.
+It leaves the commit unpushed on purpose, so you can look at the map first.
 
-### Setup
+This runs locally rather than in CI, deliberately. The ride CSVs and the
+~260 MB OSM graph cache already live on this machine, and Garmin's login
+sits behind Cloudflare TLS fingerprinting that tends to block datacenter IPs
+— so a home network is both simpler and likelier to work than a runner.
 
-1. **Dropbox**: Create an app at [developers.dropbox.com](https://www.dropbox.com/developers)
-   pointed at `Apps/bike-rides/`. Add `DROPBOX_APP_KEY`, `DROPBOX_APP_SECRET`,
-   and `DROPBOX_REFRESH_TOKEN` as repository Actions secrets.
-2. **Garmin**: mint a token blob locally (below) and store it as the
-   `GARMINTOKENS` secret.
-3. **GitHub Pages**: enable in Settings → Pages → main branch → `/docs`.
-
-### Minting the Garmin token
+### Setting up Garmin access
 
 Garmin has no personal-use API — the Connect Developer Program only accepts
 legal entities — so `garmin_sync.py` uses the endpoints the Connect web UI
 uses, via [python-garminconnect](https://github.com/cyberjunky/python-garminconnect).
-Log in once on a machine where you can complete MFA:
+Log in once to leave a token behind:
 
 ```bash
 pip install '.[garmin]'
@@ -182,26 +175,17 @@ from garminconnect import Garmin
 Garmin(input('email: '), input('password: '),
        prompt_mfa=lambda: input('MFA code: ')).login('~/.garminconnect')
 "
-cat ~/.garminconnect/garmin_tokens.json   # paste as the GARMINTOKENS secret
 ```
 
-`GARMINTOKENS` accepts either a path or the JSON itself. Tokens matter for
-more than convenience: they skip Garmin's SSO endpoint, which is behind
-Cloudflare TLS fingerprinting that tends to block datacenter IPs like CI
-runners. The token is good for about a year; when it expires the workflow
-fails loudly with a re-mint message rather than silently syncing nothing.
-
-**If Cloudflare blocks the runner anyway**, run the same script from home on a
-cron and write straight into your Dropbox folder — the workflow needs no
-change, since it already reads whatever is in `Apps/bike-rides/`:
-
-```bash
-python garmin_sync.py ~/Dropbox/Apps/bike-rides/
-```
+After that `garmin_sync.py` reads `~/.garminconnect` on its own. The token is
+good for about a year; when it expires the script fails loudly with a re-mint
+message rather than silently fetching nothing. To keep tokens elsewhere, set
+`GARMINTOKENS` to a path — or, if you ever do want this in CI, to the token
+JSON itself.
 
 Rides are saved as `garmin_<activityId>.gpx`, so the activity id is the dedup
 key and re-runs only fetch what's missing. Indoor and virtual rides are
-skipped. `--days N` controls how far back to look (default 365).
+skipped — they carry no usable GPS track.
 
 ## Weather Correlation
 

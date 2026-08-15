@@ -75,13 +75,18 @@ reads everything from `rides.geojson.gz` top-level `properties`.
 
 - Commit directly to `main` and push after each self-contained change (no PR
   branches unless explicitly requested).
-- CI (`tests.yml`) runs ruff + pytest on every push; `update-map.yml`
-  regenerates the map weekly.
-- Ride ingest is Garmin Connect (`garmin_sync.py`, token-only auth via
-  `GARMINTOKENS`) writing GPX into the Dropbox archive. Dropbox is the only
-  complete copy of the 2021-2025 rides -- `rides/*.csv` is gitignored and
-  `state.pkl` only lives in the Actions cache -- so any change to
-  `update-map.yml` must keep new rides flowing *back up* to Dropbox, or a
-  cache eviction becomes permanent data loss.
+- CI (`tests.yml`) runs ruff + pytest on every push. There is no scheduled
+  map-update workflow: the map is regenerated locally with `./update.sh`
+  (Garmin fetch -> GPX -> CSV -> pipeline -> commit) and pushed by hand.
+- Ride ingest is Garmin Connect (`garmin_sync.py`), authenticated from a
+  token in `~/.garminconnect` (override with `GARMINTOKENS`). Keep it
+  local: Garmin's login is behind Cloudflare TLS fingerprinting that blocks
+  datacenter IPs, and the ride CSVs plus the ~260 MB graph cache only exist
+  on the owner's machine. The previous Dropbox-based `update-map.yml` failed
+  all 8 of its scheduled runs and was removed rather than fixed.
+- **`rides/*.csv` on that machine is the only copy of the 2021-2025 rides**
+  (gitignored, never uploaded anywhere). Only `docs/rides.geojson.gz` is
+  committed, and it holds edge counts, not traces -- losing `rides/` loses
+  the history irrecoverably.
 - Personal data (`rides/*.csv`, caches, `weather_cache.json`) is gitignored --
   never commit ride files or force-add ignored paths.

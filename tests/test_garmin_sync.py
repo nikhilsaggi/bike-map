@@ -35,6 +35,18 @@ def _activity(activity_id, type_key="cycling"):
     return {"activityId": activity_id, "activityType": {"typeKey": type_key}}
 
 
+def test_tokenstore_defaults_to_the_library_location(monkeypatch):
+    # login() only falls back to GARMINTOKENS, so an unset env var must still
+    # resolve to a real path or an existing token is silently ignored.
+    monkeypatch.delenv("GARMINTOKENS", raising=False)
+    assert garmin_sync._tokenstore() == "~/.garminconnect"
+
+
+def test_tokenstore_env_override(monkeypatch):
+    monkeypatch.setenv("GARMINTOKENS", '{"oauth1":"..."}')
+    assert garmin_sync._tokenstore() == '{"oauth1":"..."}'
+
+
 def test_skips_indoor_and_virtual_rides():
     rides = garmin_sync._outdoor_rides(
         [
