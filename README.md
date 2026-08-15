@@ -146,11 +146,11 @@ automatically.
 
 ## Updating the Map
 
-Rides come off a Garmin watch. `./update.sh` does the whole loop — fetch new
-rides, convert, reprocess, commit:
+Rides come off a Garmin watch. `update.py` does the whole loop — fetch new
+rides, convert, reprocess, commit — on Windows, WSL, macOS, or Linux:
 
 ```bash
-./update.sh              # or ./update.sh --days 30 to narrow the lookback
+python update.py         # or python update.py --days 30 to narrow the lookback
 git push                 # GitHub Pages serves docs/ straight from main
 ```
 

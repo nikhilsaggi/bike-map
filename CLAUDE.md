@@ -76,8 +76,10 @@ reads everything from `rides.geojson.gz` top-level `properties`.
 - Commit directly to `main` and push after each self-contained change (no PR
   branches unless explicitly requested).
 - CI (`tests.yml`) runs ruff + pytest on every push. There is no scheduled
-  map-update workflow: the map is regenerated locally with `./update.sh`
+  map-update workflow: the map is regenerated locally with `python update.py`
   (Garmin fetch -> GPX -> CSV -> pipeline -> commit) and pushed by hand.
+  It is Python, not a shell script, because the owner's machine is Windows --
+  a committed `.sh` gets CRLF endings on checkout there and bash refuses it.
 - Ride ingest is Garmin Connect (`garmin_sync.py`), authenticated from a
   token in `~/.garminconnect` (override with `GARMINTOKENS`). Keep it
   local: Garmin's login is behind Cloudflare TLS fingerprinting that blocks
