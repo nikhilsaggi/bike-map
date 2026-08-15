@@ -266,7 +266,7 @@ def _map_match_ride(
 
     # Phase 1: classify pairs
     _PENDING = object()
-    pairs: list[list[tuple[int, int, int]] | None | object] = []
+    pairs: list[list[tuple[int, int, int]] | object | None] = []
     pending_idx = []
     origs, dests = [], []
 

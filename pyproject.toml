@@ -26,7 +26,7 @@ py-modules = ["gpx_to_csv"]
 garmin = ["garminconnect>=0.3.0"]
 
 [dependency-groups]
-dev = ["ruff>=0.11", "ty>=0.0.1a7", "pytest>=8.0"]
+dev = ["ruff==0.16.3", "ty>=0.0.1a7", "pytest>=8.0"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -44,9 +44,11 @@ ignore = [
     "N803",     # argument name should be lowercase (G is networkx convention)
     "S301",     # pickle (self-generated local caches, not untrusted data)
     "S324",     # sha1 (config change detection, not security)
+    "CPY001",   # missing copyright notice (repo is MIT; no per-file headers)
     "PLR0912",  # too many branches
     "PLR0915",  # too many statements
     "PLR0913",  # too many arguments
+    "PLR0917",  # too many positional arguments (sibling of PLR0913 above)
     "C901",     # complex structure (pipeline functions are inherently complex)
     "PLR2004",  # magic value comparison (config constants are self-documenting)
     "COM812",   # missing trailing comma (conflicts with ruff formatter)

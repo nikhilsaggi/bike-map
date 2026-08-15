@@ -19,7 +19,9 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install . pytest ruff
+        # ruff is pinned: select = ["ALL"] opts into every rule ruff ships, so
+        # an unpinned linter turns each new release into a surprise red build.
+        run: pip install . pytest 'ruff==0.16.3'
 
       - name: Lint
         run: ruff check .

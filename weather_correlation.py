@@ -70,7 +70,7 @@ def fetch_weather(start: str, end: str) -> dict[str, dict[str, float]]:
         }
     )
     url = f"https://archive-api.open-meteo.com/v1/archive?{params}"
-    with urllib.request.urlopen(url, timeout=60) as resp:  # noqa: S310 -- fixed https host
+    with urllib.request.urlopen(url, timeout=60) as resp:
         payload = json.load(resp)
     daily = payload["daily"]
     out: dict[str, dict[str, float]] = {}
