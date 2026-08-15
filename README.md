@@ -177,6 +177,15 @@ Garmin(input('email: '), input('password: '),
 "
 ```
 
+**If that returns 429 ("rate limited"):** Garmin throttles its SSO endpoints
+per *account*, keyed on the account email — so changing network or VPN does
+not help, and every retry re-arms the block. Stop retrying, confirm you are
+on `garminconnect>=0.3.2` (earlier releases lack the `widget+cffi` strategy,
+which is the one that gets through while an account is throttled), and if all
+five strategies still 429, wait it out — reports range from under an hour to
+about two days. `logging.basicConfig(level=logging.DEBUG)` before the login
+shows which strategies were actually tried.
+
 After that `garmin_sync.py` reads `~/.garminconnect` on its own. The token is
 good for about a year; when it expires the script fails loudly with a re-mint
 message rather than silently fetching nothing. To keep tokens elsewhere, set

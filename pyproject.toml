@@ -22,8 +22,10 @@ packages = ["bike_routes"]
 py-modules = ["gpx_to_csv"]
 
 [project.optional-dependencies]
-# Only the weekly sync needs a Garmin client; the pipeline and tests don't.
-garmin = ["garminconnect>=0.3.0"]
+# Only the ride sync needs a Garmin client; the pipeline and tests don't.
+# >=0.3.2 specifically: it adds the widget+cffi login strategy, the only one
+# that gets through Garmin's per-account 429 throttling on the SSO endpoints.
+garmin = ["garminconnect>=0.3.2"]
 
 [dependency-groups]
 dev = ["ruff==0.16.3", "ty>=0.0.1a7", "pytest>=8.0"]
