@@ -22,6 +22,7 @@ LOOP_MAX_DETOUR_M = 50  # only remove loops where detour nodes are within this d
 DENSIFY_M = 150  # add virtual snap points on edges longer than this (metres)
 MATCH_PARALLEL_MIN_RIDES = 20  # match on worker processes when this many new rides
 MATCH_CHUNK_SIZE = 10  # rides per parallel work unit
+CHECKPOINT_EVERY_RIDES = 100  # save state mid-match after this many rides land
 
 # Matcher selection: "hmm" (leuvenmapmatching Viterbi; issue #11) or the
 # original "heuristic" edge-snapping matcher (kept for comparison/fallback).

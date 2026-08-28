@@ -48,9 +48,17 @@ reads everything from `rides.geojson.gz` top-level `properties`.
   reprocess** of all rides (config hash mismatch discards state.pkl). Don't
   add keys to it unless the change genuinely invalidates prior matches.
 - Edge keys are canonical `(min(u,v), max(u,v))` node pairs everywhere.
-- Matching results must be deterministic and independent of scheduling:
-  parallel results are applied in filename order (`cli.py`), so chunk
-  order/composition is free to change.
+- Matching results must be deterministic and independent of scheduling.
+  Results are folded into state chunk by chunk as they arrive (`cli.py`),
+  which is safe because `edge_counts` accumulates by addition and
+  `edge_rides` is only ever read via `min()` and `set()` (`export.py`) --
+  never by list order. Chunk order/composition is free to change.
+- State is checkpointed every `config.CHECKPOINT_EVERY_RIDES` rides during
+  matching, so an interrupted run resumes from the last checkpoint rather
+  than rematching everything. A file split at GPS gaps spans several entries
+  in `new_rides` but one entry in `processed_files`, so `_ready_results`
+  holds a file back until all its segments land -- checkpointing mid-file
+  would mark it done and silently drop the rest on resume.
 - Workers on Windows use spawn: anything they need must be importable or on
   disk (graph cache / hmm_map_cache.pkl), never closure state.
 - Caches are mtime/version-invalidated: hmm_map_cache.pkl must be newer than
