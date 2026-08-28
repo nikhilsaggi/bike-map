@@ -34,7 +34,8 @@ def test_gpx_to_csv_basic(tmp_path):
 
     out = gpx_to_csv.gpx_to_csv(gpx, out_dir)
     assert out is not None
-    assert out.name == "2023-12-17_18-41-53+0000.csv"
+    # 18:41:53Z is 13:41:53 EST -- names are NYC local time, as rides/ is.
+    assert out.name == "2023-12-17_13-41-53_-0500.csv"
 
     lines = out.read_text().splitlines()
     assert lines[0] == "longitude,latitude,timestamp"
@@ -70,5 +71,14 @@ def test_gpx_to_csv_offset_timestamp(tmp_path):
 
     out = gpx_to_csv.gpx_to_csv(gpx, out_dir)
     assert out is not None
-    assert out.suffix == ".csv"
-    assert out.name.startswith("2024-06-19_13-35-52")
+    assert out.name == "2024-06-19_13-35-52_-0400.csv"
+
+
+def test_gpx_to_csv_unparseable_timestamp(tmp_path):
+    gpx = tmp_path / "ride.gpx"
+    out_dir = tmp_path / "rides"
+    out_dir.mkdir()
+    _write_gpx(gpx, [("-73.98", "40.76", "whenever")])
+
+    assert gpx_to_csv.gpx_to_csv(gpx, out_dir) is None
+    assert list(out_dir.iterdir()) == []

@@ -42,3 +42,6 @@ playwright-report/
 # OS
 .DS_Store
 Thumbs.db
+
+# Local virtualenv (WSL)
+.venv/
