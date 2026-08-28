@@ -225,7 +225,11 @@ const map = L.map('map', {
   renderer: L.canvas(),
 });
 
-L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+// CARTO basemaps require a key as of Aug 2026 -- unauthenticated tiles come
+// back stamped "API KEY REQUIRED". This is a free non-commercial basemap key
+// (5M tiles/month). It is public by necessity: the browser sends it with every
+// tile request. It reads public tiles only, and is rotatable if ever abused.
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?key=cb1_2ew0_1_6d89edc1e55c801eab9bf900', {
   attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
   subdomains: 'abcd',
   maxZoom: 19,
