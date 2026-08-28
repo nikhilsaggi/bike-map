@@ -17,6 +17,8 @@ from .cache import _load_route_cache
 from .gps import haversine_m
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     import networkx as nx
 
 
@@ -266,7 +268,7 @@ def _map_match_ride(
 
     # Phase 1: classify pairs
     _PENDING = object()
-    pairs: list[list[tuple[int, int, int]] | None | object] = []
+    pairs: list[list[tuple[int, int, int]] | object | None] = []
     pending_idx = []
     origs, dests = [], []
 
@@ -457,10 +459,13 @@ def _match_rides_parallel(
     new_rides: list[tuple[str, np.ndarray]],
     route_cache: dict[tuple[int, int], list[tuple[int, int]] | None],
     n_workers: int,
+    on_chunk: Callable[[list[tuple[str, list[tuple[int, int]], int]]], None] | None = None,
 ) -> list[tuple[str, list[tuple[int, int]], int]]:
     """Map-match rides across worker processes.
 
     Route-cache entries are merged into `route_cache` as chunks complete.
+    `on_chunk`, if given, is called with each chunk's results as they arrive so
+    the caller can fold them into state and checkpoint mid-run.
     """
     # Longest rides first, striped across chunks so each chunk gets a
     # similar mix of sizes: a couple of giant rides landing in the same
@@ -487,6 +492,8 @@ def _match_rides_parallel(
                     f"  {len(results)}/{len(new_rides)} rides "
                     f"(route cache: {len(route_cache):,} entries)"
                 )
+                if on_chunk is not None:
+                    on_chunk(chunk_results)
     finally:
         if not had_opt:
             os.environ.pop("PYTHONOPTIMIZE", None)

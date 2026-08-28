@@ -5,7 +5,9 @@ from __future__ import annotations
 import argparse
 import os
 import time
+from collections import Counter
 from pathlib import Path
+from typing import Any
 
 from . import config
 from .cache import _load_route_cache, _load_state, _save_route_cache, _save_state
@@ -37,6 +39,48 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="worker processes for map matching (1 = sequential)",
     )
     return parser.parse_args(argv)
+
+
+def _apply_results(
+    state: dict[str, Any],
+    batch: list[tuple[str, list[tuple[int, int]], int]],
+) -> int:
+    """Fold matched edges into state; returns the count of skipped segments.
+
+    Application order is free: edge_counts accumulates by addition, and
+    edge_rides is only ever read via min() and set() in export.py, so folding
+    results chunk by chunk is equivalent to one globally sorted pass.
+    """
+    edge_rides = state.setdefault("edge_rides", {})
+    total_skipped = 0
+    for fname, edges, skipped in sorted(batch):
+        total_skipped += skipped
+        for edge in set(edges):
+            state["edge_counts"][edge] = state["edge_counts"].get(edge, 0) + 1
+            edge_rides.setdefault(edge, []).append(fname)
+        state["processed_files"].add(fname)
+    return total_skipped
+
+
+def _ready_results(
+    pending: dict[str, list[tuple[str, list[tuple[int, int]], int]]],
+    seg_total: Counter[str],
+    batch: list[tuple[str, list[tuple[int, int]], int]],
+) -> list[tuple[str, list[tuple[int, int]], int]]:
+    """Buffer results, releasing only files whose every segment has landed.
+
+    A file split at GPS gaps (gps.py) yields several entries in new_rides but
+    is a single entry in processed_files.  Releasing one early would let a
+    checkpoint mark the file done while its other segments are still
+    outstanding, silently dropping them when the run resumes.
+    """
+    ready: list[tuple[str, list[tuple[int, int]], int]] = []
+    for result in batch:
+        fname = result[0]
+        pending.setdefault(fname, []).append(result)
+        if len(pending[fname]) == seg_total[fname]:
+            ready.extend(pending.pop(fname))
+    return ready
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -138,44 +182,60 @@ def main(argv: list[str] | None = None) -> None:
     print(f"Map-matching ({config.MATCHER})...")
     route_cache = _load_route_cache()
 
-    results: list[tuple[str, list[tuple[int, int]], int]] | None = None
+    # Results are folded into state as they arrive and written out every
+    # config.CHECKPOINT_EVERY_RIDES rides, so an interrupted run resumes from
+    # the last checkpoint instead of rematching everything.
+    # Files split at GPS gaps are held back until complete (_ready_results).
+    seg_total = Counter(f for f, _ in new_rides)
+    pending: dict[str, list[tuple[str, list[tuple[int, int]], int]]] = {}
+    total_skipped = 0
+    n_since_save = 0
+
+    def _checkpoint() -> None:
+        nonlocal n_since_save
+        _save_route_cache(route_cache)
+        _backfill_ride_stats(state)
+        _save_state(state)
+        n_since_save = 0
+        print(f"  Checkpoint: {len(state['processed_files']):,} rides saved")
+
+    def _fold(batch: list[tuple[str, list[tuple[int, int]], int]]) -> None:
+        nonlocal total_skipped, n_since_save
+        ready = _ready_results(pending, seg_total, batch)
+        if not ready:
+            return
+        total_skipped += _apply_results(state, ready)
+        n_since_save += len(ready)
+        if n_since_save >= config.CHECKPOINT_EVERY_RIDES:
+            _checkpoint()
+
     n_workers = _match_worker_count(len(new_rides))
+    matched = False
     if n_workers > 1:
         print(f"  Matching on {n_workers} worker processes")
         try:
-            results = _match_rides_parallel(new_rides, route_cache, n_workers)
+            _match_rides_parallel(new_rides, route_cache, n_workers, on_chunk=_fold)
+            matched = True
         except Exception as e:
             print(f"  Parallel matching failed ({e!r}) -- falling back to sequential")
-            results = None
 
-    if results is None:
-        results = []
-        for i, (fname, coords) in enumerate(new_rides, 1):
+    if not matched:
+        # Whatever the parallel attempt folded is already in processed_files;
+        # drop its half-finished files and rematch only what is still missing.
+        pending.clear()
+        remaining = [(f, c) for f, c in new_rides if f not in state["processed_files"]]
+        for i, (fname, coords) in enumerate(remaining, 1):
             edges, skipped = _match_one(G, ctx, coords, route_cache)
-            results.append((fname, edges, skipped))
-            if i % 20 == 0 or i == len(new_rides):
-                print(f"  {i}/{len(new_rides)} rides")
-
-    # Apply results in filename order so state is identical regardless of
-    # how matching was scheduled.
-    total_skipped = 0
-    for fname, edges, skipped in sorted(results):
-        total_skipped += skipped
-        edge_rides = state.setdefault("edge_rides", {})
-        for edge in set(edges):
-            state["edge_counts"][edge] = state["edge_counts"].get(edge, 0) + 1
-            edge_rides.setdefault(edge, []).append(fname)
-        state["processed_files"].add(fname)
+            _fold([(fname, edges, skipped)])
+            if i % 20 == 0 or i == len(remaining):
+                print(f"  {i}/{len(remaining)} rides")
 
     if total_skipped:
         print(f"  Skipped {total_skipped:,} segments > {config.MAX_ROUTING_DISTANCE_M}m")
 
-    _save_route_cache(route_cache)
+    # 8. Final save, covering everything since the last checkpoint
+    _checkpoint()
     print(f"  Route cache: {len(route_cache):,} entries saved")
-
-    # 8. Compute stats for the newly processed rides, save state
-    _backfill_ride_stats(state)
-    _save_state(state)
 
     # 9. Render
     render_data = _get_render_data(G)

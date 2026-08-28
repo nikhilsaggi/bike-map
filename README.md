@@ -63,7 +63,8 @@ Tests also run in CI on every push and pull request.
 
 ## Usage
 
-1. Place GPS ride CSVs in the `rides/` folder (or GPX files in `incoming/`)
+1. Place GPS ride CSVs in the `rides/` folder (or GPX files in `incoming/` —
+   `python garmin_sync.py incoming/` fetches them from Garmin Connect)
 2. If using GPX files, convert them first:
 
 ```bash
@@ -143,22 +144,57 @@ and selectable with `MATCHER = "heuristic"` in `bike_routes/config.py`.
 Changing the matcher or its parameters triggers a full reprocess
 automatically.
 
-## Auto-Updating via GitHub Actions
+## Updating the Map
 
-A GitHub Actions workflow (`.github/workflows/update-map.yml`) can
-automatically sync new rides from Dropbox and update the map weekly:
+Rides come off a Garmin watch. `update.py` does the whole loop — fetch new
+rides, convert, reprocess, commit — on Windows, WSL, macOS, or Linux:
 
-1. **Dropbox**: Create an app at [developers.dropbox.com](https://www.dropbox.com/developers)
-   and save GPX files to `Apps/bike-rides/`
-2. **GitHub Secrets**: Add `DROPBOX_APP_KEY`, `DROPBOX_APP_SECRET`, and
-   `DROPBOX_REFRESH_TOKEN` as repository Actions secrets
-3. **GitHub Pages**: Enable in repo Settings → Pages → main branch → `/docs`
-4. **iOS Shortcut** (optional): Create a Personal Automation that saves the
-   workout GPX to `Apps/bike-rides/` in Dropbox when a cycling workout ends
+```bash
+python update.py         # or python update.py --days 30 to narrow the lookback
+git push                 # GitHub Pages serves docs/ straight from main
+```
 
-The workflow runs every Monday at 9am UTC and can be triggered manually from
-the Actions tab. It syncs GPX files via rclone, converts to CSV, runs the
-pipeline, and commits the updated GeoJSON.
+It leaves the commit unpushed on purpose, so you can look at the map first.
+
+This runs locally rather than in CI, deliberately. The ride CSVs and the
+~260 MB OSM graph cache already live on this machine, and Garmin's login
+sits behind Cloudflare TLS fingerprinting that tends to block datacenter IPs
+— so a home network is both simpler and likelier to work than a runner.
+
+### Setting up Garmin access
+
+Garmin has no personal-use API — the Connect Developer Program only accepts
+legal entities — so `garmin_sync.py` uses the endpoints the Connect web UI
+uses, via [python-garminconnect](https://github.com/cyberjunky/python-garminconnect).
+Log in once to leave a token behind:
+
+```bash
+pip install '.[garmin]'
+python -c "
+from garminconnect import Garmin
+Garmin(input('email: '), input('password: '),
+       prompt_mfa=lambda: input('MFA code: ')).login('~/.garminconnect')
+"
+```
+
+**If that returns 429 ("rate limited"):** Garmin throttles its SSO endpoints
+per *account*, keyed on the account email — so changing network or VPN does
+not help, and every retry re-arms the block. Stop retrying, confirm you are
+on `garminconnect>=0.3.2` (earlier releases lack the `widget+cffi` strategy,
+which is the one that gets through while an account is throttled), and if all
+five strategies still 429, wait it out — reports range from under an hour to
+about two days. `logging.basicConfig(level=logging.DEBUG)` before the login
+shows which strategies were actually tried.
+
+After that `garmin_sync.py` reads `~/.garminconnect` on its own. The token is
+good for about a year; when it expires the script fails loudly with a re-mint
+message rather than silently fetching nothing. To keep tokens elsewhere, set
+`GARMINTOKENS` to a path — or, if you ever do want this in CI, to the token
+JSON itself.
+
+Rides are saved as `garmin_<activityId>.gpx`, so the activity id is the dedup
+key and re-runs only fetch what's missing. Indoor and virtual rides are
+skipped — they carry no usable GPS track.
 
 ## Weather Correlation
 
