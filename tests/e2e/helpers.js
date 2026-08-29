@@ -41,6 +41,20 @@ export async function gotoMap(page, data = buildFixture()) {
 }
 
 /**
+ * Locator for a stats-panel section chip, and a click that opens its section.
+ * The panel shows one section at a time, so every section assertion has to
+ * open its own chip first.
+ */
+export function chip(page, section) {
+  return page.locator(`#stat-chips .chip[data-section="${section}"]`);
+}
+
+export async function openSection(page, section) {
+  await chip(page, section).click();
+  await expect(page.locator(`#${section}`)).toBeVisible();
+}
+
+/**
  * Viewport pixel position of (lat, lng), valid while the map is at its
  * initial center/zoom. Uses Leaflet's own projection in the page, so tests
  * can click canvas-rendered streets without a handle on the map object.
