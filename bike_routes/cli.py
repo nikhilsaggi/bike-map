@@ -88,6 +88,7 @@ def _finalize(
     state: dict[str, Any],
     edge_geom: dict[tuple[int, int], list[tuple[float, float]]],
     edge_hw: dict[tuple[int, int], str],
+    edge_name: dict[tuple[int, int], str],
     *,
     skip_png: bool,
 ) -> None:
@@ -102,7 +103,7 @@ def _finalize(
         print(f"Measured edge speeds for {n_speed:,} ride(s)")
         _save_state(state)
     _render(edge_geom, state, skip_png=skip_png)
-    _export_geojson(edge_geom, state, edge_hw)
+    _export_geojson(edge_geom, state, edge_hw, edge_name)
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -158,8 +159,8 @@ def main(argv: list[str] | None = None) -> None:
             print("Render cache missing -- loading graph to rebuild...")
             G = _load_graph([], state)
             render_data = _build_render_cache(G)
-        edge_geom, edge_hw = render_data
-        _finalize(state, edge_geom, edge_hw, skip_png=skip_png)
+        edge_geom, edge_hw, edge_name = render_data
+        _finalize(state, edge_geom, edge_hw, edge_name, skip_png=skip_png)
 
         print(f"\nDone in {time.time() - t0:.1f}s (no new rides)")
         return
@@ -183,8 +184,8 @@ def main(argv: list[str] | None = None) -> None:
                 print("Render cache missing -- loading graph to rebuild...")
                 G = _load_graph([], state)
                 render_data = _build_render_cache(G)
-            edge_geom, edge_hw = render_data
-            _finalize(state, edge_geom, edge_hw, skip_png=skip_png)
+            edge_geom, edge_hw, edge_name = render_data
+            _finalize(state, edge_geom, edge_hw, edge_name, skip_png=skip_png)
         print(f"\nDone in {time.time() - t0:.1f}s")
         return
 
@@ -260,8 +261,8 @@ def main(argv: list[str] | None = None) -> None:
     # 9. Render
     render_data = _get_render_data(G)
     assert render_data is not None
-    edge_geom, edge_hw = render_data
-    _finalize(state, edge_geom, edge_hw, skip_png=skip_png)
+    edge_geom, edge_hw, edge_name = render_data
+    _finalize(state, edge_geom, edge_hw, edge_name, skip_png=skip_png)
 
     # Summary
     elapsed = time.time() - t0

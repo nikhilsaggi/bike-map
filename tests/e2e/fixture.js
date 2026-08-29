@@ -16,14 +16,27 @@ export const EDGES = {
   south: { lat: 40.7305, rides: [3] },
 };
 
-// sp = [fwd_dkmh, fwd_n, rev_dkmh, rev_n], tenths of km/h, "forward" being
-// along each feature's own coordinate order (west -> east here).
-// center: 20.0 / 10.0 km/h -> 12.4 / 6.2 mph, both directions over threshold.
-// north:  15.0 km/h eastbound only; westbound measured once but unpublished.
-// south:  no sp at all -> renders as "not enough data".
-export const SPEEDS = {
-  center: [200, 6, 100, 4],
-  north: [150, 3, 0, 1],
+// Direction-split speed corridors, ranked by the pipeline. Speeds are km/h
+// (the page converts to mph): 24.14 km/h = 15.0 mph, 8.05 = 5.0, so the
+// first row reads "15.0 vs 5.0" with a 10.0 mph gap -- all hand-computable.
+export const SPEED_BLOCK = {
+  corridors: [
+    {
+      name: 'Crest Bridge', gap: 16.09, fast: 24.14, slow: 8.05,
+      dir: 'E', m: 800, n: 12, at: [-73.99, 40.7405],
+    },
+    {
+      name: 'Crest Bridge', gap: 8.05, fast: 24.14, slow: 16.09,
+      dir: 'W', m: 400, n: 9, at: [-73.98, 40.7405],
+    },
+    {
+      name: 'Flat Street', gap: 3.22, fast: 19.31, slow: 16.09,
+      dir: 'N', m: 250, n: 3, at: [-73.97, 40.7305],
+    },
+  ],
+  measured: 42,
+  split_n: 3,
+  min_m: 250.0,
 };
 
 const line = (lat) => ({
@@ -80,22 +93,14 @@ export function buildFixture(propertyOverrides = {}) {
         [3, '14:45', 40.0],
       ],
       updated: '2026-07-01',
-      speed: { lo: 8.0, med: 15.0, hi: 22.0, n: 3, split_n: 3 },
+      speed: SPEED_BLOCK,
       ...propertyOverrides,
     },
     // Sorted by ride count ascending, like the exporter.
     features: [
       { type: 'Feature', geometry: line(EDGES.south.lat), properties: { rides: EDGES.south.rides } },
-      {
-        type: 'Feature',
-        geometry: line(EDGES.north.lat),
-        properties: { rides: EDGES.north.rides, sp: SPEEDS.north },
-      },
-      {
-        type: 'Feature',
-        geometry: line(EDGES.center.lat),
-        properties: { rides: EDGES.center.rides, sp: SPEEDS.center },
-      },
+      { type: 'Feature', geometry: line(EDGES.north.lat), properties: { rides: EDGES.north.rides } },
+      { type: 'Feature', geometry: line(EDGES.center.lat), properties: { rides: EDGES.center.rides } },
     ],
   };
 }

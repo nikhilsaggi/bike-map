@@ -462,31 +462,184 @@ def _backfill_edge_speeds(
 
 
 def _chunk_speed_kmh(chunk: list[float], base: int) -> float | None:
-    """Return the published speed for one direction of a chunk, or None below threshold."""
+    """Speed for one direction of a chunk, or None if too little was measured.
+
+    This is the sanity floor only -- enough metres to divide by, and time
+    that moves forward.  How many passes a claim needs is the caller's
+    business (see config.SPEED_SPLIT_PASSES).
+    """
     dist, time_s, _moving, n = chunk[base : base + 4]
-    if n < config.SPEED_MIN_PASSES or dist < config.SPEED_MIN_DIST_M or time_s <= 0:
+    if n < 1 or dist < config.SPEED_MIN_DIST_M or time_s <= 0:
         return None
     return 3.6 * dist / time_s
 
 
-def _speed_summary(edge_speed: dict[tuple[int, int], dict[str, Any]]) -> dict[str, Any] | None:
-    """Aggregate chunk speeds into the map's stable colour domain."""
-    speeds = [
-        v
+_OCTANTS = ("N", "NE", "E", "SE", "S", "SW", "W", "NW")
+
+
+def _octant(bearing_deg: float) -> str:
+    """Compass octant for a bearing in degrees clockwise from north."""
+    return _OCTANTS[int((bearing_deg + 22.5) % 360 // 45)]
+
+
+def _chord(coords: list[tuple[float, float]]) -> tuple[float, float]:
+    """Bearing and straight-line length of a line's chord."""
+    dx = (coords[-1][0] - coords[0][0]) * config.M_PER_LON
+    dy = (coords[-1][1] - coords[0][1]) * config.M_PER_LAT
+    return (math.degrees(math.atan2(dx, dy)) + 360) % 360, math.hypot(dx, dy)
+
+
+def _line_len(coords: list[tuple[float, float]]) -> float:
+    """Length in metres of a (lon, lat) coordinate sequence."""
+    return sum(
+        math.hypot((b[0] - a[0]) * config.M_PER_LON, (b[1] - a[1]) * config.M_PER_LAT)
+        for a, b in zip(coords, coords[1:])
+    )
+
+
+def _measured_chunks(
+    rec: dict[str, Any], coords: list[tuple[float, float]]
+) -> list[dict[str, Any] | None] | None:
+    """Per chunk along an edge: both-direction speeds, or None if under-sampled.
+
+    Position in the list is position along the edge, so a None (a stretch
+    ridden too rarely one way) breaks the sequence rather than being skipped
+    -- two runs either side of an unmeasured gap are not one corridor.
+    """
+    chunks = _oriented_chunks(rec, coords)
+    if not chunks:
+        return None
+    slices = _chunk_slices(coords, len(chunks))
+    if len(slices) != len(chunks):
+        return None
+    out: list[dict[str, Any] | None] = []
+    for piece, chunk in zip(slices, chunks):
+        fwd = _chunk_speed_kmh(chunk, _FWD)
+        rev = _chunk_speed_kmh(chunk, _REV)
+        n = min(chunk[_FWD + 3], chunk[_REV + 3])
+        if fwd is None or rev is None or n < config.SPEED_SPLIT_PASSES:
+            out.append(None)
+            continue
+        bearing, chord = _chord(piece)
+        length = _line_len(piece)
+        out.append(
+            {
+                "len": length,
+                "gap": abs(fwd - rev),
+                "fast": max(fwd, rev),
+                "slow": min(fwd, rev),
+                "fwd_faster": fwd >= rev,
+                # Bearing of travel in the faster direction.  A hairpin (a
+                # bridge's spiral approach ramp) has a chord pointing nowhere
+                # useful, so it is measured but not allowed to name a run.
+                "bearing": bearing if fwd >= rev else (bearing + 180) % 360,
+                "aimed": length > 0 and chord / length >= 0.5,
+                "mid": piece[len(piece) // 2],
+                "n": int(n),
+            }
+        )
+    return out
+
+
+def _runs_of_one_sign(
+    chunks: list[dict[str, Any] | None],
+) -> list[list[dict[str, Any]]]:
+    """Split a chunk sequence wherever the faster direction flips."""
+    runs: list[list[dict[str, Any]]] = []
+    cur: list[dict[str, Any]] = []
+    for c in [*chunks, None]:
+        if c is None or (cur and c["fwd_faster"] != cur[-1]["fwd_faster"]):
+            if cur:
+                runs.append(cur)
+            cur = []
+            if c is None:
+                continue
+        cur.append(c)
+    return runs
+
+
+def _summarize_run(name: str, run: list[dict[str, Any]]) -> dict[str, Any]:
+    """Collapse a same-sign run into one ranked corridor entry."""
+    total = sum(c["len"] for c in run)
+    aimed = [c for c in run if c["aimed"]] or run
+    by_dir: dict[str, float] = {}
+    for c in aimed:
+        d = _octant(c["bearing"])
+        by_dir[d] = by_dir.get(d, 0.0) + c["len"]
+    mid = run[len(run) // 2]["mid"]
+    return {
+        "name": name,
+        "gap": round(sum(c["gap"] * c["len"] for c in run) / total, 1),
+        "fast": round(sum(c["fast"] * c["len"] for c in run) / total, 1),
+        "slow": round(sum(c["slow"] * c["len"] for c in run) / total, 1),
+        "dir": max(by_dir.items(), key=lambda kv: kv[1])[0],
+        "m": round(total),
+        "n": min(c["n"] for c in run),
+        "at": [round(mid[0], 5), round(mid[1], 5)],
+    }
+
+
+def _top_corridors(
+    edge_speed: dict[tuple[int, int], dict[str, Any]],
+    edge_geom: dict[tuple[int, int], list[tuple[float, float]]],
+    edge_name: dict[tuple[int, int], str],
+) -> list[dict[str, Any]]:
+    """Rank named corridor stretches by how much the two directions differ.
+
+    A stretch is a run of consecutive chunks that agree on which direction
+    is faster.  Splitting at the sign change is what makes this readable on
+    a bridge: its whole signal is that the faster direction flips at the
+    crest, so the span has to be reported as its two descents rather than
+    averaged into one meaningless number.  Runs are disjoint by
+    construction -- the same stretch can never appear twice.
+
+    At most one entry per street and direction, so a long corridor cannot
+    crowd out the rest of the list.
+    """
+    best: dict[tuple[str, str], dict[str, Any]] = {}
+    for key, rec in edge_speed.items():
+        name = edge_name.get(key)
+        coords = edge_geom.get(key)
+        if not name or not coords:
+            continue
+        chunks = _measured_chunks(rec, [tuple(c) for c in coords])
+        if chunks is None:
+            continue
+        for run in _runs_of_one_sign(chunks):
+            if sum(c["len"] for c in run) < config.SPEED_CORRIDOR_MIN_M:
+                continue
+            entry = _summarize_run(name, run)
+            slot = (name, entry["dir"])
+            if slot not in best or entry["gap"] > best[slot]["gap"]:
+                best[slot] = entry
+    ranked = sorted(best.values(), key=lambda e: -e["gap"])
+    return ranked[: config.SPEED_CORRIDOR_N]
+
+
+def _speed_summary(
+    edge_speed: dict[tuple[int, int], dict[str, Any]],
+    edge_geom: dict[tuple[int, int], list[tuple[float, float]]],
+    edge_name: dict[tuple[int, int], str],
+) -> dict[str, Any] | None:
+    """Top-level speed block: the corridor ranking plus what it was drawn from.
+
+    Speeds are km/h, like every other figure in the payload; the map
+    converts for display.
+    """
+    corridors = _top_corridors(edge_speed, edge_geom, edge_name)
+    if not corridors:
+        return None
+    measured = sum(
+        1
         for rec in edge_speed.values()
         for chunk in rec["c"]
-        for base in (_FWD, _REV)
-        if (v := _chunk_speed_kmh(chunk, base)) is not None
-    ]
-    if not speeds:
-        return None
-    arr = np.array(speeds)
+        if _chunk_speed_kmh(chunk, _FWD) is not None and _chunk_speed_kmh(chunk, _REV) is not None
+    )
     return {
-        "lo": round(float(np.percentile(arr, 10)), 1),
-        "med": round(float(np.percentile(arr, 50)), 1),
-        "hi": round(float(np.percentile(arr, 90)), 1),
-        "n": len(speeds),
+        "corridors": corridors,
+        "measured": measured,
         "split_n": config.SPEED_SPLIT_PASSES,
+        "min_m": config.SPEED_CORRIDOR_MIN_M,
     }
 
 

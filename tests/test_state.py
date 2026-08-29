@@ -117,13 +117,39 @@ def test_render_cache_roundtrip(tmp_path, monkeypatch):
     G.add_node(2, x=0.001, y=0.0)
     G.add_edge(1, 2, length=100.0, highway="cycleway")
 
-    edge_geom, edge_hw = br._build_render_cache(G)
+    edge_geom, edge_hw, edge_name = br._build_render_cache(G)
     assert edge_hw[(1, 2)] == "cycleway"
     assert br._classify_hw(edge_hw[(1, 2)]) == "bike"
+    assert edge_name == {}  # the test edge is unnamed
 
-    loaded_geom, loaded_hw = br._get_render_data()
+    loaded_geom, loaded_hw, loaded_name = br._get_render_data()
     assert loaded_geom == edge_geom
     assert loaded_hw == edge_hw
+    assert loaded_name == edge_name
+
+
+def test_render_cache_keeps_street_names(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    G = nx.MultiDiGraph()
+    G.add_node(1, x=0.0, y=0.0)
+    G.add_node(2, x=0.001, y=0.0)
+    G.add_edge(1, 2, length=100.0, highway="cycleway", name="Kent Avenue")
+    # OSM puts a list here where a way carries several names.
+    G.add_node(3, x=0.002, y=0.0)
+    G.add_edge(2, 3, length=100.0, highway="residential", name=["Bedford Avenue", "NY 27"])
+
+    _geom, _hw, edge_name = br._build_render_cache(G)
+    assert edge_name[(1, 2)] == "Kent Avenue"
+    assert edge_name[(2, 3)] == "Bedford Avenue"
+
+
+def test_render_cache_format_bump_invalidates(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    # Previous format: (fmt, geom, hw) with no names -- must not load, or the
+    # corridor ranking would silently report nothing.
+    with (tmp_path / br.RENDER_CACHE_PATH.name).open("wb") as f:
+        pickle.dump(("hw-raw-v1", {(1, 2): [(0.0, 0.0), (1.0, 1.0)]}, {(1, 2): "cycleway"}), f)
+    assert br._get_render_data() is None
 
 
 def test_unreadable_graph_cache_refetches(tmp_path, monkeypatch):

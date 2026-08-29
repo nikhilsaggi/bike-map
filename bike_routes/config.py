@@ -82,7 +82,7 @@ STATE_CACHE_PATH = Path("state.pkl")
 RENDER_CACHE_PATH = Path("render_cache.pkl")
 ROUTE_CACHE_PATH = Path("route_cache.pkl")
 CACHE_VERSIONS_PATH = Path("cache_versions.json")
-RENDER_CACHE_FORMAT = "hw-raw-v1"
+RENDER_CACHE_FORMAT = "hw-name-v1"  # bump invalidates render_cache.pkl (rebuilt from the graph)
 MERGE_TOL_M = 20.0  # parallel features within this lateral distance may merge
 MERGE_SAMPLE_M = 8.0  # geometry sampling interval for coverage tests
 MERGE_HEADING_DEG = 30.0  # max heading difference (mod 180) for samples to match
@@ -114,12 +114,12 @@ SPEED_MAX_KMH = 60.0  # reject implausible passes (GPS jump / misassignment)
 SPEED_MOVING_KMH = 2.4  # below this a fix counts as stopped (~1.5 mph)
 SPEED_CHUNK_M = 150.0  # long edges are measured in chunks this size (a bridge
 # averages its own climb against its descent when treated as one segment)
-SPEED_MAX_CHUNKS = 24  # cap chunks per edge so one long way cannot dominate the payload
-SPEED_MIN_PASSES = 1  # per-direction passes needed before a speed is published
-# A single pass is a real measurement, just noisy, so it still gets a colour.
-# Comparing the two directions against each other is a stronger claim and
-# needs more evidence; the client applies this to the asymmetry view.
-SPEED_SPLIT_PASSES = 3
-SPEED_MIN_DIST_M = 50.0  # per-direction distance needed before a speed is published
+SPEED_MAX_CHUNKS = 24  # cap chunks per edge so one long way cannot dominate the scan
+SPEED_MIN_DIST_M = 50.0  # per-direction distance needed before a speed is usable
+# Comparing the two directions against each other is a strong claim, so it
+# needs more evidence than a single noisy pass would give.
+SPEED_SPLIT_PASSES = 3  # passes needed in EACH direction before a chunk is ranked
+SPEED_CORRIDOR_MIN_M = 250.0  # a shorter same-sign run is an anecdote, not a corridor
+SPEED_CORRIDOR_N = 10  # corridors listed in the stats panel
 M_PER_LON = 111_320 * np.cos(np.radians(40.73))
 M_PER_LAT = 110_540

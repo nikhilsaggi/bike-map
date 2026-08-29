@@ -243,29 +243,132 @@ def test_malformed_records_are_discarded():
 # -- publish thresholds ------------------------------------------------------
 
 
-def test_payload_zeroes_a_direction_below_threshold(monkeypatch):
-    monkeypatch.setattr(config, "SPEED_MIN_PASSES", 3)
-    # forward: 3 passes, 300 m in 60 s = 18 km/h.  reverse: 1 pass, below.
-    chunk = [300, 60, 60, 3, 100, 20, 20, 1]
-    assert br._speed_payload(chunk) == [180, 3, 0, 1]
+def test_corridor_ranking_splits_a_run_at_the_sign_change():
+    """A bridge's whole signal is that the faster direction flips at the crest."""
+    coords = [lonlat(x, 0) for x in range(0, 1201, 100)]
+    # 6 chunks: the first three faster reverse (westbound), the last three
+    # faster forward (eastbound) -- a crest in the middle.
+    slow, fast = [100, 40, 40, 5], [100, 20, 20, 5]
+    rec = {
+        "b": br._chord_bearing(coords),
+        "c": [(slow + fast) if i < 3 else (fast + slow) for i in range(6)],
+    }
+    out = br._top_corridors({EDGE: rec}, {EDGE: coords}, {EDGE: "Crest Bridge"})
+
+    assert len(out) == 2, "the two descents must be reported separately"
+    east, west = sorted(out, key=lambda c: c["dir"])  # "E" sorts before "W"
+    assert (east["dir"], west["dir"]) == ("E", "W")
+    # Disjoint halves of one 1200 m edge, so they partition it exactly.
+    assert east["m"] + west["m"] == 1200
+    for c in out:
+        assert (c["fast"], c["slow"], c["gap"]) == (18.0, 9.0, 9.0)
+        assert c["name"] == "Crest Bridge"
 
 
-def test_payload_is_none_when_no_direction_qualifies(monkeypatch):
-    monkeypatch.setattr(config, "SPEED_MIN_PASSES", 3)
-    assert br._speed_payload([100, 20, 20, 1, 0, 0, 0, 0]) is None
+def test_corridor_ranking_skips_short_and_undersampled_runs(monkeypatch):
+    monkeypatch.setattr(config, "SPEED_CORRIDOR_MIN_M", 250.0)
+    coords = [lonlat(0, 0), lonlat(600, 0)]
+    both = [100, 20, 20, 5, 100, 40, 40, 5]
+    rec = {"b": br._chord_bearing(coords), "c": [list(both) for _ in range(4)]}
+    names = {EDGE: "Kent Avenue"}
+
+    assert br._top_corridors({EDGE: rec}, {EDGE: coords}, names)
+
+    # One direction under the split threshold: nothing to compare.
+    thin = {"b": rec["b"], "c": [[100, 20, 20, 5, 100, 40, 40, 1] for _ in range(4)]}
+    assert br._top_corridors({EDGE: thin}, {EDGE: coords}, names) == []
+
+    # Long enough per chunk, but the run is under the length floor.
+    monkeypatch.setattr(config, "SPEED_CORRIDOR_MIN_M", 5000.0)
+    assert br._top_corridors({EDGE: rec}, {EDGE: coords}, names) == []
 
 
-def test_summary_reports_a_stable_domain(tmp_path, monkeypatch):
-    rows = [(10 * i, 0, 2 * i) for i in range(11)]
-    st = _run(tmp_path, rows, monkeypatch)
-    summary = br._speed_summary(st["edge_speed"])
+def test_corridor_ranking_breaks_a_run_at_an_unmeasured_gap():
+    """Two stretches either side of a gap are not one corridor."""
+    coords = [lonlat(x, 0) for x in range(0, 1201, 100)]
+    both = [100, 20, 20, 5, 100, 40, 40, 5]
+    rec = {
+        "b": br._chord_bearing(coords),
+        # Chunk 2 was never ridden both ways, so it splits the edge in two.
+        "c": [([0.0] * 8 if i == 2 else list(both)) for i in range(6)],
+    }
+    out = br._top_corridors({EDGE: rec}, {EDGE: coords}, {EDGE: "Kent Avenue"})
+    # Same direction either side, so the (name, dir) slot keeps only the best
+    # -- the point is that 1200 m did not become one 1200 m corridor.
+    assert len(out) == 1
+    assert out[0]["m"] < 1200
+
+
+def test_corridor_ranking_keeps_one_entry_per_street_and_direction():
+    coords = [lonlat(0, 0), lonlat(600, 0)]
+    big = [100, 20, 20, 5, 100, 60, 60, 5]  # 18 vs 6 km/h
+    small = [100, 20, 20, 5, 100, 30, 30, 5]  # 18 vs 12 km/h
+    edges = {
+        (1, 2): {"b": br._chord_bearing(coords), "c": [list(big) for _ in range(4)]},
+        (3, 4): {"b": br._chord_bearing(coords), "c": [list(small) for _ in range(4)]},
+    }
+    geom = {(1, 2): coords, (3, 4): coords}
+    names = {(1, 2): "Kent Avenue", (3, 4): "Kent Avenue"}
+    out = br._top_corridors(edges, geom, names)
+    assert len(out) == 1
+    assert out[0]["gap"] == 12.0  # the stronger of the two stretches
+
+
+def test_corridor_ranking_is_capped(monkeypatch):
+    monkeypatch.setattr(config, "SPEED_CORRIDOR_N", 3)
+    coords = [lonlat(0, 0), lonlat(600, 0)]
+    edges, geom, names = {}, {}, {}
+    for i in range(8):
+        key = (i, i + 100)
+        edges[key] = {
+            "b": br._chord_bearing(coords),
+            "c": [[100, 20, 20, 5, 100, 40 + i, 40 + i, 5] for _ in range(4)],
+        }
+        geom[key] = coords
+        names[key] = f"Street {i}"
+    out = br._top_corridors(edges, geom, names)
+    assert len(out) == 3
+    assert [c["gap"] for c in out] == sorted((c["gap"] for c in out), reverse=True)
+
+
+def test_hairpin_chunks_do_not_name_a_run():
+    """A bridge's spiral approach ramp points nowhere useful."""
+    # Five chunks running east, plus a leading ramp that doubles back west.
+    coords = [lonlat(0, 0), lonlat(100, 60), lonlat(20, 0)]
+    coords += [lonlat(20 + 100 * i, 0) for i in range(1, 6)]
+    rec = {
+        "b": br._chord_bearing(coords),
+        "c": [[100, 20, 20, 5, 100, 40, 40, 5] for _ in range(4)],
+    }
+    out = br._top_corridors({EDGE: rec}, {EDGE: coords}, {EDGE: "Ramp Bridge"})
+    assert len(out) == 1
+    assert out[0]["dir"] == "E", "the ramp's chord must not set the label"
+
+
+def test_octant_covers_the_compass():
+    assert br._octant(0) == "N"
+    assert br._octant(90) == "E"
+    assert br._octant(180) == "S"
+    assert br._octant(270) == "W"
+    assert br._octant(359) == "N"  # wraps
+    assert br._octant(45) == "NE"
+
+
+def test_summary_reports_the_corridor_block():
+    coords = [lonlat(0, 0), lonlat(600, 0)]
+    rec = {
+        "b": br._chord_bearing(coords),
+        "c": [[100, 20, 20, 5, 100, 40, 40, 5] for _ in range(4)],
+    }
+    summary = br._speed_summary({EDGE: rec}, {EDGE: coords}, {EDGE: "Kent Avenue"})
     assert summary is not None
     assert summary["split_n"] == config.SPEED_SPLIT_PASSES
-    assert summary["lo"] <= summary["med"] <= summary["hi"]
+    assert summary["measured"] == 4
+    assert [c["name"] for c in summary["corridors"]] == ["Kent Avenue"]
 
 
 def test_summary_is_none_without_data():
-    assert br._speed_summary({}) is None
+    assert br._speed_summary({}, {}, {}) is None
 
 
 # -- config hash: the hard constraint ----------------------------------------
@@ -277,7 +380,7 @@ def test_speed_settings_are_not_in_the_processing_config(monkeypatch):
     for name, value in [
         ("SPEED_VERSION", 99),
         ("SPEED_CHUNK_M", 42.0),
-        ("SPEED_MIN_PASSES", 7),
+        ("SPEED_CORRIDOR_MIN_M", 7.0),
         ("SPEED_SPLIT_PASSES", 9),
     ]:
         monkeypatch.setattr(config, name, value)

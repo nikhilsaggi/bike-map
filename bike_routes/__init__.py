@@ -99,9 +99,10 @@ from .config import (
     SKIP_PNG_RENDER,
     SNAP_TOLERANCE_M,
     SPEED_CHUNK_M,
+    SPEED_CORRIDOR_MIN_M,
+    SPEED_CORRIDOR_N,
     SPEED_MAX_CHUNKS,
     SPEED_MIN_DIST_M,
-    SPEED_MIN_PASSES,
     SPEED_REVERSAL_M,
     SPEED_SPLIT_PASSES,
     SPEED_VERSION,
@@ -118,18 +119,21 @@ from .edge_speed import (
     _chunk_speed_kmh,
     _densify,
     _load_ride_track,
+    _measured_chunks,
     _n_chunks,
+    _octant,
     _oriented_chunks,
     _records_well_formed,
+    _runs_of_one_sign,
     _speed_summary,
     _split_monotonic,
     _swap_dirs,
+    _top_corridors,
 )
 from .export import (
     _coverage_summary,
     _export_geojson,
     _geom_len_m,
-    _speed_payload,
 )
 from .gps import (
     _is_nyc_ride,
@@ -167,18 +171,14 @@ from .matching import (
 from .merge import (
     _audit_merge,
     _average_parallel_geometry,
-    _cluster_speed,
     _dense_point_grid,
     _drop_redundant_rings,
     _harmonize_representatives,
     _heading_diff,
     _merge_parallel_features,
-    _relative_orientation,
-    _reorient_speed,
     _sample_hits,
     _sample_line,
     _snap_endpoints,
-    _speed_add,
 )
 from .render import (
     _build_render_cache,

@@ -69,6 +69,13 @@ reads everything from `rides.geojson.gz` top-level `properties`.
 
 ### Edge speed (`edge_speed.py`)
 
+Direction-split traversal speed, backfilled from the ride CSVs' timestamps.
+It is a **stats-panel ranking, not a map layer**: measured across the whole
+network, only ~6% of drawn km ever has enough passes in both directions to
+compare them, so colouring features by it produced a 94%-empty map. The
+export ships a top-10 corridor list in `properties.speed` instead
+(+0.5 KB); features carry no speed key and `merge.py` never sees it.
+
 - `state["edge_speed"]` / `state["speed_rides"]` are deliberately **outside**
   `_processing_config()`: speed comes from timestamps the matcher never saw,
   so changing it must never trigger a rematch of 1380 rides. Its own
@@ -80,30 +87,27 @@ reads everything from `rides.geojson.gz` top-level `properties`.
   `min(u,v)` -> `max(u,v)`.** `render.py` builds `edge_geom[canon]` from
   whichever *directed* edge won the shortest-edge tie-break, so ~9.5% of
   geometries run max->min. Anchoring direction to the node key would invert
-  a scattered subset against the line actually drawn. Backfill, merge, and
-  client all use the geometry convention; no bearing is shipped.
+  a scattered subset. `_oriented_chunks` re-expresses a record against the
+  current geometry, so a rebuilt render cache cannot silently flip it.
 - Records are per-chunk (~`SPEED_CHUNK_M`), not per-edge: the Manhattan
-  Bridge bike path is a single 2163 m edge whose climb cancels its descent,
-  so a whole-edge average shows nothing. `export.py` emits one feature per
-  chunk via `_chunk_slices`; the slices share boundary vertices, so the
-  drawn line is unchanged.
-- Every direction bucket is `[dist, time, moving, n]` per direction, so it
-  combines by addition and survives chunked folding like `edge_counts`.
-- **`merge.py` has three places a geometry is replaced or combined, and all
-  three must reorient the buckets**: the Phase-1 cluster keep
-  (`_cluster_speed`), the Phase-2 absorb (`_speed_add`), and
-  `_harmonize_representatives` (`_reorient_speed`, before it swaps in an
-  alt). `MERGE_HEADING_DEG` matches mod 180, so anti-parallel geometries do
-  cluster; adding unflipped buckets reverses a corridor silently.
-  Orientation comes from `_relative_orientation` (along-parameter
-  correlation, chord only as fallback -- 6.5% of features have a chord under
-  half their length).
+  Bridge bike path is a single 2163 m edge whose climb cancels its descent
+  (10.37 vs 10.23 mph -- no signal), and the street grid's median 63 m edge
+  stays one chunk regardless.
+- Each direction bucket is `[dist, time, moving, n]`, so it combines by
+  addition and survives chunked folding like `edge_counts`.
+- **`_top_corridors` splits a corridor wherever the faster direction flips**,
+  and that is the point rather than an implementation detail: a bridge's
+  entire signal is the crest reversal, so it must be reported as its two
+  descents. Runs are disjoint by construction, so one stretch can never
+  appear twice; two rows for one street are always different stretches.
+- Street names come from the render cache (`edge_name`, `RENDER_CACHE_FORMAT`
+  = `hw-name-v1`). Bumping that format costs one graph load to rebuild; it
+  does not touch the config hash.
 - **Regression oracle for any change here:** the Manhattan Bridge
-  (`edge_geom[(1371803831, 7480410407)]`) must show southbound faster on the
-  Brooklyn half and northbound faster on the Manhattan half, with the
-  direction gap swinging from about -8.5 mph to +6.8 mph across the span. An orientation bug flips the sign;
-  a unit test on a synthetic grid cannot catch it because grid orientation
-  is uniform.
+  (`edge_geom[(1371803831, 7480410407)]`) must appear twice in the ranking,
+  SE and NW, ~5 mph each. Collapsing to one row means the sign-change split
+  broke; a single direction means orientation broke. A unit test on a
+  synthetic grid cannot catch either -- grid orientation is uniform.
 
 ## Performance notes
 
