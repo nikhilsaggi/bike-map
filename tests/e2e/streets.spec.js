@@ -33,6 +33,43 @@ test.describe('streets', () => {
     await expect(rows.nth(2)).toContainText('12.3%');
     await expect(rows.nth(3)).toContainText('Most-ridden segment');
     await expect(rows.nth(3)).toContainText('4×');
+    // The count says how often; the name says what.
+    await expect(page.locator('#streets-totals .r-link')).toHaveText('Center Street');
+  });
+
+  test('the most-ridden segment can be shown on the map and cleared', async ({ page }) => {
+    await gotoMap(page);
+    await openSection(page, STREETS);
+    const link = page.locator('#streets-totals .r-link');
+
+    await link.click();
+    await page.waitForTimeout(900);
+    expect(await page.evaluate(() => speedMarker !== null)).toBe(true);
+    await expect(link).toHaveClass(/\bon\b/);
+    expect(await page.evaluate(() => map.getCenter().lat)).toBeCloseTo(40.745, 2);
+
+    await link.click();
+    expect(await page.evaluate(() => speedMarker !== null)).toBe(false);
+    await expect(link).not.toHaveClass(/\bon\b/);
+  });
+
+  test('the segment link and a corridor row share one marker', async ({ page }) => {
+    // Both place the same circle, so selecting one must release the other.
+    await gotoMap(page);
+    await openSection(page, STREETS);
+    await page.locator('#streets-totals .r-link').click();
+    await page.waitForTimeout(900);
+    await page.locator('.sp-row').first().click();
+    await page.waitForTimeout(900);
+    await expect(page.locator('#streets-totals .r-link')).not.toHaveClass(/\bon\b/);
+    await expect(page.locator('.sp-row.on')).toHaveCount(1);
+  });
+
+  test('an unnamed top segment leaves the count on its own', async ({ page }) => {
+    await gotoMap(page, buildFixture({ top_segment: { name: null, at: [-73.96, 40.745] } }));
+    await openSection(page, STREETS);
+    await expect(page.locator('#streets-totals .r-row').nth(3)).toContainText('4×');
+    await expect(page.locator('#streets-totals .r-link')).toHaveCount(0);
   });
 
   test('the coverage percentage carries its own numerator and denominator', async ({ page }) => {
@@ -40,7 +77,7 @@ test.describe('streets', () => {
     await openSection(page, STREETS);
     // 12.3% is measured over a narrower network than the 62 drawn miles, so
     // the two must not read as one division. 45.5 km of 370 km.
-    await expect(page.locator('#streets-totals .r-sub'))
+    await expect(page.locator('#streets-totals .r-sub').first())
       .toHaveText('28 of 230 mi, paths excluded');
   });
 
@@ -196,7 +233,8 @@ test.describe('streets', () => {
 
   test('chip stays hidden when there is nothing about streets to show', async ({ page }) => {
     await gotoMap(page, buildFixture({
-      speed: null, total_km: null, total_edges: null, coverage: null, max_count: null,
+      speed: null, total_km: null, total_edges: null, coverage: null,
+      max_count: null, top_segment: null,
     }));
     await expect(chip(page, STREETS)).toBeHidden();
     await expect(page.locator('#stat-streets')).toBeHidden();

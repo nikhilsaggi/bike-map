@@ -97,6 +97,9 @@ export function buildFixture(propertyOverrides = {}) {
         [3, '14:45', 40.0],
       ],
       updated: '2026-07-01',
+      // The busiest drawn feature, named. Placed on the north edge so a click
+      // is checkable against a known centre.
+      top_segment: { name: 'Center Street', at: [-73.96, 40.745] },
       speed: SPEED_BLOCK,
       ...propertyOverrides,
     },
