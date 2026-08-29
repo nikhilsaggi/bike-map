@@ -36,8 +36,11 @@ interactive Leaflet map (`docs/`, served via GitHub Pages) plus static PNGs.
 4. `cache.py` -- state.pkl (processed files, edge counts), config-hash
    invalidation
 5. `merge.py` -- collapse parallel/duplicate edge geometries into corridors
-6. `render.py` / `export.py` -- PNGs and `docs/rides.geojson.gz`
-7. `weather.py` -- Open-Meteo ride-weather stats embedded in the GeoJSON
+6. `edge_speed.py` -- direction-split per-edge speed, backfilled from the
+   ride CSVs' timestamps (see below); needs `edge_geom`, so it runs from
+   `cli._finalize` rather than the matching checkpoint
+7. `render.py` / `export.py` -- PNGs and `docs/rides.geojson.gz`
+8. `weather.py` -- Open-Meteo ride-weather stats embedded in the GeoJSON
 
 `docs/index.html` is a single self-contained Leaflet page (no build step); it
 reads everything from `rides.geojson.gz` top-level `properties`.
@@ -63,6 +66,44 @@ reads everything from `rides.geojson.gz` top-level `properties`.
   disk (graph cache / hmm_map_cache.pkl), never closure state.
 - Caches are mtime/version-invalidated: hmm_map_cache.pkl must be newer than
   osm_graph_cache.pkl; graph cache is bound to osmnx/networkx versions.
+
+### Edge speed (`edge_speed.py`)
+
+- `state["edge_speed"]` / `state["speed_rides"]` are deliberately **outside**
+  `_processing_config()`: speed comes from timestamps the matcher never saw,
+  so changing it must never trigger a rematch of 1380 rides. Its own
+  invalidation lever is `config.SPEED_VERSION` -- bump it and the next run
+  discards and recomputes (`_records_well_formed` is a fail-closed shape
+  guard for records that predate a layout change). Editing the algorithm
+  without bumping it leaves stale records in place, silently.
+- **Forward means "along the stored vertex order of `edge_geom[key]`", not
+  `min(u,v)` -> `max(u,v)`.** `render.py` builds `edge_geom[canon]` from
+  whichever *directed* edge won the shortest-edge tie-break, so ~9.5% of
+  geometries run max->min. Anchoring direction to the node key would invert
+  a scattered subset against the line actually drawn. Backfill, merge, and
+  client all use the geometry convention; no bearing is shipped.
+- Records are per-chunk (~`SPEED_CHUNK_M`), not per-edge: the Manhattan
+  Bridge bike path is a single 2163 m edge whose climb cancels its descent,
+  so a whole-edge average shows nothing. `export.py` emits one feature per
+  chunk via `_chunk_slices`; the slices share boundary vertices, so the
+  drawn line is unchanged.
+- Every direction bucket is `[dist, time, moving, n]` per direction, so it
+  combines by addition and survives chunked folding like `edge_counts`.
+- **`merge.py` has three places a geometry is replaced or combined, and all
+  three must reorient the buckets**: the Phase-1 cluster keep
+  (`_cluster_speed`), the Phase-2 absorb (`_speed_add`), and
+  `_harmonize_representatives` (`_reorient_speed`, before it swaps in an
+  alt). `MERGE_HEADING_DEG` matches mod 180, so anti-parallel geometries do
+  cluster; adding unflipped buckets reverses a corridor silently.
+  Orientation comes from `_relative_orientation` (along-parameter
+  correlation, chord only as fallback -- 6.5% of features have a chord under
+  half their length).
+- **Regression oracle for any change here:** the Manhattan Bridge
+  (`edge_geom[(1371803831, 7480410407)]`) must show southbound faster on the
+  Brooklyn half and northbound faster on the Manhattan half, with the
+  direction gap swinging from about -8.5 mph to +6.8 mph across the span. An orientation bug flips the sign;
+  a unit test on a synthetic grid cannot catch it because grid orientation
+  is uniform.
 
 ## Performance notes
 

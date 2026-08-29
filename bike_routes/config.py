@@ -97,5 +97,29 @@ RING_MAX_GAP_M = 15.0  # endpoints closer than this make a feature a closed ring
 RING_MIN_LEN_M = 30.0  # shorter features are corridor pieces, not rings
 RING_MAX_LEN_M = 300.0  # rings up to this perimeter may be dropped as redundant
 RING_NEAR_M = 40.0  # rings must hug covering features within this distance
+
+# -- Direction-split edge speed (backfilled; NOT part of _processing_config) --
+# Bumping SPEED_VERSION discards edge_speed/speed_rides and recomputes; it is
+# the invalidation lever for this data, deliberately separate from the config
+# hash so an algorithm change here never triggers a full rematch.
+SPEED_VERSION = 2  # 2: per-chunk records (was one bucket per whole edge)
+SPEED_SAMPLE_M = 5.0  # edge polyline densification for the projection index
+SPEED_SNAP_M = 25.0  # max GPS-to-edge distance for a fix to count as on-edge
+SPEED_HYSTERESIS = 1.5  # stay on the previous edge within this factor of the best
+SPEED_MAX_FIX_GAP_S = 30.0  # split a pass at a recording gap (auto-pause, signal loss)
+SPEED_MIN_PASS_M = 25.0  # a pass must cover this, or most of a shorter edge
+SPEED_REVERSAL_M = 15.0  # along-line backtrack that counts as turning around
+# rather than GPS wobble; splits an out-and-back into one pass per direction
+SPEED_MAX_KMH = 60.0  # reject implausible passes (GPS jump / misassignment)
+SPEED_MOVING_KMH = 2.4  # below this a fix counts as stopped (~1.5 mph)
+SPEED_CHUNK_M = 150.0  # long edges are measured in chunks this size (a bridge
+# averages its own climb against its descent when treated as one segment)
+SPEED_MAX_CHUNKS = 24  # cap chunks per edge so one long way cannot dominate the payload
+SPEED_MIN_PASSES = 1  # per-direction passes needed before a speed is published
+# A single pass is a real measurement, just noisy, so it still gets a colour.
+# Comparing the two directions against each other is a stronger claim and
+# needs more evidence; the client applies this to the asymmetry view.
+SPEED_SPLIT_PASSES = 3
+SPEED_MIN_DIST_M = 50.0  # per-direction distance needed before a speed is published
 M_PER_LON = 111_320 * np.cos(np.radians(40.73))
 M_PER_LAT = 110_540

@@ -61,6 +61,12 @@ def _empty_state() -> dict[str, Any]:
         "edge_counts": {},
         "edge_rides": {},
         "graph_bbox": None,
+        # Backfilled by edge_speed.py, deliberately outside _processing_config():
+        # speed is derived from timestamps the matcher never saw, so changing it
+        # must never invalidate matches.  speed_version is its own lever.
+        "edge_speed": {},
+        "speed_rides": set(),
+        "speed_version": config.SPEED_VERSION,
     }
 
 

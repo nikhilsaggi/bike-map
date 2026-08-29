@@ -6,6 +6,14 @@ import math
 from typing import Any
 
 from . import config
+from .edge_speed import (
+    _CHUNK_W,
+    _bearing_flipped,
+    _chord_bearing,
+    _densify,
+    _new_chunk,
+    _swap_dirs,
+)
 
 
 def _sample_line(coords: list) -> list[tuple[float, float, float]]:
@@ -107,6 +115,82 @@ def _geom_len_m(coords: list[tuple[float, float]]) -> float:
         math.hypot((lon1 - lon0) * config.M_PER_LON, (lat1 - lat0) * config.M_PER_LAT)
         for (lon0, lat0), (lon1, lat1) in zip(coords, coords[1:])
     )
+
+
+def _relative_orientation(a_coords: list, b_coords: list) -> int:
+    """Return +1 when b runs the same way along a, -1 when anti-parallel.
+
+    Correlates b's samples against their along-parameter on a rather than
+    comparing chord bearings: 6.5% of exported features have a chord shorter
+    than half their length (hairpins, near-rings), where a chord dot product
+    gives the wrong sign or none at all.  The chord is only the fallback for
+    lines that barely overlap.
+    """
+    a_xy, a_along = _densify(a_coords)
+    b_xy, _ = _densify(b_coords)
+    tol_sq = config.MERGE_TOL_M * config.MERGE_TOL_M
+    matched: list[float] = []
+    for bx, by in b_xy:
+        best_d, best_along = tol_sq, None
+        for (ax, ay), al in zip(a_xy, a_along):
+            d = (ax - bx) * (ax - bx) + (ay - by) * (ay - by)
+            if d < best_d:
+                best_d, best_along = d, al
+        if best_along is not None:
+            matched.append(best_along)
+    if len(matched) < 2:
+        return -1 if _bearing_flipped(_chord_bearing(a_coords), _chord_bearing(b_coords)) else 1
+    delta = sum(y - x for x, y in zip(matched, matched[1:]))
+    return 1 if delta >= 0 else -1
+
+
+def _speed_add(
+    dst_props: dict[str, Any],
+    dst_coords: list,
+    src_props: dict[str, Any],
+    src_coords: list,
+) -> None:
+    """Add src's direction-split speed buckets into dst, flipping if anti-parallel.
+
+    Every combination point in the merge must go through here.  Adding
+    unflipped buckets across an anti-parallel merge (the two carriageways of
+    a divided road cluster, because heading alignment is mod 180) silently
+    reverses a corridor's directions -- a wrong answer that still looks
+    entirely plausible on the map.
+    """
+    src = src_props.get("_speed")
+    if not src:
+        return
+    dst = dst_props.get("_speed")
+    if dst is None:
+        dst = _new_chunk()
+        dst_props["_speed"] = dst
+    if _relative_orientation(dst_coords, src_coords) < 0:
+        src = _swap_dirs(src)
+    for i in range(_CHUNK_W):
+        dst[i] += src[i]
+
+
+def _reorient_speed(props: dict[str, Any], old_coords: list, new_coords: list) -> None:
+    """Re-express a feature's speed buckets against a replacement geometry."""
+    rec = props.get("_speed")
+    if not rec:
+        return
+    if _relative_orientation(old_coords, new_coords) < 0:
+        props["_speed"] = _swap_dirs(rec)
+
+
+def _cluster_speed(
+    features: list[dict[str, Any]], members: list[int], m: int
+) -> list[float] | None:
+    """Sum a cluster's speed records, oriented to member m's geometry."""
+    base_coords = features[m]["geometry"]["coordinates"]
+    acc: dict[str, Any] = {}
+    for i in members:
+        _speed_add(
+            acc, base_coords, features[i]["properties"], features[i]["geometry"]["coordinates"]
+        )
+    return acc.get("_speed")
 
 
 def _drop_redundant_rings(features: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -220,6 +304,9 @@ def _harmonize_representatives(features: list[dict[str, Any]]) -> None:
                     counts[ekey(cur[end])] -= 1
                     k = ekey(best_c[end])
                     counts[k] = counts.get(k, 0) + 1
+                # The alt may run the opposite way (cluster alignment is
+                # mod 180), which would invert this feature's speed buckets.
+                _reorient_speed(f["properties"], cur, best_c)
                 f["geometry"]["coordinates"] = best_c
                 changed += 1
         n_swapped += changed
@@ -466,7 +553,12 @@ def _merge_parallel_features(
                     "type": "LineString",
                     "coordinates": features[m]["geometry"]["coordinates"],
                 },
-                "properties": {"_rides": set(rides), "_alts": alts, "_cluster": cluster_geoms},
+                "properties": {
+                    "_rides": set(rides),
+                    "_alts": alts,
+                    "_cluster": cluster_geoms,
+                    "_speed": _cluster_speed(features, members, m),
+                },
             }
             for m in keep
         )
@@ -523,6 +615,12 @@ def _merge_parallel_features(
         n_absorbed += 1
         for j in receivers:
             merged[j]["properties"]["_rides"] |= merged[i]["properties"]["_rides"]
+            _speed_add(
+                merged[j]["properties"],
+                merged[j]["geometry"]["coordinates"],
+                merged[i]["properties"],
+                merged[i]["geometry"]["coordinates"],
+            )
 
     # Restore pass: absorbing feature B can erode the cover that justified
     # absorbing feature A earlier, leaving a hole in the drawn corridor.
@@ -556,6 +654,8 @@ def _merge_parallel_features(
         rides = f["properties"].pop("_rides")
         f["properties"].pop("_alts", None)
         f["properties"].pop("_cluster", None)
+        if f["properties"].get("_speed") is None:
+            f["properties"].pop("_speed", None)
         f["properties"]["ride_count"] = len(rides)
         # Sorted ride filenames; the export maps them to ride indices.
         f["properties"]["rides"] = sorted(rides)
