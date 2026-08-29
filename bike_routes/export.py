@@ -33,8 +33,11 @@ def _coverage_summary(
     network_m = 0.0
     ridden_m = 0.0
     new_by_year: dict[str, float] = {}
+    excluded_m: dict[str, float] = {}
     for key, coords in edge_geom.items():
-        if edge_hw.get(key, "") in config.COVERAGE_EXCLUDE:
+        hw = edge_hw.get(key, "")
+        if hw in config.COVERAGE_EXCLUDE:
+            excluded_m[hw] = excluded_m.get(hw, 0.0) + _geom_len_m(coords)
             continue
         length = _geom_len_m(coords)
         network_m += length
@@ -51,6 +54,12 @@ def _coverage_summary(
         "ridden_km": round(ridden_m / 1000, 1),
         "network_km": round(network_m / 1000),
         "new_km_by_year": {y: round(v / 1000, 1) for y, v in sorted(new_by_year.items())},
+        # What the denominator leaves out, largest first, so the page can say
+        # so without asserting the contents of COVERAGE_EXCLUDE from memory.
+        # Editing that set changes this, and the caption follows.
+        "excluded_km": {
+            hw: round(m / 1000, 1) for hw, m in sorted(excluded_m.items(), key=lambda kv: -kv[1])
+        },
     }
 
 
