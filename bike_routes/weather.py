@@ -67,13 +67,12 @@ def _fetch_weather(start: str, end: str) -> dict[str, dict[str, float]]:
     return out
 
 
-def _cache_well_formed(cached: Any) -> bool:
+def _cache_well_formed(cached: object) -> bool:
     """Fail closed: a cache missing any key the band loop reads is unusable."""
     if not isinstance(cached, dict) or not cached:
         return False
     return all(
-        isinstance(day, dict) and all(k in day for k in WEATHER_KEYS)
-        for day in cached.values()
+        isinstance(day, dict) and all(k in day for k in WEATHER_KEYS) for day in cached.values()
     )
 
 
