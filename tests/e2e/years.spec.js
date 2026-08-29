@@ -93,6 +93,41 @@ test.describe('per-year table', () => {
     await expect(page.locator('#stat-years .year-detail[data-year="2024"]')).toBeVisible();
   });
 
+  test('the longest-ride link toggles the ride back off', async ({ page }) => {
+    await gotoMap(page);
+    await openSection(page, 'stat-years');
+    await page.locator('#stat-years .year-row').nth(1).click();
+    const link = page.locator('.yd-link');
+
+    await link.click();
+    await expect(page.locator('#ride-view-bar')).toBeVisible();
+    await expect(link).toHaveClass(/\bon\b/);
+    await expect(link).toHaveAttribute('title', 'Hide this ride');
+
+    await link.click();
+    await expect(page.locator('#ride-view-bar')).toBeHidden();
+    await expect(link).not.toHaveClass(/\bon\b/);
+    await expect(link).toHaveAttribute('title', "Show this ride's route");
+  });
+
+  test('leaving ride view any other way clears the link too', async ({ page }) => {
+    await gotoMap(page);
+    await openSection(page, 'stat-years');
+    await page.locator('#stat-years .year-row').nth(1).click();
+    const link = page.locator('.yd-link');
+
+    await link.click();
+    await expect(link).toHaveClass(/\bon\b/);
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#ride-view-bar')).toBeHidden();
+    await expect(link).not.toHaveClass(/\bon\b/);
+
+    await link.click();
+    await expect(link).toHaveClass(/\bon\b/);
+    await page.locator('#ride-view-exit').click();
+    await expect(link).not.toHaveClass(/\bon\b/);
+  });
+
   test('longest-ride link opens ride view even when the date filter excludes it', async ({ page }) => {
     await gotoMap(page);
     // Filter out 2024 entirely: the 2024-only street disappears.
