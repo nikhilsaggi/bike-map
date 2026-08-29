@@ -78,7 +78,45 @@ test.describe('streets', () => {
     // 12.3% is measured over a narrower network than the 62 drawn miles, so
     // the two must not read as one division. 45.5 km of 370 km.
     await expect(page.locator('#streets-totals .r-sub').first())
-      .toHaveText('28 of 230 mi, paths excluded');
+      .toHaveText('28 of 230 mi; sidewalks, service roads and motorways excluded');
+  });
+
+  test('the exclusion caption follows the export, not hardcoded prose', async ({ page }) => {
+    // It used to claim paths were excluded when sidewalks are. The wording is
+    // built from coverage.excluded_km so editing COVERAGE_EXCLUDE moves it.
+    await gotoMap(page, buildFixture({
+      coverage: {
+        pct: 12.3, ridden_km: 45.5, network_km: 370,
+        new_km_by_year: { 2023: 30.0 },
+        excluded_km: { motorway: 90.0, footway: 5.0 },
+      },
+    }));
+    await openSection(page, STREETS);
+    await expect(page.locator('#streets-totals .r-sub').first())
+      .toHaveText('28 of 230 mi; motorways and sidewalks excluded');
+  });
+
+  test('an unlabelled exclusion tag renders as itself', async ({ page }) => {
+    // A tag added to COVERAGE_EXCLUDE with no label must show up, not vanish.
+    await gotoMap(page, buildFixture({
+      coverage: {
+        pct: 12.3, ridden_km: 45.5, network_km: 370,
+        new_km_by_year: { 2023: 30.0 },
+        excluded_km: { bus_guideway: 90.0 },
+      },
+    }));
+    await openSection(page, STREETS);
+    await expect(page.locator('#streets-totals .r-sub').first())
+      .toHaveText('28 of 230 mi; bus guideway excluded');
+  });
+
+  test('coverage with no exclusions claims none', async ({ page }) => {
+    await gotoMap(page, buildFixture({
+      coverage: { pct: 12.3, ridden_km: 45.5, network_km: 370, new_km_by_year: {} },
+    }));
+    await openSection(page, STREETS);
+    await expect(page.locator('#streets-totals .r-sub').first())
+      .toHaveText('28 of 230 mi');
   });
 
   test('lists corridors in rank order with mph converted from km/h', async ({ page }) => {

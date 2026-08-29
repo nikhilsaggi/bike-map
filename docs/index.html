@@ -439,6 +439,29 @@ function hasRide(arr, id) {
   return false;
 }
 
+// -- Coverage exclusions -----------------------------------------------------
+// The coverage denominator drops config.COVERAGE_EXCLUDE, and saying which
+// from memory is how the caption came to claim paths were excluded when
+// sidewalks are.  The export ships the categories with their length instead,
+// so editing that set updates the wording; an unmapped tag renders as itself
+// rather than disappearing.
+
+const HW_LABELS = {
+  footway: 'sidewalks', service: 'service roads', motorway: 'motorways',
+  motorway_link: 'motorway ramps', steps: 'steps', pedestrian: 'pedestrian streets',
+  corridor: 'indoor corridors', elevator: 'elevators', escalator: 'escalators',
+  construction: 'closed ways', proposed: 'proposed ways',
+};
+
+function excludedLabel(coverage, n = 3) {
+  const names = Object.keys(coverage?.excluded_km || {})
+    .slice(0, n)  // already sorted longest-first by the export
+    .map(hw => HW_LABELS[hw] || hw.replace(/_/g, ' '));
+  if (!names.length) return '';
+  const last = names.pop();
+  return names.length ? `${names.join(', ')} and ${last} excluded` : `${last} excluded`;
+}
+
 // -- Direction-split speed ---------------------------------------------------
 // Ranked in the pipeline (edge_speed._top_corridors), not here: naming a
 // corridor needs the OSM street names, which never reach the browser.  Each
@@ -482,10 +505,13 @@ function renderStreets(props) {
   const cov = props.coverage;
   if (cov) {
     // The percentage is measured over a narrower network than the drawn
-    // miles above it -- COVERAGE_EXCLUDE drops paths and trails -- so its
-    // own numerator and denominator go directly under it.
-    rows.push(['Of rideable NYC', `${cov.pct}%`, `${Math.round(mi(cov.ridden_km)).toLocaleString()} of ` +
-      `${Math.round(mi(cov.network_km)).toLocaleString()} mi, paths excluded`]);
+    // miles above it, so its own numerator and denominator go directly under
+    // it, with what the denominator drops.
+    const excl = excludedLabel(cov);
+    rows.push(['Of rideable NYC', `${cov.pct}%`,
+      `${Math.round(mi(cov.ridden_km)).toLocaleString()} of ` +
+      `${Math.round(mi(cov.network_km)).toLocaleString()} mi` +
+      (excl ? `; ${excl}` : '')]);
   }
   const top = props.top_segment;
   if (props.max_count != null) {
@@ -918,10 +944,11 @@ fetch('rides.geojson.gz')
     if (coverage) {
       document.getElementById('stat-coverage').textContent = `${coverage.pct}%`;
       const tile = document.getElementById('tile-coverage');
+      const excl = excludedLabel(coverage);
       tile.title =
         `${Math.round(mi(coverage.ridden_km)).toLocaleString()} of ` +
         `${Math.round(mi(coverage.network_km)).toLocaleString()} mi of rideable ` +
-        `NYC street; excludes paths and trails, which the street miles include`;
+        `NYC street` + (excl ? `; ${excl}, which the drawn street miles include` : '');
       tile.classList.remove('hidden');
     }
     if (ridesPerYear && Object.keys(ridesPerYear).length) {

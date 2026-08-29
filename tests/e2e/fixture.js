@@ -72,6 +72,9 @@ export function buildFixture(propertyOverrides = {}) {
         ridden_km: 45.5,
         network_km: 370,
         new_km_by_year: { 2023: 30.0, 2024: 15.5 },
+        // Longest-first, as the export emits it; the caption names the top 3
+        // and falls back to the raw tag for anything it has no label for.
+        excluded_km: { footway: 120.0, service: 40.0, motorway: 12.0, funicular: 1.0 },
       },
       // share = this band's % of rides (bar), expected = its % of days
       // (tick). Temp is deliberately skewed -- >60°F takes 60% of rides on

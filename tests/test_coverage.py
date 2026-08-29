@@ -43,6 +43,24 @@ def test_coverage_summary():
     # First traversal of (1,2) was 2021
     assert list(cov["new_km_by_year"]) == ["2021"]
     assert 0.9 < cov["new_km_by_year"]["2021"] < 1.1
+    # What the denominator dropped, largest first, so the page can name it
+    # instead of asserting the contents of COVERAGE_EXCLUDE from memory.
+    assert list(cov["excluded_km"]) == ["footway", "motorway"]
+    assert all(0.9 < v < 1.1 for v in cov["excluded_km"].values())
+
+
+def test_coverage_excluded_km_is_ordered_longest_first():
+    edge_geom = {
+        (1, 2): KM_SEG,
+        (3, 4): [(-73.98, 40.760), (-73.98, 40.7627)],  # ~0.3 km footway
+        (5, 6): KM_SEG,
+        (7, 8): KM_SEG,
+    }
+    edge_hw = {(1, 2): "residential", (3, 4): "footway", (5, 6): "service", (7, 8): "service"}
+    cov = br._coverage_summary(edge_geom, edge_hw, {"edge_counts": {}, "edge_rides": {}})
+    # 2 km of service outranks 0.3 km of footway; the page reads the order.
+    assert list(cov["excluded_km"]) == ["service", "footway"]
+    assert cov["excluded_km"]["service"] > cov["excluded_km"]["footway"]
 
 
 def test_coverage_summary_empty():
