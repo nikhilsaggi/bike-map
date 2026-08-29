@@ -6,12 +6,13 @@ import gzip
 import json
 
 import pytest
-import weather_correlation as wc
 
+import weather_correlation as wc
 from bike_routes.weather import (
     RAIN_BANDS,
     TEMP_BANDS,
     _band,
+    _cache_well_formed,
     _load_cached_weather,
     _save_weather_cache,
     _weather_summary,
@@ -158,8 +159,6 @@ def test_weather_summary_share_vs_expected(monkeypatch):
 
 def test_cache_well_formed_rejects_missing_keys(tmp_path, monkeypatch):
     """A cache written before a variable was added must not reach `w[key]`."""
-    from bike_routes.weather import _cache_well_formed, _load_cached_weather
-
     assert _cache_well_formed({"2024-06-01": {"tmax": 70.0, "precip": 0.0}})
     assert not _cache_well_formed({"2024-06-01": {"tmax": 70.0}})  # no precip
     assert not _cache_well_formed({"2024-06-01": "sunny"})
