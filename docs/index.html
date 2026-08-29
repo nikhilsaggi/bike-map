@@ -27,6 +27,16 @@
   #stats-toggle:hover { color: #fff; }
   #stats-collapsed-label { display: none; color: #ccc; font-size: 12px; }
   #stats.collapsed #stats-body { display: none; }
+  /* The panel outgrew the viewport once the speed ranking was added: at any
+     usable height under ~760px the last section fell off the bottom with no
+     scrollbar to reveal it.  Scrolling the body rather than #stats keeps the
+     collapse button, which is positioned against #stats, pinned in place. */
+  #stats-body { max-height: calc(100vh - 72px); overflow-y: auto; padding-right: 4px; }
+  #stats-body::-webkit-scrollbar { width: 6px; }
+  #stats-body::-webkit-scrollbar-track { background: transparent; }
+  #stats-body::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+  #stats-body::-webkit-scrollbar-thumb:hover { background: #555; }
+  #stats-body { scrollbar-width: thin; scrollbar-color: #333 transparent; }
   #stats.collapsed { padding: 8px 32px 8px 14px; }
   #stats.collapsed #stats-collapsed-label { display: inline; }
   #stat-years {
