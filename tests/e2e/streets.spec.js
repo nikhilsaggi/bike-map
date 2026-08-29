@@ -102,6 +102,38 @@ test.describe('streets', () => {
     expect(after.center.lng).toBeCloseTo(SPEED_BLOCK.corridors[0].at[0], 2);
   });
 
+  test('clicking the marked row again takes the circle back off', async ({ page }) => {
+    await gotoMap(page);
+    await openSection(page, STREETS);
+    const row = page.locator('.sp-row').first();
+
+    await row.click();
+    await page.waitForTimeout(700);
+    expect(await page.evaluate(() => speedMarker !== null)).toBe(true);
+    await expect(row).toHaveClass(/\bon\b/);
+
+    await row.click();
+    expect(await page.evaluate(() => speedMarker !== null)).toBe(false);
+    await expect(row).not.toHaveClass(/\bon\b/);
+  });
+
+  test('clicking a different row moves the circle rather than toggling', async ({ page }) => {
+    await gotoMap(page);
+    await openSection(page, STREETS);
+    const rows = page.locator('.sp-row');
+
+    await rows.nth(0).click();
+    await page.waitForTimeout(700);
+    await rows.nth(1).click();
+    await page.waitForTimeout(700);
+    expect(await page.evaluate(() => speedMarker !== null)).toBe(true);
+    // Exactly one row is ever marked.
+    await expect(page.locator('.sp-row.on')).toHaveCount(1);
+    await expect(rows.nth(1)).toHaveClass(/\bon\b/);
+    expect(await page.evaluate(() => map.getCenter().lat))
+      .toBeCloseTo(SPEED_BLOCK.corridors[1].at[1], 2);
+  });
+
   test('closing the section clears the corridor marker', async ({ page }) => {
     await gotoMap(page);
     await openSection(page, STREETS);
@@ -110,6 +142,7 @@ test.describe('streets', () => {
     expect(await page.evaluate(() => speedMarker !== null)).toBe(true);
     await chip(page, STREETS).click();
     expect(await page.evaluate(() => speedMarker !== null)).toBe(false);
+    await expect(page.locator('.sp-row.on')).toHaveCount(0);
   });
 
   test('switching to another section clears the corridor marker', async ({ page }) => {
@@ -122,6 +155,7 @@ test.describe('streets', () => {
     expect(await page.evaluate(() => speedMarker !== null)).toBe(true);
     await openSection(page, 'stat-weather');
     expect(await page.evaluate(() => speedMarker !== null)).toBe(false);
+    await expect(page.locator('.sp-row.on')).toHaveCount(0);
   });
 
   test('every section fits a short viewport', async ({ page }) => {
