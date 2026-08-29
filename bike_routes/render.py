@@ -17,6 +17,13 @@ from . import config
 if TYPE_CHECKING:
     import networkx as nx
 
+# (edge_geom, edge_hw, edge_name), each keyed by canonical node pair.
+RenderData = tuple[
+    dict[tuple[int, int], list[tuple[float, float]]],
+    dict[tuple[int, int], str],
+    dict[tuple[int, int], str],
+]
+
 
 def _classify_hw(hw: str | list[str]) -> str:
     """Map an OSM highway tag value to an infrastructure class."""
@@ -36,23 +43,35 @@ def _primary_hw_tag(hw: str | list[str]) -> str:
     return hw or ""
 
 
+def _primary_name(name: str | list[str] | None) -> str:
+    """Pick one street name for an edge; OSM lists several on shared ways."""
+    if isinstance(name, list):
+        return name[0] if name else ""
+    return name or ""
+
+
 def _build_render_cache(
     G: nx.MultiDiGraph,
-) -> tuple[dict[tuple[int, int], list[tuple[float, float]]], dict[tuple[int, int], str]]:
-    """Extract one canonical geometry and highway tag per node pair.
+) -> RenderData:
+    """Extract one canonical geometry, highway tag, and name per node pair.
 
     When multiple parallel edges exist between the same nodes (from
     composing bike/drive/walk networks), keeps only the shortest edge's
-    geometry to avoid overlapping rendered lines.
+    geometry to avoid overlapping rendered lines.  The name is kept for the
+    speed-asymmetry ranking (export.py), which reports corridors by street
+    name; it is the only consumer, so unnamed edges simply stay absent.
     """
     print("Building render cache...")
     edge_geom: dict[tuple[int, int], list[tuple[float, float]]] = {}
     edge_hw: dict[tuple[int, int], str] = {}
+    edge_name: dict[tuple[int, int], str] = {}
     edge_len: dict[tuple[int, int], float] = {}
     for u, v, _key, data in G.edges(data=True, keys=True):
         canon = (min(u, v), max(u, v))
         length = data.get("length", float("inf"))
         tag = _primary_hw_tag(data.get("highway", ""))
+        if (nm := _primary_name(data.get("name"))) and canon not in edge_name:
+            edge_name[canon] = nm
         if canon in edge_geom:
             if _classify_hw(tag) == "bike" and _classify_hw(edge_hw[canon]) != "bike":
                 edge_hw[canon] = tag
@@ -72,21 +91,17 @@ def _build_render_cache(
 
     with config.RENDER_CACHE_PATH.open("wb") as f:
         pickle.dump(
-            (config.RENDER_CACHE_FORMAT, edge_geom, edge_hw), f, protocol=pickle.HIGHEST_PROTOCOL
+            (config.RENDER_CACHE_FORMAT, edge_geom, edge_hw, edge_name),
+            f,
+            protocol=pickle.HIGHEST_PROTOCOL,
         )
-    print(f"  Cached {len(edge_geom):,} edge geometries")
-    return edge_geom, edge_hw
+    print(f"  Cached {len(edge_geom):,} edge geometries, {len(edge_name):,} named")
+    return edge_geom, edge_hw, edge_name
 
 
 def _get_render_data(
     G: nx.MultiDiGraph | None = None,
-) -> (
-    tuple[
-        dict[tuple[int, int], list[tuple[float, float]]],
-        dict[tuple[int, int], str],
-    ]
-    | None
-):
+) -> RenderData | None:
     """Load render cache, or build it from graph if missing.
 
     A cache in any older format is treated as missing so it rebuilds with
@@ -97,12 +112,12 @@ def _get_render_data(
             cached = pickle.load(f)
         if (
             isinstance(cached, tuple)
-            and len(cached) == 3
+            and len(cached) == 4
             and cached[0] == config.RENDER_CACHE_FORMAT
         ):
-            _fmt, edge_geom, edge_hw = cached
+            _fmt, edge_geom, edge_hw, edge_name = cached
             print(f"Loaded render cache ({len(edge_geom):,} edges)")
-            return edge_geom, edge_hw
+            return edge_geom, edge_hw, edge_name
         print("Render cache in legacy format -- rebuilding")
     if G is None:
         return None

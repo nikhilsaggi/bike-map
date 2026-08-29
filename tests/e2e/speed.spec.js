@@ -1,105 +1,90 @@
-import { test, expect, gotoMap, hoverEdge } from './helpers.js';
-import { buildFixture, EDGES } from './fixture.js';
+import { test, expect, gotoMap } from './helpers.js';
+import { buildFixture, SPEED_BLOCK } from './fixture.js';
 
-const KM_TO_MI = 0.621371;
-
-test.describe('speed layer', () => {
-  test('starts in frequency mode with the speed toggle available', async ({ page }) => {
+test.describe('direction-split speed', () => {
+  test('section is collapsed until toggled', async ({ page }) => {
     await gotoMap(page);
-    await expect(page.locator('#mode-freq')).toHaveClass(/on/);
-    await expect(page.locator('#mode-speed')).not.toHaveClass(/on/);
-    await expect(page.locator('#speed-sub')).toBeHidden();
-    // Frequency legend still reads in rides.
-    await expect(page.locator('#legend-max')).toHaveText('4');
+    await expect(page.locator('#stat-speed')).toBeVisible();
+    await expect(page.locator('#speed-list')).toBeHidden();
+    await expect(page.locator('#speed-toggle')).toHaveAttribute('aria-expanded', 'false');
+
+    await page.click('#speed-toggle');
+    await expect(page.locator('#speed-list')).toBeVisible();
+    await expect(page.locator('#speed-toggle')).toHaveAttribute('aria-expanded', 'true');
+
+    await page.click('#speed-toggle');
+    await expect(page.locator('#speed-list')).toBeHidden();
   });
 
-  test('switching to speed relabels the legend in mph', async ({ page }) => {
+  test('lists corridors in rank order with mph converted from km/h', async ({ page }) => {
     await gotoMap(page);
-    await page.locator('#mode-speed').click();
-    await expect(page.locator('#mode-speed')).toHaveClass(/on/);
-    await expect(page.locator('#legend .title')).toHaveText('Average speed');
-    // lo 8.0 km/h -> 5 mph, hi 22.0 km/h -> 14 mph
-    await expect(page.locator('#legend-min')).toHaveText('5 mph');
-    await expect(page.locator('#legend-max')).toHaveText('14 mph');
-    await expect(page.locator('#nodata-key')).toBeVisible();
+    await page.click('#speed-toggle');
+
+    const names = await page.locator('.sp-name').allTextContents();
+    expect(names).toEqual(['Crest Bridge', 'Crest Bridge', 'Flat Street']);
+
+    // 16.09 km/h -> 10.0 mph, 8.05 -> 5.0, 3.22 -> 2.0.
+    const gaps = await page.locator('.sp-gap').allTextContents();
+    expect(gaps).toEqual(['10.0', '5.0', '2.0']);
+
+    const dirs = await page.locator('.sp-dir').allTextContents();
+    expect(dirs).toEqual(['E', 'W', 'N']);
   });
 
-  test('hides the date filter in speed mode and restores it on the way back', async ({ page }) => {
+  test('each row shows both directions, length, and pass count', async ({ page }) => {
     await gotoMap(page);
-    await expect(page.locator('#filter-row')).toBeVisible();
-    await page.locator('#mode-speed').click();
-    // Speeds are an all-time aggregate, so the slider must not look live.
-    await expect(page.locator('#filter-row')).toBeHidden();
-    await expect(page.locator('#filter-dates')).toBeHidden();
-    await page.locator('#mode-freq').click();
-    await expect(page.locator('#filter-row')).toBeVisible();
+    await page.click('#speed-toggle');
+    // 24.14 km/h -> 15.0 mph, 8.05 -> 5.0; 800 m -> 0.50 mi.
+    await expect(page.locator('.sp-detail').first())
+      .toHaveText('15.0 vs 5.0 mph over 0.50 mi, 12+ passes each way');
   });
 
-  test('tooltip shows both directions with sample counts', async ({ page }) => {
+  test('the same bridge appears once per direction, never as one row', async ({ page }) => {
     await gotoMap(page);
-    await page.locator('#mode-speed').click();
-    const tip = await hoverEdge(page, EDGES.center.lat);
-    // 20.0 km/h -> 12.4 mph (6 passes); 10.0 km/h -> 6.2 mph (4 passes).
-    // The line runs west->east, so forward is E and reverse is W.
-    await expect(tip).toContainText(`${(20.0 * KM_TO_MI).toFixed(1)} mph`);
-    await expect(tip).toContainText('(6)');
-    await expect(tip).toContainText(`${(10.0 * KM_TO_MI).toFixed(1)} mph`);
-    await expect(tip).toContainText('(4)');
-    await expect(tip).toContainText('E');
-    await expect(tip).toContainText('W');
+    await page.click('#speed-toggle');
+    const rows = page.locator('.sp-row').filter({ hasText: 'Crest Bridge' });
+    await expect(rows).toHaveCount(2);
+    // Opposite directions: the crest flip, not a duplicate of one stretch.
+    await expect(rows.nth(0).locator('.sp-dir')).toHaveText('E');
+    await expect(rows.nth(1).locator('.sp-dir')).toHaveText('W');
   });
 
-  test('tooltip dashes a direction that has no published speed', async ({ page }) => {
+  test('clicking a row flies to the corridor and marks it', async ({ page }) => {
     await gotoMap(page);
-    await page.locator('#mode-speed').click();
-    const tip = await hoverEdge(page, EDGES.north.lat);
-    await expect(tip).toContainText(`${(15.0 * KM_TO_MI).toFixed(1)} mph`);
-    await expect(tip).toContainText('—');
+    await page.click('#speed-toggle');
+    const before = await page.evaluate(() => map.getZoom());
+    await page.locator('.sp-row').first().click();
+    await page.waitForTimeout(900);
+    const after = await page.evaluate(() => ({
+      zoom: map.getZoom(),
+      center: map.getCenter(),
+      marked: speedMarker !== null,
+    }));
+    expect(after.marked).toBe(true);
+    expect(after.zoom).toBeGreaterThanOrEqual(before);
+    expect(after.center.lat).toBeCloseTo(SPEED_BLOCK.corridors[0].at[1], 2);
+    expect(after.center.lng).toBeCloseTo(SPEED_BLOCK.corridors[0].at[0], 2);
   });
 
-  test('a street with no speed data says so', async ({ page }) => {
+  test('collapsing clears the corridor marker', async ({ page }) => {
     await gotoMap(page);
-    await page.locator('#mode-speed').click();
-    const tip = await hoverEdge(page, EDGES.south.lat);
-    await expect(tip).toHaveText('no speed data');
+    await page.click('#speed-toggle');
+    await page.locator('.sp-row').first().click();
+    await page.waitForTimeout(700);
+    expect(await page.evaluate(() => speedMarker !== null)).toBe(true);
+    await page.click('#speed-toggle');
+    expect(await page.evaluate(() => speedMarker !== null)).toBe(false);
   });
 
-  test('hovering draws a pair of direction lines', async ({ page }) => {
-    await gotoMap(page);
-    const before = await page.evaluate(() => document.querySelectorAll('path').length);
-    await page.locator('#mode-speed').click();
-    await hoverEdge(page, EDGES.center.lat);
-    // Two offset polylines are added as SVG on top of the canvas base layer.
-    const during = await page.evaluate(() => document.querySelectorAll('path').length);
-    expect(during).toBeGreaterThan(before);
+  test('section stays hidden when no corridor qualifies', async ({ page }) => {
+    await gotoMap(page, buildFixture({ speed: null }));
+    await expect(page.locator('#stat-speed')).toBeHidden();
   });
 
-  test('asymmetry view switches to the diverging legend', async ({ page }) => {
-    await gotoMap(page);
-    await page.locator('#mode-speed').click();
-    await page.locator('#speed-sub input[value="asym"]').check();
-    await expect(page.locator('#legend .title')).toHaveText('Direction difference');
-    // ASYM_FULL_KMH 10 -> +/-6 mph
-    await expect(page.locator('#legend-min')).toHaveText('-6 mph');
-    await expect(page.locator('#legend-max')).toHaveText('+6 mph');
-    await expect(page.locator('#speed-note')).toContainText('not why');
-  });
-
-  test('stats panel reports the median speed', async ({ page }) => {
-    await gotoMap(page);
-    // med 15.0 km/h -> 9.3 mph
-    await expect(page.locator('#stat-speed')).toContainText(
-      `${(15.0 * KM_TO_MI).toFixed(1)} mph`,
-    );
-    await expect(page.locator('#stat-speed')).toContainText('3');
-  });
-
-  test('hides the speed toggle entirely when the payload has no speed block', async ({ page }) => {
-    const data = buildFixture();
-    delete data.properties.speed;
-    for (const f of data.features) delete f.properties.sp;
-    await gotoMap(page, data);
-    await expect(page.locator('#mode-speed')).toBeHidden();
+  test('section stays hidden when the corridor list is empty', async ({ page }) => {
+    await gotoMap(page, buildFixture({
+      speed: { corridors: [], measured: 0, split_n: 3, min_m: 250.0 },
+    }));
     await expect(page.locator('#stat-speed')).toBeHidden();
   });
 });

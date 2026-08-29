@@ -14,8 +14,8 @@ The pipeline exports a compressed GeoJSON that powers an interactive
 [Leaflet](https://leafletjs.com/) map served via GitHub Pages. Features:
 
 - Coloring by ride frequency
-- Speed layer: how fast each street was actually ridden, split by direction
-  of travel (see below)
+- Biggest direction splits: the corridors where riding one way is much
+  faster than the other (see below)
 - Hover for ride count, click for the full list of ride dates
 - Date-range slider with time-lapse playback (watch the network grow)
 - Collapsible stats panel with total rides, edges covered, and street
@@ -35,8 +35,9 @@ python -m http.server 8000 --directory docs
 
 Every ride CSV carries a per-fix timestamp, so the same traces that produce
 the frequency map also say how fast each stretch was ridden — and, because
-the trace is time-ordered, which way you were going. The **Speed** layer
-shows this for all rides back to 2021; no new data source is involved.
+the trace is time-ordered, which way you were going. The stats panel ranks
+the corridors where that gap is largest, over all rides back to 2021; no new
+data source is involved.
 
 Direction matters more than it sounds. Averaging a street's speed without it
 blends the climb into the descent and produces a plausible number that means
@@ -53,20 +54,26 @@ mid-span                       10.7         9.2
 Manhattan approach              8.6        15.5
 ```
 
-The direction gap swings from -8.5 mph to +6.8 mph across the span, while
-the *whole-span* average shows nothing at all (10.6 vs 10.8 mph). Two views are
-available: **Mean** colors each street by its overall speed, **Asymmetry** by
-the gap between its two directions, so hills, prevailing wind, and one-way
-light timing show up as the strongest lines on the map.
+The gap swings from -8.5 mph to +6.8 mph across the span, while the
+*whole-span* average shows nothing at all (10.6 vs 10.8 mph). Nothing in the
+pipeline knows about elevation, or that this edge is a bridge: the split
+point was found purely from where the sign of the timing asymmetry changed.
+
+**Why a list and not a map layer.** Colouring the network by this was tried
+and dropped. Only 6.5% of features are ridden often enough in *both*
+directions to compare them, so the map was 94% grey, and the half that was
+coloured differed by under 2 mph — invisible on any ramp. The signal is
+real (adjacent stretches agree on sign 82% of the time, and 100% once the
+gap exceeds 2 mph), but it is concentrated on about eight places, which is a
+list rather than a map. The ranking costs ~0.5 KB of payload; the layer cost
+88 KB.
 
 Implementation notes: speeds are `distance / time` accumulated per direction
-(never a mean of per-point speeds), so stops are handled correctly and moving
-time is tracked separately. Long ways are measured in ~150 m chunks — the
-bridge is a single 2163 m OSM edge, and measured whole it averages its own
-climb against its descent. A street is colored at one measured pass; the
-direction split needs three in each direction before it is shown. Streets
-with no usable measurement render in grey rather than at the bottom of the
-ramp, so "no data" never reads as "slow".
+(never a mean of per-point speeds), so stops are handled correctly. Long ways
+are measured in ~150 m chunks — the bridge is a single 2163 m OSM edge, and
+measured whole it averages its own climb against its descent. A corridor is
+split wherever the faster direction flips, so a bridge is listed as its two
+descents; ranked stretches need 250 m and three passes each way.
 
 This is backfilled outside the map-matching config hash, so it can be
 recomputed (bump `SPEED_VERSION`) without reprocessing any rides.
@@ -79,7 +86,7 @@ recomputed (bump `SPEED_VERSION`) without reprocessing any rides.
 4. Map-matches GPS traces to street edges using heading-aware spatial snapping
 5. Routes between matched nodes, accumulates edge traversal counts
 6. Projects each ride's timestamped trace back onto its matched edges to
-   recover per-direction speed
+   recover per-direction speed, and ranks the most asymmetric corridors
 7. Exports GeoJSON (gzipped) for the interactive map + renders static PNGs
 
 All intermediate results are cached. First run takes longer
@@ -166,7 +173,8 @@ Key parameters in `bike_routes/config.py`:
 | `SPEED_VERSION` | 2 | Bump to recompute the speed layer (no rematch) |
 | `SPEED_CHUNK_M` | 150 | Long ways are measured in chunks this size |
 | `SPEED_SNAP_M` | 25 | Max GPS-to-edge distance for a fix to count as on-edge |
-| `SPEED_SPLIT_PASSES` | 3 | Passes per direction before asymmetry is shown |
+| `SPEED_SPLIT_PASSES` | 3 | Passes per direction before a stretch is ranked |
+| `SPEED_CORRIDOR_N` | 10 | Corridors listed in the stats panel |
 
 Heuristic-matcher parameters (`SNAP_TOLERANCE_M`, `HEADING_PENALTY`,
 `HW_PENALTY`, ...) remain in `bike_routes/config.py` and apply when
@@ -266,7 +274,7 @@ The pipeline creates several cache files (auto-managed, gitignored):
   runs and worker processes skip loading the full graph
 - `state.pkl` — processed filenames, edge counts, per-edge speeds, config
   snapshot
-- `render_cache.pkl` — pre-extracted edge geometries + highway classes
+- `render_cache.pkl` — pre-extracted edge geometries, highway classes, names
 - `route_cache.pkl` — shortest-path results between node pairs
 - `cache_versions.json` — osmnx/networkx versions that wrote the graph cache
 

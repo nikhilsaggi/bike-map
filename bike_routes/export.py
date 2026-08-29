@@ -8,14 +8,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from . import config
-from .edge_speed import (
-    _FWD,
-    _REV,
-    _chunk_slices,
-    _chunk_speed_kmh,
-    _oriented_chunks,
-    _speed_summary,
-)
+from .edge_speed import _speed_summary
 from .merge import _audit_merge, _geom_len_m, _merge_parallel_features
 from .ride_stats import _riding_summary
 from .weather import _weather_summary
@@ -61,30 +54,11 @@ def _coverage_summary(
     }
 
 
-def _speed_payload(rec: list[float] | None) -> list[int] | None:
-    """Serialize a merged speed record as [fwd_dkmh, fwd_n, rev_dkmh, rev_n].
-
-    Speeds are tenths of km/h as integers; a direction that has not cleared
-    both thresholds is 0, which is never a real speed and so doubles as
-    "no data" for a byte instead of four.  Returns None when neither
-    direction qualifies, so the feature omits the key entirely.
-
-    Buckets are relative to the exported coordinate array, so the client
-    derives compass direction from the geometry and no bearing is shipped.
-    """
-    if not rec:
-        return None
-    out: list[int] = []
-    for base in (_FWD, _REV):
-        kmh = _chunk_speed_kmh(rec, base)
-        out.extend([round(10 * kmh) if kmh is not None else 0, int(rec[base + 3])])
-    return out if (out[0] or out[2]) else None
-
-
 def _export_geojson(
     edge_geom: dict[tuple[int, int], list[tuple[float, float]]],
     state: dict[str, Any],
     edge_hw: dict[tuple[int, int], str] | None = None,
+    edge_name: dict[tuple[int, int], str] | None = None,
 ) -> None:
     """Export ridden edges as GeoJSON for the interactive Leaflet map."""
     edge_counts = state["edge_counts"]
@@ -92,33 +66,19 @@ def _export_geojson(
         return
 
     edge_rides: dict[tuple[int, int], list[str]] = state.get("edge_rides", {})
-    edge_speed: dict[tuple[int, int], list[float]] = state.get("edge_speed", {})
 
     features = []
     for edge_key in edge_counts:
         if edge_key not in edge_geom:
             continue
         coords = [(round(lon, 6), round(lat, 6)) for lon, lat in edge_geom[edge_key]]
-        rides = set(edge_rides.get(edge_key, ()))
-        chunks = _oriented_chunks(edge_speed.get(edge_key), coords)
-        # A long way is exported as one feature per speed chunk: measured whole,
-        # a bridge averages its climb against its descent and shows nothing.
-        # The slices share boundary vertices, so the drawn line is unchanged.
-        slices = _chunk_slices(coords, len(chunks)) if chunks else [coords]
-        if chunks and len(slices) != len(chunks):
-            chunks = None  # slicing declined to split; fall back to one feature
-            slices = [coords]
-        for i, piece in enumerate(slices):
-            props: dict[str, Any] = {"_rides": set(rides)}
-            if chunks:
-                props["_speed"] = chunks[i]
-            features.append(
-                {
-                    "type": "Feature",
-                    "geometry": {"type": "LineString", "coordinates": piece},
-                    "properties": props,
-                }
-            )
+        features.append(
+            {
+                "type": "Feature",
+                "geometry": {"type": "LineString", "coordinates": coords},
+                "properties": {"_rides": set(edge_rides.get(edge_key, ()))},
+            }
+        )
 
     features = _merge_parallel_features(features)
     _audit_merge(features)
@@ -152,9 +112,6 @@ def _export_geojson(
         props = f["properties"]
         props["rides"] = [ride_id[r] for r in props["rides"] if r in ride_id]
         del props["ride_count"]
-        sp = _speed_payload(props.pop("_speed", None))
-        if sp is not None:
-            props["sp"] = sp
 
     total_km = sum(_geom_len_m(f["geometry"]["coordinates"]) for f in features) / 1000
 
@@ -173,7 +130,7 @@ def _export_geojson(
             "riding": _riding_summary(state.get("ride_stats", {})),
             "coverage": _coverage_summary(edge_geom, edge_hw or {}, state),
             "weather": _weather_summary(state.get("ride_stats", {})),
-            "speed": _speed_summary(state.get("edge_speed", {})),
+            "speed": _speed_summary(state.get("edge_speed", {}), edge_geom, edge_name or {}),
             "dates": all_dates,
             "rides": rides_meta,
             "updated": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
