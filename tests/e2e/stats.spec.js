@@ -1,18 +1,31 @@
-import { test, expect, gotoMap } from './helpers.js';
+import { test, expect, gotoMap, chip, openSection } from './helpers.js';
 import { buildFixture } from './fixture.js';
 
 test.describe('stats panel', () => {
-  test('shows totals from the geojson properties', async ({ page }) => {
+  test('shows hero totals from the geojson properties', async ({ page }) => {
     await gotoMap(page);
     await expect(page.locator('#stat-rides')).toHaveText('4');
-    await expect(page.locator('#stat-edges')).toHaveText('3');
-    // 100 km -> miles, rounded
+    // 87.5 km ridden -> miles, rounded
+    await expect(page.locator('#stat-ridden')).toHaveText('54');
+    // 100 km of drawn street -> miles, rounded
     await expect(page.locator('#stat-km')).toHaveText('62');
+    await expect(page.locator('#stat-coverage')).toHaveText('12.3%');
     await expect(page.locator('#stat-updated')).toHaveText('2026-07-01');
+  });
+
+  test('hero tooltips carry the denominators the numbers omit', async ({ page }) => {
+    await gotoMap(page);
+    // total_edges lost its own row; it survives here.
+    await expect(page.locator('#tile-km')).toHaveAttribute('title', '3 drawn street segments');
+    // 12.3% is measured over a different subset than the 62 drawn miles, so
+    // the tooltip has to spell out what it is a percentage of.
+    await expect(page.locator('#tile-coverage'))
+      .toHaveAttribute('title', /28 of 230 mi of rideable NYC street/);
   });
 
   test('shows per-year ride counts with distance and new-street miles', async ({ page }) => {
     await gotoMap(page);
+    await openSection(page, 'stat-years');
     const rows = page.locator('#stat-years .year-row');
     await expect(rows).toHaveCount(2);
     await expect(rows.nth(0)).toContainText('2023');
@@ -26,8 +39,8 @@ test.describe('stats panel', () => {
 
   test('shows the riding summary with hour and weekday histograms', async ({ page }) => {
     await gotoMap(page);
+    await openSection(page, 'stat-riding');
     const riding = page.locator('#stat-riding');
-    await expect(riding).toBeVisible();
     const rows = riding.locator('.r-row');
     await expect(rows.nth(0)).toContainText('Distance');
     await expect(rows.nth(0)).toContainText('54 mi'); // 87.5 km
@@ -43,8 +56,8 @@ test.describe('stats panel', () => {
 
   test('shows weather ride-probability bars', async ({ page }) => {
     await gotoMap(page);
+    await openSection(page, 'stat-weather');
     const weather = page.locator('#stat-weather');
-    await expect(weather).toBeVisible();
     await expect(weather).toContainText('Ride days by temperature');
     await expect(weather).toContainText('Ride days by precipitation');
     const rows = weather.locator('.weather-bar-row');
@@ -52,6 +65,56 @@ test.describe('stats panel', () => {
     await expect(rows.nth(0)).toContainText('<40°F');
     await expect(rows.nth(0).locator('.weather-bar-val')).toHaveText('10%');
     await expect(rows.nth(1).locator('.weather-bar-fill')).toHaveAttribute('style', /width:35\.5%/);
+  });
+
+  test('opens one section at a time', async ({ page }) => {
+    await gotoMap(page);
+    // Nothing is open on a first visit: the panel is a header plus chips.
+    await expect(page.locator('#stats-sections')).toBeHidden();
+    await expect(page.locator('#stat-chips .chip.active')).toHaveCount(0);
+
+    await openSection(page, 'stat-riding');
+    await expect(page.locator('#stat-chips .chip.active')).toHaveCount(1);
+    await expect(chip(page, 'stat-riding')).toHaveAttribute('aria-expanded', 'true');
+
+    await openSection(page, 'stat-weather');
+    await expect(page.locator('#stat-riding')).toBeHidden();
+    await expect(page.locator('#stat-chips .chip.active')).toHaveCount(1);
+    await expect(chip(page, 'stat-riding')).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  test('clicking the open section chip closes it', async ({ page }) => {
+    await gotoMap(page);
+    await openSection(page, 'stat-years');
+    await chip(page, 'stat-years').click();
+    await expect(page.locator('#stat-years')).toBeHidden();
+    await expect(page.locator('#stats-sections')).toBeHidden();
+    await expect(chip(page, 'stat-years')).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  test('the open section persists across reload', async ({ page }) => {
+    await gotoMap(page);
+    await openSection(page, 'stat-weather');
+    await page.reload();
+    await expect(page.locator('#stat-rides')).not.toHaveText('—');
+    await expect(page.locator('#stat-weather')).toBeVisible();
+    await expect(chip(page, 'stat-weather')).toHaveClass(/active/);
+  });
+
+  test('a remembered section whose data is gone opens nothing', async ({ page }) => {
+    await gotoMap(page);
+    await openSection(page, 'stat-weather');
+    await gotoMap(page, buildFixture({ weather: null }));
+    await expect(page.locator('#stats-sections')).toBeHidden();
+    await expect(page.locator('#stat-chips .chip.active')).toHaveCount(0);
+  });
+
+  test('the panel is shorter with nothing open', async ({ page }) => {
+    await gotoMap(page);
+    const height = () => page.locator('#stats').evaluate((el) => el.getBoundingClientRect().height);
+    const closed = await height();
+    await openSection(page, 'stat-riding');
+    expect(await height()).toBeGreaterThan(closed);
   });
 
   test('legend shows the max ride count and a gradient bar', async ({ page }) => {
@@ -85,7 +148,7 @@ test.describe('stats panel', () => {
     await expect(page.locator('#stats-toggle')).toHaveText('–');
   });
 
-  test('optional sections stay hidden when their data is absent', async ({ page }) => {
+  test('optional sections and their chips stay hidden when data is absent', async ({ page }) => {
     await gotoMap(
       page,
       buildFixture({
@@ -101,9 +164,14 @@ test.describe('stats panel', () => {
       }),
     );
     await expect(page.locator('#stat-rides')).toHaveText('1');
-    await expect(page.locator('#stat-years')).toBeHidden();
-    await expect(page.locator('#stat-riding')).toBeHidden();
-    await expect(page.locator('#stat-weather')).toBeHidden();
+    // Hero tiles hide one by one rather than leaving an empty cell.
+    await expect(page.locator('#tile-ridden')).toBeHidden();
+    await expect(page.locator('#tile-coverage')).toBeHidden();
+
+    for (const section of ['stat-years', 'stat-riding', 'stat-weather']) {
+      await expect(page.locator(`#${section}`)).toBeHidden();
+      await expect(chip(page, section)).toBeHidden();
+    }
     await expect(page.locator('#wrapped-btn')).toBeHidden();
     // fewer than 2 distinct dates -> no date filter UI
     await expect(page.locator('#filter-row')).toBeHidden();

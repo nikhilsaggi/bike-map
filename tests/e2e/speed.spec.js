@@ -1,24 +1,26 @@
-import { test, expect, gotoMap } from './helpers.js';
+import { test, expect, gotoMap, chip, openSection } from './helpers.js';
 import { buildFixture, SPEED_BLOCK } from './fixture.js';
 
+const SPEED = 'stat-speed';
+
 test.describe('direction-split speed', () => {
-  test('section is collapsed until toggled', async ({ page }) => {
+  test('section is closed until its chip is clicked', async ({ page }) => {
     await gotoMap(page);
-    await expect(page.locator('#stat-speed')).toBeVisible();
-    await expect(page.locator('#speed-list')).toBeHidden();
-    await expect(page.locator('#speed-toggle')).toHaveAttribute('aria-expanded', 'false');
+    await expect(chip(page, SPEED)).toBeVisible();
+    await expect(page.locator('#stat-speed')).toBeHidden();
+    await expect(chip(page, SPEED)).toHaveAttribute('aria-expanded', 'false');
 
-    await page.click('#speed-toggle');
+    await openSection(page, SPEED);
     await expect(page.locator('#speed-list')).toBeVisible();
-    await expect(page.locator('#speed-toggle')).toHaveAttribute('aria-expanded', 'true');
+    await expect(chip(page, SPEED)).toHaveAttribute('aria-expanded', 'true');
 
-    await page.click('#speed-toggle');
-    await expect(page.locator('#speed-list')).toBeHidden();
+    await chip(page, SPEED).click();
+    await expect(page.locator('#stat-speed')).toBeHidden();
   });
 
   test('lists corridors in rank order with mph converted from km/h', async ({ page }) => {
     await gotoMap(page);
-    await page.click('#speed-toggle');
+    await openSection(page, SPEED);
 
     const names = await page.locator('.sp-name').allTextContents();
     expect(names).toEqual(['Crest Bridge', 'Crest Bridge', 'Flat Street']);
@@ -33,7 +35,7 @@ test.describe('direction-split speed', () => {
 
   test('each row shows both directions, length, and pass count', async ({ page }) => {
     await gotoMap(page);
-    await page.click('#speed-toggle');
+    await openSection(page, SPEED);
     // 24.14 km/h -> 15.0 mph, 8.05 -> 5.0; 800 m -> 0.50 mi.
     await expect(page.locator('.sp-detail').first())
       .toHaveText('15.0 vs 5.0 mph over 0.50 mi, 12+ passes each way');
@@ -41,7 +43,7 @@ test.describe('direction-split speed', () => {
 
   test('the same bridge appears once per direction, never as one row', async ({ page }) => {
     await gotoMap(page);
-    await page.click('#speed-toggle');
+    await openSection(page, SPEED);
     const rows = page.locator('.sp-row').filter({ hasText: 'Crest Bridge' });
     await expect(rows).toHaveCount(2);
     // Opposite directions: the crest flip, not a duplicate of one stretch.
@@ -51,7 +53,7 @@ test.describe('direction-split speed', () => {
 
   test('clicking a row flies to the corridor and marks it', async ({ page }) => {
     await gotoMap(page);
-    await page.click('#speed-toggle');
+    await openSection(page, SPEED);
     const before = await page.evaluate(() => map.getZoom());
     await page.locator('.sp-row').first().click();
     await page.waitForTimeout(900);
@@ -66,44 +68,59 @@ test.describe('direction-split speed', () => {
     expect(after.center.lng).toBeCloseTo(SPEED_BLOCK.corridors[0].at[0], 2);
   });
 
-  test('collapsing clears the corridor marker', async ({ page }) => {
+  test('closing the section clears the corridor marker', async ({ page }) => {
     await gotoMap(page);
-    await page.click('#speed-toggle');
+    await openSection(page, SPEED);
     await page.locator('.sp-row').first().click();
     await page.waitForTimeout(700);
     expect(await page.evaluate(() => speedMarker !== null)).toBe(true);
-    await page.click('#speed-toggle');
+    await chip(page, SPEED).click();
     expect(await page.evaluate(() => speedMarker !== null)).toBe(false);
   });
 
-  test('stays reachable on a short viewport', async ({ page }) => {
-    // The panel outgrew the viewport when this section was added: below
-    // ~760px of height the last section fell off the bottom, with no
-    // scrollbar to say anything was there.
+  test('switching to another section clears the corridor marker', async ({ page }) => {
+    // The ring belongs to the speed list; leaving it behind would strand a
+    // cyan circle on the map with nothing on screen explaining it.
+    await gotoMap(page);
+    await openSection(page, SPEED);
+    await page.locator('.sp-row').first().click();
+    await page.waitForTimeout(700);
+    expect(await page.evaluate(() => speedMarker !== null)).toBe(true);
+    await openSection(page, 'stat-weather');
+    expect(await page.evaluate(() => speedMarker !== null)).toBe(false);
+  });
+
+  test('every section fits a short viewport', async ({ page }) => {
+    // Stacking all the sections at once pushed the panel past 700px, so on a
+    // short window the last one fell off the bottom. One section at a time
+    // plus a bounded section height is what keeps this true.
     await page.setViewportSize({ width: 1280, height: 560 });
     await gotoMap(page);
 
-    const fits = await page.evaluate(() => {
-      const s = document.getElementById('stats').getBoundingClientRect();
-      return s.bottom <= window.innerHeight;
-    });
-    expect(fits).toBe(true);
-
-    await page.locator('#stat-speed').scrollIntoViewIfNeeded();
-    await expect(page.locator('#speed-toggle')).toBeInViewport();
-    // Collapsing the panel must stay possible from anywhere in the scroll.
-    await expect(page.locator('#stats-toggle')).toBeInViewport();
+    for (const section of ['stat-years', 'stat-riding', 'stat-weather', SPEED]) {
+      await openSection(page, section);
+      const fits = await page.evaluate(() => {
+        const s = document.getElementById('stats').getBoundingClientRect();
+        return s.bottom <= window.innerHeight;
+      });
+      expect(fits, `#${section} keeps the panel on screen`).toBe(true);
+      // Both the way in and the way out stay reachable without scrolling.
+      await expect(page.locator('#stat-chips')).toBeInViewport();
+      await expect(page.locator('#stats-toggle')).toBeInViewport();
+    }
   });
 
-  test('section stays hidden when no corridor qualifies', async ({ page }) => {
+  test('chip stays hidden when no corridor qualifies', async ({ page }) => {
     await gotoMap(page, buildFixture({ speed: null }));
+    await expect(chip(page, SPEED)).toBeHidden();
     await expect(page.locator('#stat-speed')).toBeHidden();
   });
 
-  test('section stays hidden when the corridor list is empty', async ({ page }) => {
+  test('chip stays hidden when the corridor list is empty', async ({ page }) => {
     await gotoMap(page, buildFixture({
       speed: { corridors: [], measured: 0, split_n: 3, min_m: 250.0 },
     }));
+    await expect(chip(page, SPEED)).toBeHidden();
     await expect(page.locator('#stat-speed')).toBeHidden();
   });
 });

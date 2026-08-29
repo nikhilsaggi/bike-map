@@ -11,8 +11,11 @@
   body { background: #0d0d0d; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
   #map { width: 100vw; height: 100vh; }
 
+  /* The stats panel is an ambient header plus a chip strip that opens exactly
+     one detail section at a time.  Stacking every section at once ran to ~32
+     rows and 670-1080px, burying the map the panel floats over. */
   #stats {
-    position: absolute; top: 12px; right: 12px; z-index: 1000;
+    position: absolute; top: 12px; right: 12px; z-index: 1000; width: 236px;
     background: rgba(13, 13, 13, 0.88); color: #ccc; padding: 12px 16px;
     border-radius: 8px; font-size: 13px; line-height: 1.6;
     border: 1px solid #333; backdrop-filter: blur(6px);
@@ -27,55 +30,67 @@
   #stats-toggle:hover { color: #fff; }
   #stats-collapsed-label { display: none; color: #ccc; font-size: 12px; }
   #stats.collapsed #stats-body { display: none; }
-  /* The panel outgrew the viewport once the speed ranking was added: at any
-     usable height under ~760px the last section fell off the bottom with no
-     scrollbar to reveal it.  Scrolling the body rather than #stats keeps the
-     collapse button, which is positioned against #stats, pinned in place. */
-  #stats-body { max-height: calc(100vh - 72px); overflow-y: auto; padding-right: 4px; }
-  #stats-body::-webkit-scrollbar { width: 6px; }
-  #stats-body::-webkit-scrollbar-track { background: transparent; }
-  #stats-body::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
-  #stats-body::-webkit-scrollbar-thumb:hover { background: #555; }
-  #stats-body { scrollbar-width: thin; scrollbar-color: #333 transparent; }
-  #stats.collapsed { padding: 8px 32px 8px 14px; }
+  #stats.collapsed { width: auto; padding: 8px 32px 8px 14px; }
   #stats.collapsed #stats-collapsed-label { display: inline; }
-  #stat-years {
-    display: none; margin-top: 8px; padding-top: 8px; border-top: 1px solid #333;
-    font-size: 11px; line-height: 1.5;
+  /* Backstop only.  With one section open the panel fits every viewport we
+     target; a very short window still needs somewhere to scroll. */
+  #stats-body { max-height: calc(100vh - 72px); overflow-y: auto; }
+
+  /* Hero: effort on the top row, coverage on the bottom.  Tiles hide
+     individually so a partial payload leaves no empty cells. */
+  #stat-hero {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px;
+    padding-right: 22px;  /* clear the collapse button */
   }
-  #stat-years .year-row { display: flex; justify-content: space-between; gap: 16px; }
-  #stat-riding {
-    display: none; margin-top: 8px; padding-top: 8px; border-top: 1px solid #333;
+  .hero-tile { display: flex; flex-direction: column; line-height: 1.2; }
+  .hero-tile strong { font-size: 17px; font-variant-numeric: tabular-nums; }
+  .hero-tile .label { font-size: 10px; }
+  .hero-tile.hidden { display: none; }
+  #stat-updated-row { margin-top: 8px; font-size: 10px; line-height: 1.4; }
+  #stat-updated-row strong { font-variant-numeric: tabular-nums; }
+
+  #stat-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; }
+  .chip {
+    background: #1a1a1a; color: #ccc; border: 1px solid #333;
+    border-radius: 11px; padding: 3px 9px; font: inherit; font-size: 10px;
+    line-height: 1.4; cursor: pointer;
+  }
+  .chip:hover { color: #fff; border-color: #555; }
+  .chip.active { background: #7b3ff2; border-color: #7b3ff2; color: #fff; }
+  .chip.hidden { display: none; }
+
+  /* The active chip is the open section's heading, which is why the sections
+     below carry no headings of their own. */
+  #stats-sections { display: none; }
+  #stats-sections.open {
+    display: block; margin-top: 8px; padding-top: 8px;
+    border-top: 1px solid #333; padding-right: 4px;
+    max-height: min(320px, calc(100vh - 300px)); overflow-y: auto;
     font-size: 11px; line-height: 1.6;
   }
-  #stat-riding .r-row { display: flex; justify-content: space-between; gap: 16px; }
+  #stats-sections > div { display: none; }
+  #stats-sections > div.open { display: block; }
+  #stats-sections::-webkit-scrollbar { width: 6px; }
+  #stats-sections::-webkit-scrollbar-track { background: transparent; }
+  #stats-sections::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+  #stats-sections::-webkit-scrollbar-thumb:hover { background: #555; }
+  #stats-sections { scrollbar-width: thin; scrollbar-color: #333 transparent; }
+
+  #stat-years { line-height: 1.5; }
+  .year-row { display: flex; justify-content: space-between; gap: 16px; }
+  .r-row { display: flex; justify-content: space-between; gap: 16px; }
   .histo { display: flex; align-items: flex-end; gap: 1px; height: 26px; margin: 3px 0 1px; }
   .histo div { flex: 1; background: #7b3ff2; border-radius: 1px 1px 0 0; min-height: 1px; }
   .histo-labels { display: flex; justify-content: space-between; font-size: 9px; color: #666; }
   .histo-title { color: #888; margin-top: 6px; }
-  #stat-weather {
-    display: none; margin-top: 8px; padding-top: 8px; border-top: 1px solid #333;
-    font-size: 11px; line-height: 1.6;
-  }
   .weather-section-title { color: #888; margin-top: 6px; margin-bottom: 2px; }
+  .weather-section-title:first-child { margin-top: 0; }
   .weather-bar-row { display: flex; align-items: center; gap: 6px; margin: 2px 0; }
   .weather-bar-label { width: 62px; text-align: right; color: #888; font-size: 10px; flex: none; }
   .weather-bar-track { flex: 1; height: 10px; background: #1a1a1a; border-radius: 3px; overflow: hidden; }
   .weather-bar-fill { height: 100%; background: #7b3ff2; border-radius: 3px; }
   .weather-bar-val { width: 32px; color: #ccc; font-size: 10px; flex: none; }
-  #stat-speed {
-    display: none; margin-top: 8px; padding-top: 8px; border-top: 1px solid #333;
-    font-size: 11px; line-height: 1.5;
-  }
-  #speed-toggle {
-    display: flex; justify-content: space-between; align-items: center; gap: 10px;
-    width: 100%; background: none; border: none; padding: 0; cursor: pointer;
-    color: #888; font: inherit; font-size: 11px; text-align: left;
-  }
-  #speed-toggle:hover { color: #ccc; }
-  #speed-toggle .caret { color: #666; font-size: 9px; }
-  #speed-list { display: none; margin-top: 6px; }
-  #stat-speed.open #speed-list { display: block; }
+  #stat-speed { line-height: 1.5; }
   .sp-row {
     display: flex; align-items: baseline; gap: 6px; padding: 2px 0; cursor: pointer;
     border-bottom: 1px solid #1c1c1c;
@@ -90,6 +105,12 @@
   .sp-gap { flex: none; color: #fff; font-weight: 600; font-variant-numeric: tabular-nums; }
   .sp-detail { color: #666; font-size: 10px; padding: 0 0 4px 0; font-variant-numeric: tabular-nums; }
   #speed-foot { color: #555; font-size: 9px; line-height: 1.4; margin-top: 6px; }
+
+  @media (max-width: 640px) {
+    #stats { left: 12px; right: 12px; width: auto; }
+    #stats.collapsed { left: auto; }
+    #stats-sections.open { max-height: min(240px, calc(100vh - 300px)); }
+  }
 
   #legend {
     position: absolute; bottom: 28px; left: 12px; z-index: 1000;
@@ -153,12 +174,8 @@
   }
   #ride-view-exit:hover { color: #fff; }
 
-  #wrapped-btn {
-    display: none; width: 100%; margin-top: 10px; background: #1a1a1a;
-    color: #ccc; border: 1px solid #333; border-radius: 6px; padding: 5px 0;
-    font-size: 11px; cursor: pointer;
-  }
-  #wrapped-btn:hover { color: #fff; border-color: #555; }
+  .chip-action { color: #9fd8ff; }
+  .chip-action:hover { color: #fff; }
   #wrapped-overlay {
     display: none; position: fixed; inset: 0; z-index: 2000;
     background: rgba(0, 0, 0, 0.55); align-items: center; justify-content: center;
@@ -213,20 +230,26 @@
   <button id="stats-toggle" title="Collapse stats">&ndash;</button>
   <span id="stats-collapsed-label">Stats</span>
   <div id="stats-body">
-    <div><span class="label">Rides:</span> <strong id="stat-rides">—</strong></div>
-    <div><span class="label">Edges:</span> <strong id="stat-edges">—</strong></div>
-    <div><span class="label">Street mi:</span> <strong id="stat-km">—</strong></div>
-    <div><span class="label">Updated:</span> <strong id="stat-updated">—</strong></div>
-    <div id="stat-years"></div>
-    <div id="stat-riding"></div>
-    <div id="stat-weather"></div>
-    <div id="stat-speed">
-      <button id="speed-toggle" aria-expanded="false">
-        <span>Biggest direction splits</span><span class="caret">&#9660;</span>
-      </button>
-      <div id="speed-list"></div>
+    <div id="stat-hero">
+      <div class="hero-tile"><strong id="stat-rides">&mdash;</strong><span class="label">rides</span></div>
+      <div class="hero-tile hidden" id="tile-ridden"><strong id="stat-ridden">&mdash;</strong><span class="label">mi ridden</span></div>
+      <div class="hero-tile" id="tile-km"><strong id="stat-km">&mdash;</strong><span class="label">street mi</span></div>
+      <div class="hero-tile hidden" id="tile-coverage"><strong id="stat-coverage">&mdash;</strong><span class="label">of NYC</span></div>
     </div>
-    <button id="wrapped-btn">Year recap</button>
+    <div id="stat-updated-row"><span class="label">Updated</span> <strong id="stat-updated">&mdash;</strong></div>
+    <div id="stat-chips" role="group" aria-label="Stat sections">
+      <button class="chip hidden" data-section="stat-years" aria-expanded="false" aria-controls="stat-years">Years</button>
+      <button class="chip hidden" data-section="stat-riding" aria-expanded="false" aria-controls="stat-riding">Riding</button>
+      <button class="chip hidden" data-section="stat-weather" aria-expanded="false" aria-controls="stat-weather">Weather</button>
+      <button class="chip hidden" data-section="stat-speed" aria-expanded="false" aria-controls="stat-speed">Speed</button>
+      <button id="wrapped-btn" class="chip chip-action hidden">Recap &#8599;</button>
+    </div>
+    <div id="stats-sections">
+      <div id="stat-years"></div>
+      <div id="stat-riding"></div>
+      <div id="stat-weather"></div>
+      <div id="stat-speed"><div id="speed-list"></div></div>
+    </div>
   </div>
 </div>
 
@@ -328,6 +351,50 @@ try {
   if (localStorage.getItem('statsCollapsed') === '1') setStatsCollapsed(true);
 } catch (e) {}
 
+// -- Stat sections -----------------------------------------------------------
+// One section open at a time.  The panel floats over the map, and stacking
+// every section at once ran to ~32 rows and 670-1080px, which buried the map
+// and gave the reader no idea where to look first.  The active chip doubles as
+// the open section's heading, so the sections carry none of their own.
+const sectionsEl = document.getElementById('stats-sections');
+const chips = [...document.querySelectorAll('#stat-chips .chip[data-section]')];
+
+// name === null closes everything.
+function openSection(name) {
+  for (const chip of chips) {
+    const on = chip.dataset.section === name;
+    chip.classList.toggle('active', on);
+    chip.setAttribute('aria-expanded', String(on));
+    document.getElementById(chip.dataset.section).classList.toggle('open', on);
+  }
+  sectionsEl.classList.toggle('open', name !== null);
+  // The corridor ring belongs to the speed section; switching away without
+  // clearing it strands a cyan circle on the map with nothing to explain it.
+  if (name !== 'stat-speed') clearSpeedMarker();
+  try { localStorage.setItem('statsSection', name || ''); } catch (e) {}
+}
+
+for (const chip of chips) {
+  chip.addEventListener('click', () =>
+    openSection(chip.classList.contains('active') ? null : chip.dataset.section));
+}
+
+// Chips start hidden and are revealed only once their data lands, so a partial
+// payload leaves no dead chip -- the same progressive reveal the sections used
+// to do with style.display, moved up a level.
+function showChip(section) {
+  document.querySelector(`#stat-chips .chip[data-section="${section}"]`)
+    .classList.remove('hidden');
+}
+
+// Reopen last visit's section, but only if this payload actually has it.
+function restoreSection() {
+  let name = null;
+  try { name = localStorage.getItem('statsSection'); } catch (e) {}
+  const chip = chips.find(c => c.dataset.section === name);
+  if (chip && !chip.classList.contains('hidden')) openSection(name);
+}
+
 // Each feature's properties.rides holds indices into the global rideList
 // ([dateIndex, "HH:MM"] per ride); [filterLo, filterHi] selects the active
 // date-index range.
@@ -391,11 +458,7 @@ function showCorridor(c) {
 }
 
 function renderSpeedSplits(speed) {
-  const el = document.getElementById('stat-speed');
-  if (!speed || !speed.corridors || !speed.corridors.length) {
-    el.style.display = 'none';
-    return;
-  }
+  if (!speed || !speed.corridors || !speed.corridors.length) return;
   const list = document.getElementById('speed-list');
   list.innerHTML = '';
   for (const c of speed.corridors) {
@@ -421,16 +484,8 @@ function renderSpeedSplits(speed) {
     `timestamps. Stretches of ${Math.round(mi(speed.min_m / 1000) * 5280)} ft+ ` +
     `ridden ${speed.split_n}+ times each way.`;
   list.appendChild(foot);
-  el.style.display = 'block';
+  showChip('stat-speed');
 }
-
-document.getElementById('speed-toggle').addEventListener('click', () => {
-  const el = document.getElementById('stat-speed');
-  const open = el.classList.toggle('open');
-  document.getElementById('speed-toggle').setAttribute('aria-expanded', String(open));
-  el.querySelector('.caret').innerHTML = open ? '&#9650;' : '&#9660;';
-  if (!open) clearSpeedMarker();
-});
 
 function styleFor(count) {
   const t = Math.sqrt(count) / sqrtMax;
@@ -749,21 +804,40 @@ fetch('rides.geojson.gz')
     newKmByYear = data.properties?.coverage?.new_km_by_year ?? {};
     wrappedYears = Object.keys(data.properties?.rides_per_year ?? {}).sort();
     if (wrappedYears.length && rideList.length) {
-      document.getElementById('wrapped-btn').style.display = 'block';
+      document.getElementById('wrapped-btn').classList.remove('hidden');
     }
 
     document.getElementById('stat-rides').textContent = totalRides.toLocaleString();
-    document.getElementById('stat-edges').textContent = totalEdges.toLocaleString();
     document.getElementById('stat-updated').textContent = updated;
     document.getElementById('legend-max').textContent = maxCount;
 
     const totalKm = data.properties?.total_km;
     if (totalKm != null) {
       document.getElementById('stat-km').textContent = Math.round(mi(totalKm)).toLocaleString();
+      document.getElementById('tile-km').title =
+        `${totalEdges.toLocaleString()} drawn street segments`;
     }
     const ridesPerYear = data.properties?.rides_per_year;
     const riding = data.properties?.riding;
     const coverage = data.properties?.coverage;
+    if (riding) {
+      document.getElementById('stat-ridden').textContent =
+        Math.round(mi(riding.total_km)).toLocaleString();
+      document.getElementById('tile-ridden').classList.remove('hidden');
+    }
+    // coverage.pct is measured over a different subset than total_km: it
+    // excludes config.COVERAGE_EXCLUDE ways, which the drawn miles include.
+    // Side by side the two invite a division that does not hold, so the real
+    // numerator and denominator go in the tooltip rather than staying implicit.
+    if (coverage) {
+      document.getElementById('stat-coverage').textContent = `${coverage.pct}%`;
+      const tile = document.getElementById('tile-coverage');
+      tile.title =
+        `${Math.round(mi(coverage.ridden_km)).toLocaleString()} of ` +
+        `${Math.round(mi(coverage.network_km)).toLocaleString()} mi of rideable ` +
+        `NYC street; excludes paths and trails, which the street miles include`;
+      tile.classList.remove('hidden');
+    }
     if (ridesPerYear && Object.keys(ridesPerYear).length) {
       const kmByYear = riding?.km_by_year || {};
       const newByYear = coverage?.new_km_by_year || {};
@@ -775,7 +849,7 @@ fetch('rides.geojson.gz')
           return `<div class="year-row"><span class="label">${y}</span><span><strong>${n}</strong><span class="label">${km}${nw}</span></span></div>`;
         })
         .join('');
-      el.style.display = 'block';
+      showChip('stat-years');
     }
 
     if (riding) {
@@ -799,7 +873,7 @@ fetch('rides.geojson.gz')
         histo(riding.by_hour, '<span>12am</span><span>6</span><span>noon</span><span>6</span><span>11pm</span>') +
         `<div class="histo-title">Rides by weekday</div>` +
         histo(riding.by_weekday, '<span>Mon</span><span>Sun</span>');
-      document.getElementById('stat-riding').style.display = 'block';
+      showChip('stat-riding');
     }
 
     const weather = data.properties?.weather;
@@ -817,10 +891,11 @@ fetch('rides.geojson.gz')
         weatherBars(weather.temp) +
         `<div class="weather-section-title">Ride days by precipitation</div>` +
         weatherBars(weather.rain);
-      el.style.display = 'block';
+      showChip('stat-weather');
     }
 
     renderSpeedSplits(data.properties.speed);
+    restoreSection();
 
     sqrtMax = Math.sqrt(maxCount);
     fullMaxCount = maxCount;
