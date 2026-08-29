@@ -77,7 +77,35 @@
   #stats-sections { scrollbar-width: thin; scrollbar-color: #333 transparent; }
 
   #stat-years { line-height: 1.5; }
-  .year-row { display: flex; justify-content: space-between; gap: 16px; }
+  /* One grid template shared by the header and every row, so the columns line
+     up instead of each row right-justifying its own run-on text. */
+  .year-head, .year-row {
+    display: grid; grid-template-columns: 10px 30px 1fr 1fr 1fr;
+    align-items: baseline; gap: 4px;
+  }
+  .year-head { color: #888; font-size: 9px; letter-spacing: 0.3px; }
+  .year-row { cursor: pointer; padding: 1px 0; }
+  .year-row:hover { color: #fff; }
+  .year-row .y-caret { color: #666; font-size: 8px; }
+  .year-row:hover .y-caret { color: #ccc; }
+  .year-row.open .y-caret { color: #7b3ff2; }
+  .year-head span:not(.y-year), .year-row span:not(.y-caret):not(.y-year) {
+    text-align: right; font-variant-numeric: tabular-nums;
+  }
+  .year-row .y-new { color: #888; }
+  .year-row.open { color: #fff; }
+  .year-detail {
+    display: none; margin: 2px 0 6px 14px; padding-left: 8px;
+    border-left: 1px solid #333; color: #888; font-size: 10px; line-height: 1.6;
+  }
+  .year-row.open + .year-detail { display: block; }
+  .yd-row { display: flex; justify-content: space-between; gap: 10px; }
+  .yd-row .v { color: #ccc; text-align: right; }
+  .yd-vs { margin-bottom: 2px; }
+  .yd-link { color: #9fd8ff; cursor: pointer; }
+  .yd-link:hover { text-decoration: underline; }
+  .delta { color: #7bd88f; }
+  .delta.neg { color: #e07a7a; }
   .r-row { display: flex; justify-content: space-between; gap: 16px; }
   .histo { display: flex; align-items: flex-end; gap: 1px; height: 26px; margin: 3px 0 1px; }
   .histo div { flex: 1; background: #7b3ff2; border-radius: 1px 1px 0 0; min-height: 1px; }
@@ -104,7 +132,7 @@
   }
   .sp-gap { flex: none; color: #fff; font-weight: 600; font-variant-numeric: tabular-nums; }
   .sp-detail { color: #666; font-size: 10px; padding: 0 0 4px 0; font-variant-numeric: tabular-nums; }
-  #speed-foot { color: #555; font-size: 9px; line-height: 1.4; margin-top: 6px; }
+  #speed-lead { color: #777; font-size: 9px; line-height: 1.4; margin-bottom: 5px; }
 
   @media (max-width: 640px) {
     #stats { left: 12px; right: 12px; width: auto; }
@@ -174,41 +202,6 @@
   }
   #ride-view-exit:hover { color: #fff; }
 
-  .chip-action { color: #9fd8ff; }
-  .chip-action:hover { color: #fff; }
-  #wrapped-overlay {
-    display: none; position: fixed; inset: 0; z-index: 2000;
-    background: rgba(0, 0, 0, 0.55); align-items: center; justify-content: center;
-  }
-  #wrapped-card {
-    position: relative; background: #121212; border: 1px solid #3a3a3a;
-    border-radius: 12px; padding: 22px 26px; width: 320px; color: #ccc;
-    box-shadow: 0 8px 40px rgba(0, 0, 0, 0.6);
-    font-family: inherit;
-  }
-  #wrapped-close {
-    position: absolute; top: 8px; right: 12px; background: none; border: none;
-    color: #888; font-size: 16px; cursor: pointer; line-height: 1;
-  }
-  #wrapped-close:hover { color: #fff; }
-  #wrapped-head {
-    display: flex; align-items: center; justify-content: center; gap: 14px;
-    margin-bottom: 14px;
-  }
-  #wrapped-head .year { font-size: 22px; font-weight: 700; color: #fff; }
-  #wrapped-head button {
-    background: none; border: none; color: #888; font-size: 18px; cursor: pointer;
-  }
-  #wrapped-head button:disabled { opacity: 0.25; cursor: default; }
-  #wrapped-head button:hover:not(:disabled) { color: #fff; }
-  .wrapped-row { display: flex; justify-content: space-between; margin: 8px 0; font-size: 13px; }
-  .wrapped-row .k { color: #888; }
-  .wrapped-row .v { color: #fff; font-weight: 600; text-align: right; }
-  .wrapped-row .delta { font-size: 11px; font-weight: 400; color: #7bd88f; }
-  .wrapped-row .delta.neg { color: #e07a7a; }
-  .wrapped-link { color: #9fd8ff; cursor: pointer; }
-  .wrapped-link:hover { text-decoration: underline; }
-
   .ride-popup .leaflet-popup-content-wrapper {
     background: rgba(13, 13, 13, 0.92); color: #fff; border-radius: 8px;
     border: 1px solid #444; backdrop-filter: blur(6px);
@@ -241,8 +234,7 @@
       <button class="chip hidden" data-section="stat-years" aria-expanded="false" aria-controls="stat-years">Years</button>
       <button class="chip hidden" data-section="stat-riding" aria-expanded="false" aria-controls="stat-riding">Riding</button>
       <button class="chip hidden" data-section="stat-weather" aria-expanded="false" aria-controls="stat-weather">Weather</button>
-      <button class="chip hidden" data-section="stat-speed" aria-expanded="false" aria-controls="stat-speed">Speed</button>
-      <button id="wrapped-btn" class="chip chip-action hidden">Recap &#8599;</button>
+      <button class="chip hidden" data-section="stat-speed" aria-expanded="false" aria-controls="stat-speed">Faster one way</button>
     </div>
     <div id="stats-sections">
       <div id="stat-years"></div>
@@ -250,18 +242,6 @@
       <div id="stat-weather"></div>
       <div id="stat-speed"><div id="speed-list"></div></div>
     </div>
-  </div>
-</div>
-
-<div id="wrapped-overlay">
-  <div id="wrapped-card">
-    <button id="wrapped-close" title="Close (Esc)">&times;</button>
-    <div id="wrapped-head">
-      <button id="wrapped-prev" title="Previous year">&#8249;</button>
-      <span class="year" id="wrapped-year">—</span>
-      <button id="wrapped-next" title="Next year">&#8250;</button>
-    </div>
-    <div id="wrapped-body"></div>
   </div>
 </div>
 
@@ -406,8 +386,6 @@ let dateList = [];
 let rideList = [];
 let rideDateIdx = [];
 let newKmByYear = {};
-let wrappedYears = [];
-let wrappedIdx = 0;
 let filterLo = 0;
 let filterHi = Infinity;
 let sqrtMax = 1;
@@ -477,13 +455,13 @@ function renderSpeedSplits(speed) {
     list.appendChild(row);
     list.appendChild(detail);
   }
-  const foot = document.createElement('div');
-  foot.id = 'speed-foot';
-  foot.textContent =
-    `mph gap between the two directions of travel, measured from ride ` +
-    `timestamps. Stretches of ${Math.round(mi(speed.min_m / 1000) * 5280)} ft+ ` +
+  const lead = document.createElement('div');
+  lead.id = 'speed-lead';
+  lead.textContent =
+    `Stretches I ride faster one way than the other. The number is the mph ` +
+    `gap, from ride timestamps; ${Math.round(mi(speed.min_m / 1000) * 5280)} ft+ ` +
     `ridden ${speed.split_n}+ times each way.`;
-  list.appendChild(foot);
+  list.prepend(lead);
   showChip('stat-speed');
 }
 
@@ -549,14 +527,16 @@ function exitRideView() {
 }
 
 document.addEventListener('keydown', e => {
-  if (e.key !== 'Escape') return;
-  const overlay = document.getElementById('wrapped-overlay');
-  if (overlay.style.display === 'flex') closeWrapped();
-  else exitRideView();
+  if (e.key === 'Escape') exitRideView();
 });
 document.getElementById('ride-view-exit').addEventListener('click', exitRideView);
 
-// -- Yearly recap ------------------------------------------------------------
+// -- Per-year table --------------------------------------------------------
+// Each row expands into the recap that used to be a separate modal.  The
+// table already carried rides/miles/new-miles per year, so the modal was
+// mostly a second rendering of this data one year at a time; what only it
+// had -- the year-over-year deltas, longest ride, biggest month, favourite
+// time -- is now the row's detail.
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
                 'August', 'September', 'October', 'November', 'December'];
@@ -588,64 +568,73 @@ function fmtDelta(cur, prev) {
   if (!prev) return '';
   const pct = Math.round(100 * (cur - prev) / prev);
   const cls = pct < 0 ? 'delta neg' : 'delta';
-  return ` <span class="${cls}">${pct >= 0 ? '+' : ''}${pct}%</span>`;
+  return `<span class="${cls}">${pct >= 0 ? '+' : ''}${pct}%</span>`;
 }
 
-function renderWrapped() {
-  const year = wrappedYears[wrappedIdx];
-  document.getElementById('wrapped-year').textContent = year;
-  document.getElementById('wrapped-prev').disabled = wrappedIdx === 0;
-  document.getElementById('wrapped-next').disabled = wrappedIdx === wrappedYears.length - 1;
+const hourLabel = h =>
+  h === 0 ? '12am' : h < 12 ? `${h}am` : h === 12 ? '12pm' : `${h - 12}pm`;
+
+function yearDetail(year) {
   const { cur, prevN, prevKm } = yearRecap(year);
-  const newKm = newKmByYear[year];
+  if (!cur.n) return '';
   let bigM = null;
   for (const m in cur.months) if (bigM === null || cur.months[m] > cur.months[bigM]) bigM = m;
   const topWd = cur.wd.indexOf(Math.max(...cur.wd));
   const topH = cur.hours.indexOf(Math.max(...cur.hours));
-  const hourLabel = h => h === 0 ? '12am' : h < 12 ? `${h}am` : h === 12 ? '12pm' : `${h - 12}pm`;
+  const dN = fmtDelta(cur.n, prevN);
+  const dKm = cur.km ? fmtDelta(cur.km, prevKm) : '';
   const rows = [
-    ['Rides', `${cur.n.toLocaleString()}${fmtDelta(cur.n, prevN)}`],
-    cur.km ? ['Distance', `${Math.round(mi(cur.km)).toLocaleString()} mi${fmtDelta(cur.km, prevKm)}`] : null,
-    newKm != null ? ['New streets', `${Math.round(mi(newKm))} mi`] : null,
     cur.longest ? ['Longest ride',
-      `<span class="wrapped-link" onclick="wrappedViewRide(${cur.longest.id})"` +
-      ` title="Show this ride's route">${cur.longest.date} &middot; ${Math.round(mi(cur.longest.km))} mi</span>`] : null,
+      `<span class="yd-link" onclick="viewRide(${cur.longest.id})"` +
+      ` title="Show this ride's route">${cur.longest.date} &middot; ` +
+      `${Math.round(mi(cur.longest.km))} mi</span>`] : null,
     bigM !== null ? ['Biggest month', `${MONTHS[bigM]} &middot; ${cur.months[bigM]} rides`] : null,
-    cur.n ? ['Favorite time', `${WEEKDAYS[topWd]}s &middot; ${hourLabel(topH)}`] : null,
+    ['Favourite time', `${WEEKDAYS[topWd]}s &middot; ${hourLabel(topH)}`],
   ].filter(Boolean);
-  document.getElementById('wrapped-body').innerHTML = rows
-    .map(([k, v]) => `<div class="wrapped-row"><span class="k">${k}</span><span class="v">${v}</span></div>`)
+  const vs = (dN || dKm)
+    ? `<div class="yd-vs">vs ${+year - 1}: ${[dN && `${dN} rides`, dKm && `${dKm} mi`]
+        .filter(Boolean).join(' &middot; ')}</div>`
+    : '';
+  return vs + rows
+    .map(([k, v]) => `<div class="yd-row"><span>${k}</span><span class="v">${v}</span></div>`)
     .join('');
 }
 
-function openWrapped() {
-  if (!wrappedYears.length) return;
-  exitRideView();
-  wrappedIdx = wrappedYears.length - 1;
-  renderWrapped();
-  document.getElementById('wrapped-overlay').style.display = 'flex';
-}
+function renderYears(ridesPerYear, kmByYear, newByYear) {
+  const el = document.getElementById('stat-years');
+  el.innerHTML =
+    `<div class="year-head"><span></span><span class="y-year"></span>` +
+    `<span>Rides</span><span>Miles</span><span>New mi</span></div>` +
+    Object.entries(ridesPerYear).map(([y, n]) => {
+      const km = kmByYear[y] != null ? Math.round(mi(kmByYear[y])).toLocaleString() : '';
+      const nw = newByYear[y] != null ? `+${Math.round(mi(newByYear[y]))}` : '';
+      return `<div class="year-row" data-year="${y}" role="button" tabindex="0"` +
+        ` aria-expanded="false" title="${y} in detail">` +
+        `<span class="y-caret">&#9656;</span><span class="y-year">${y}</span>` +
+        `<span class="y-n">${n.toLocaleString()}</span>` +
+        `<span class="y-mi">${km}</span><span class="y-new">${nw}</span></div>` +
+        `<div class="year-detail" data-year="${y}"></div>`;
+    }).join('');
 
-function closeWrapped() {
-  document.getElementById('wrapped-overlay').style.display = 'none';
+  // Detail is computed on first open: yearRecap walks all 1380 rides, and
+  // most years are never expanded.
+  for (const row of el.querySelectorAll('.year-row')) {
+    const open = () => {
+      const year = row.dataset.year;
+      const detail = row.nextElementSibling;
+      const on = !row.classList.contains('open');
+      if (on && !detail.innerHTML) detail.innerHTML = yearDetail(year);
+      row.classList.toggle('open', on);
+      row.setAttribute('aria-expanded', String(on));
+      row.querySelector('.y-caret').innerHTML = on ? '&#9662;' : '&#9656;';
+    };
+    row.addEventListener('click', open);
+    row.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); }
+    });
+  }
+  showChip('stat-years');
 }
-
-function wrappedViewRide(id) {
-  closeWrapped();
-  viewRide(id);
-}
-
-document.getElementById('wrapped-btn').addEventListener('click', openWrapped);
-document.getElementById('wrapped-close').addEventListener('click', closeWrapped);
-document.getElementById('wrapped-overlay').addEventListener('click', e => {
-  if (e.target === document.getElementById('wrapped-overlay')) closeWrapped();
-});
-document.getElementById('wrapped-prev').addEventListener('click', () => {
-  if (wrappedIdx > 0) { wrappedIdx--; renderWrapped(); }
-});
-document.getElementById('wrapped-next').addEventListener('click', () => {
-  if (wrappedIdx < wrappedYears.length - 1) { wrappedIdx++; renderWrapped(); }
-});
 
 // renormalize=true rescales colors to the filtered max and restyles every
 // layer; renormalize=false keeps the current scale and only restyles layers
@@ -802,10 +791,6 @@ fetch('rides.geojson.gz')
     rideList = data.properties?.rides ?? [];
     rideDateIdx = rideList.map(r => r[0]);
     newKmByYear = data.properties?.coverage?.new_km_by_year ?? {};
-    wrappedYears = Object.keys(data.properties?.rides_per_year ?? {}).sort();
-    if (wrappedYears.length && rideList.length) {
-      document.getElementById('wrapped-btn').classList.remove('hidden');
-    }
 
     document.getElementById('stat-rides').textContent = totalRides.toLocaleString();
     document.getElementById('stat-updated').textContent = updated;
@@ -839,17 +824,7 @@ fetch('rides.geojson.gz')
       tile.classList.remove('hidden');
     }
     if (ridesPerYear && Object.keys(ridesPerYear).length) {
-      const kmByYear = riding?.km_by_year || {};
-      const newByYear = coverage?.new_km_by_year || {};
-      const el = document.getElementById('stat-years');
-      el.innerHTML = Object.entries(ridesPerYear)
-        .map(([y, n]) => {
-          const km = kmByYear[y] != null ? ` &middot; ${Math.round(mi(kmByYear[y])).toLocaleString()} mi` : '';
-          const nw = newByYear[y] != null ? ` &middot; +${Math.round(mi(newByYear[y]))} new` : '';
-          return `<div class="year-row"><span class="label">${y}</span><span><strong>${n}</strong><span class="label">${km}${nw}</span></span></div>`;
-        })
-        .join('');
-      showChip('stat-years');
+      renderYears(ridesPerYear, riding?.km_by_year || {}, coverage?.new_km_by_year || {});
     }
 
     if (riding) {

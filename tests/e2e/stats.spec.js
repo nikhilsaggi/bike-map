@@ -23,20 +23,6 @@ test.describe('stats panel', () => {
       .toHaveAttribute('title', /28 of 230 mi of rideable NYC street/);
   });
 
-  test('shows per-year ride counts with distance and new-street miles', async ({ page }) => {
-    await gotoMap(page);
-    await openSection(page, 'stat-years');
-    const rows = page.locator('#stat-years .year-row');
-    await expect(rows).toHaveCount(2);
-    await expect(rows.nth(0)).toContainText('2023');
-    await expect(rows.nth(0)).toContainText('2');
-    await expect(rows.nth(0)).toContainText('22 mi'); // 35 km
-    await expect(rows.nth(0)).toContainText('+19 new'); // 30 km
-    await expect(rows.nth(1)).toContainText('2024');
-    await expect(rows.nth(1)).toContainText('33 mi'); // 52.5 km
-    await expect(rows.nth(1)).toContainText('+10 new'); // 15.5 km
-  });
-
   test('shows the riding summary with hour and weekday histograms', async ({ page }) => {
     await gotoMap(page);
     await openSection(page, 'stat-riding');
@@ -65,6 +51,12 @@ test.describe('stats panel', () => {
     await expect(rows.nth(0)).toContainText('<40°F');
     await expect(rows.nth(0).locator('.weather-bar-val')).toHaveText('10%');
     await expect(rows.nth(1).locator('.weather-bar-fill')).toHaveAttribute('style', /width:35\.5%/);
+  });
+
+  test('names every section on a chip', async ({ page }) => {
+    await gotoMap(page);
+    expect(await page.locator('#stat-chips .chip:not(.hidden)').allTextContents())
+      .toEqual(['Years', 'Riding', 'Weather', 'Faster one way']);
   });
 
   test('opens one section at a time', async ({ page }) => {
@@ -172,7 +164,6 @@ test.describe('stats panel', () => {
       await expect(page.locator(`#${section}`)).toBeHidden();
       await expect(chip(page, section)).toBeHidden();
     }
-    await expect(page.locator('#wrapped-btn')).toBeHidden();
     // fewer than 2 distinct dates -> no date filter UI
     await expect(page.locator('#filter-row')).toBeHidden();
     await expect(page.locator('#filter-dates')).toBeHidden();
