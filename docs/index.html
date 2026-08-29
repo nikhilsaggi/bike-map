@@ -104,6 +104,7 @@
   .yd-vs { margin-bottom: 2px; }
   .yd-link { color: #9fd8ff; cursor: pointer; }
   .yd-link:hover { text-decoration: underline; }
+  .yd-link.on { color: #00e5ff; font-weight: 600; }
   .delta { color: #7bd88f; }
   .delta.neg { color: #e07a7a; }
   .r-row { display: flex; justify-content: space-between; gap: 16px; }
@@ -525,13 +526,32 @@ function viewRide(ri) {
     }
   });
   for (const l of on) l.bringToFront();
+  syncYearLinks();
 }
 
 function exitRideView() {
   if (rideView === null) return;
   rideView = null;
   document.getElementById('ride-view-bar').style.display = 'none';
+  syncYearLinks();
   applyFilter();
+}
+
+// A second click on the ride already being shown puts the map back, so the
+// link that selected it can also clear it.
+function toggleRide(ri) {
+  if (rideView === ri) exitRideView();
+  else viewRide(ri);
+}
+
+// Ride view is also left by Escape, the exit button and the date filter, so
+// the link's selected state is synced from rideView rather than set on click.
+function syncYearLinks() {
+  for (const link of document.querySelectorAll('#stat-years .yd-link')) {
+    const on = rideView !== null && +link.dataset.ride === rideView;
+    link.classList.toggle('on', on);
+    link.title = on ? 'Hide this ride' : "Show this ride's route";
+  }
 }
 
 document.addEventListener('keydown', e => {
@@ -593,7 +613,7 @@ function yearDetail(year) {
   const dKm = cur.km ? fmtDelta(cur.km, prevKm) : '';
   const rows = [
     cur.longest ? ['Longest ride',
-      `<span class="yd-link" onclick="viewRide(${cur.longest.id})"` +
+      `<span class="yd-link" data-ride="${cur.longest.id}"` +
       ` title="Show this ride's route">${cur.longest.date} &middot; ` +
       `${Math.round(mi(cur.longest.km))} mi</span>`] : null,
     bigM !== null ? ['Biggest month', `${MONTHS[bigM]} &middot; ${cur.months[bigM]} rides`] : null,
@@ -623,6 +643,11 @@ function renderYears(ridesPerYear, kmByYear, newByYear) {
         `<span class="y-mi">${km}</span><span class="y-new">${nw}</span></div>` +
         `<div class="year-detail" data-year="${y}"></div>`;
     }).join('');
+
+  el.addEventListener('click', e => {
+    const link = e.target.closest('.yd-link');
+    if (link) toggleRide(+link.dataset.ride);
+  });
 
   // Detail is computed on first open: yearRecap walks all 1380 rides, and
   // most years are never expanded.
