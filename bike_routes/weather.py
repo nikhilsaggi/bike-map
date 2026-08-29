@@ -14,6 +14,11 @@ KM_TO_MI = 0.621371
 
 WEATHER_CACHE_PATH = Path("weather_cache.json")
 
+# Every key the band loop reads. A cache predating a new variable would other-
+# wise reach `w[key]` and raise mid-export, and only when the API is down --
+# the one run that has no way to recover.
+WEATHER_KEYS = ("tmax", "precip")
+
 TEMP_BANDS: list[tuple[float, float, str]] = [
     (-100, 32, "<32°F"),
     (32, 50, "32-50°F"),
@@ -62,14 +67,28 @@ def _fetch_weather(start: str, end: str) -> dict[str, dict[str, float]]:
     return out
 
 
+def _cache_well_formed(cached: Any) -> bool:
+    """Fail closed: a cache missing any key the band loop reads is unusable."""
+    if not isinstance(cached, dict) or not cached:
+        return False
+    return all(
+        isinstance(day, dict) and all(k in day for k in WEATHER_KEYS)
+        for day in cached.values()
+    )
+
+
 def _load_cached_weather() -> dict[str, dict[str, float]] | None:
     if not WEATHER_CACHE_PATH.exists():
         return None
     try:
         with WEATHER_CACHE_PATH.open() as f:
-            return json.load(f)
+            cached = json.load(f)
     except Exception:
         return None
+    if not _cache_well_formed(cached):
+        print("  Cached weather has an unexpected shape; ignoring it")
+        return None
+    return cached
 
 
 def _save_weather_cache(weather: dict[str, dict[str, float]]) -> None:
@@ -96,7 +115,7 @@ def _get_weather(start: str, end: str) -> dict[str, dict[str, float]] | None:
 def _weather_summary(
     ride_stats: dict[str, dict[str, Any] | None],
 ) -> dict[str, list[dict[str, Any]]] | None:
-    """Compute ride-probability-by-weather summary for the GeoJSON."""
+    """Break rides down by weather band, against each band's share of days."""
     per_day: dict[str, float] = {}
     for fname, rs in ride_stats.items():
         if not rs or not rs.get("dist_m"):
@@ -115,6 +134,11 @@ def _weather_summary(
     if not weather:
         return None
 
+    total_days = len(weather)
+    total_rides = sum(1 for d in weather if d in per_day)
+    if not total_rides:
+        return None
+
     result: dict[str, list[dict[str, Any]]] = {}
     for kind, bands, key in (
         ("temp", TEMP_BANDS, "tmax"),
@@ -131,9 +155,20 @@ def _weather_summary(
                 if d in per_day:
                     ride_days += 1
                     miles += per_day[d]
-            pct = round(100 * ride_days / days, 1) if days else 0.0
-            avg_mi = round(miles / ride_days, 1) if ride_days else 0.0
-            rows.append({"label": label, "pct": pct, "avg_mi": avg_mi})
+            rows.append(
+                {
+                    "label": label,
+                    # Bar length: this band's share of rides. Sums to 100.
+                    "share": round(100 * ride_days / total_rides, 1),
+                    # Reference mark: its share of days, i.e. where the bar
+                    # would land if the weather made no difference.
+                    "expected": round(100 * days / total_days, 1),
+                    "pct": round(100 * ride_days / days, 1) if days else 0.0,
+                    "days": days,
+                    "ride_days": ride_days,
+                    "avg_mi": round(miles / ride_days, 1) if ride_days else 0.0,
+                }
+            )
         result[kind] = rows
 
     return result

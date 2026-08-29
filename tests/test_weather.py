@@ -5,7 +5,9 @@ from __future__ import annotations
 import gzip
 import json
 
+import pytest
 import weather_correlation as wc
+
 from bike_routes.weather import (
     RAIN_BANDS,
     TEMP_BANDS,
@@ -111,7 +113,60 @@ def test_weather_summary_with_mock_api(monkeypatch):
     assert "rain" in result
     assert len(result["temp"]) == 5
     assert len(result["rain"]) == 3
+
+    # Every ride day is 72F and dry, so those two bands take all the rides.
     band_65_80 = next(r for r in result["temp"] if r["label"] == "65-80°F")
-    assert band_65_80["pct"] > 0
+    assert band_65_80["share"] == 100.0
+    assert band_65_80["ride_days"] == 20
+    assert band_65_80["days"] == 30
+    assert band_65_80["expected"] == 100.0
+    assert band_65_80["pct"] == pytest.approx(66.7, abs=0.1)
     dry = next(r for r in result["rain"] if r["label"] == "Dry")
-    assert dry["pct"] > 0
+    assert dry["share"] == 100.0
+
+    # Shares are a composition of the rides: each chart sums to 100.
+    for kind in ("temp", "rain"):
+        assert sum(r["share"] for r in result[kind]) == pytest.approx(100.0, abs=0.1)
+        # And expected is a composition of the days.
+        assert sum(r["expected"] for r in result[kind]) == pytest.approx(100.0, abs=0.1)
+
+
+def test_weather_summary_share_vs_expected(monkeypatch):
+    """A band ridden more often than it occurs must exceed its expected share."""
+    # 20 warm days, 20 freezing; rides on every warm day and 4 freezing ones.
+    fake_weather = {}
+    ride_stats = {}
+    for i in range(1, 21):
+        fake_weather[f"2024-06-{i:02d}"] = {"tmax": 72.0, "precip": 0.0}
+        fake_weather[f"2024-01-{i:02d}"] = {"tmax": 20.0, "precip": 0.0}
+        ride_stats[f"2024-06-{i:02d}_12-00-00_-0400.csv"] = {"dist_m": 10000.0}
+    for i in range(1, 5):
+        ride_stats[f"2024-01-{i:02d}_12-00-00_-0400.csv"] = {"dist_m": 10000.0}
+    monkeypatch.setattr("bike_routes.weather._get_weather", lambda _s, _e: fake_weather)
+
+    result = _weather_summary(ride_stats)
+    assert result is not None
+    warm = next(r for r in result["temp"] if r["label"] == "65-80°F")
+    cold = next(r for r in result["temp"] if r["label"] == "<32°F")
+    # 20 of 24 rides on half the days: sought out. 4 of 24 on the other half:
+    # avoided. Both bands occur equally often, so expected splits evenly.
+    assert warm["expected"] == cold["expected"] == 50.0
+    assert warm["share"] == pytest.approx(83.3, abs=0.1)
+    assert cold["share"] == pytest.approx(16.7, abs=0.1)
+    assert warm["share"] > warm["expected"] > cold["share"]
+
+
+def test_cache_well_formed_rejects_missing_keys(tmp_path, monkeypatch):
+    """A cache written before a variable was added must not reach `w[key]`."""
+    from bike_routes.weather import _cache_well_formed, _load_cached_weather
+
+    assert _cache_well_formed({"2024-06-01": {"tmax": 70.0, "precip": 0.0}})
+    assert not _cache_well_formed({"2024-06-01": {"tmax": 70.0}})  # no precip
+    assert not _cache_well_formed({"2024-06-01": "sunny"})
+    assert not _cache_well_formed({})
+    assert not _cache_well_formed([])
+
+    path = tmp_path / "weather_cache.json"
+    path.write_text('{"2024-06-01": {"tmax": 70.0}}')
+    monkeypatch.setattr("bike_routes.weather.WEATHER_CACHE_PATH", path)
+    assert _load_cached_weather() is None

@@ -111,13 +111,21 @@
   .histo div { flex: 1; background: #7b3ff2; border-radius: 1px 1px 0 0; min-height: 1px; }
   .histo-labels { display: flex; justify-content: space-between; font-size: 9px; color: #666; }
   .histo-title { color: #888; margin-top: 6px; }
-  .weather-section-title { color: #888; margin-top: 6px; margin-bottom: 2px; }
-  .weather-section-title:first-child { margin-top: 0; }
+  .weather-section-title { color: #888; margin-top: 8px; margin-bottom: 2px; }
+  .weather-key { color: #666; font-size: 9px; margin-bottom: 1px; }
+  .weather-key i { color: #ccc; font-style: normal; }
   .weather-bar-row { display: flex; align-items: center; gap: 6px; margin: 2px 0; }
   .weather-bar-label { width: 62px; text-align: right; color: #888; font-size: 10px; flex: none; }
-  .weather-bar-track { flex: 1; height: 10px; background: #1a1a1a; border-radius: 3px; overflow: hidden; }
+  .weather-bar-track {
+    position: relative; flex: 1; height: 10px; background: #1a1a1a;
+    border-radius: 3px; overflow: hidden;
+  }
   .weather-bar-fill { height: 100%; background: #7b3ff2; border-radius: 3px; }
+  /* Where the bar would end if this band drew rides in proportion to how
+     often it occurs. Bar past the tick means sought out, short means avoided. */
+  .weather-bar-tick { position: absolute; top: 0; bottom: 0; width: 2px; background: #ccc; }
   .weather-bar-val { width: 32px; color: #ccc; font-size: 10px; flex: none; }
+  .weather-note { color: #777; font-size: 9px; line-height: 1.4; margin-top: 4px; }
   #stat-speed { line-height: 1.5; }
   .sp-row {
     display: flex; align-items: baseline; gap: 6px; padding: 2px 0; cursor: pointer;
@@ -852,20 +860,45 @@ fetch('rides.geojson.gz')
     }
 
     const weather = data.properties?.weather;
-    if (weather) {
+    // A payload exported before the composition rewrite has no share/expected,
+    // and half-drawing it would be worse than not drawing it at all.
+    if (weather && weather.temp?.[0]?.share != null) {
+      // Bars are each band's share of rides; the tick is its share of days.
+      // The old chart plotted P(ride | band), which is a different question
+      // from the one its own heading asked -- and not the one a bar labelled
+      // "Wet" gets read as answering.
       const weatherBars = (rows) => rows.map(r =>
-        `<div class="weather-bar-row">` +
+        `<div class="weather-bar-row" title="${r.ride_days} of ${r.days} ` +
+        `${r.label} days${r.avg_mi ? `, ${r.avg_mi} mi avg` : ''}">` +
         `<span class="weather-bar-label">${r.label}</span>` +
-        `<div class="weather-bar-track"><div class="weather-bar-fill" style="width:${r.pct}%"></div></div>` +
-        `<span class="weather-bar-val">${Math.round(r.pct)}%</span>` +
+        `<div class="weather-bar-track">` +
+        `<div class="weather-bar-fill" style="width:${r.share}%"></div>` +
+        `<div class="weather-bar-tick" style="left:min(${r.expected}%, calc(100% - 2px))"></div>` +
+        `</div>` +
+        `<span class="weather-bar-val">${Math.round(r.share)}%</span>` +
         `</div>`
       ).join('');
+      // Say what the ticks show rather than leaving the reader to infer it.
+      // Derived from the same rows that are drawn, so it cannot drift.
+      const weatherNote = (rows) => {
+        const worst = rows.reduce((a, b) =>
+          Math.abs(b.share / (b.expected || 1) - 1) > Math.abs(a.share / (a.expected || 1) - 1)
+            ? b : a);
+        if (Math.abs(worst.share / (worst.expected || 1) - 1) < 0.1) {
+          return 'Your rides split just like the days do &mdash; no preference here.';
+        }
+        return `${worst.label} days are ${Math.round(worst.expected)}% of the ` +
+          `year but ${Math.round(worst.share)}% of rides.`;
+      };
       const el = document.getElementById('stat-weather');
       el.innerHTML =
-        `<div class="weather-section-title">Ride days by temperature</div>` +
+        `<div class="weather-key"><i>&#9474;</i> share of all days</div>` +
+        `<div class="weather-section-title">Rides by temperature</div>` +
         weatherBars(weather.temp) +
-        `<div class="weather-section-title">Ride days by precipitation</div>` +
-        weatherBars(weather.rain);
+        `<div class="weather-note">${weatherNote(weather.temp)}</div>` +
+        `<div class="weather-section-title">Rides by precipitation</div>` +
+        weatherBars(weather.rain) +
+        `<div class="weather-note">${weatherNote(weather.rain)}</div>`;
       showChip('stat-weather');
     }
 

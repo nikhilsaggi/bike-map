@@ -73,15 +73,19 @@ export function buildFixture(propertyOverrides = {}) {
         network_km: 370,
         new_km_by_year: { 2023: 30.0, 2024: 15.5 },
       },
+      // share = this band's % of rides (bar), expected = its % of days
+      // (tick). Temp is deliberately skewed -- >60°F takes 60% of rides on
+      // 30% of days, ratio 2.0 -- and rain deliberately is not: both shares
+      // sit within 5% of their expected, so the null-result note fires.
       weather: {
         temp: [
-          { label: '<40°F', pct: 10.0, avg_mi: 5.0 },
-          { label: '40–60°F', pct: 35.5, avg_mi: 9.1 },
-          { label: '>60°F', pct: 60.0, avg_mi: 12.0 },
+          { label: '<40°F', share: 10.0, expected: 30.0, pct: 8.0, days: 30, ride_days: 5, avg_mi: 5.0 },
+          { label: '40–60°F', share: 30.0, expected: 40.0, pct: 18.8, days: 40, ride_days: 15, avg_mi: 9.1 },
+          { label: '>60°F', share: 60.0, expected: 30.0, pct: 60.0, days: 30, ride_days: 30, avg_mi: 12.0 },
         ],
         rain: [
-          { label: 'dry', pct: 50.0, avg_mi: 10.0 },
-          { label: 'wet', pct: 12.0, avg_mi: 6.0 },
+          { label: 'dry', share: 72.0, expected: 70.0, pct: 51.4, days: 70, ride_days: 36, avg_mi: 10.0 },
+          { label: 'wet', share: 28.0, expected: 30.0, pct: 46.7, days: 30, ride_days: 14, avg_mi: 6.0 },
         ],
       },
       dates: ['2023-04-01', '2023-06-15', '2024-05-01', '2024-07-04'],
