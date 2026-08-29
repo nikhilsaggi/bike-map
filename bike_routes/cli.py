@@ -11,6 +11,7 @@ from typing import Any
 
 from . import config
 from .cache import _load_route_cache, _load_state, _save_route_cache, _save_state
+from .edge_speed import _backfill_edge_speeds
 from .export import _export_geojson
 from .gps import _load_and_resample
 from .graph import _load_graph
@@ -83,6 +84,27 @@ def _ready_results(
     return ready
 
 
+def _finalize(
+    state: dict[str, Any],
+    edge_geom: dict[tuple[int, int], list[tuple[float, float]]],
+    edge_hw: dict[tuple[int, int], str],
+    *,
+    skip_png: bool,
+) -> None:
+    """Backfill edge speeds, then render and export.
+
+    Speed measurement needs edge_geom, which only exists once the render
+    cache is loaded -- so unlike _backfill_ride_stats it cannot live in the
+    matching checkpoint.  All three export paths funnel through here.
+    """
+    n_speed = _backfill_edge_speeds(state, edge_geom)
+    if n_speed:
+        print(f"Measured edge speeds for {n_speed:,} ride(s)")
+        _save_state(state)
+    _render(edge_geom, state, skip_png=skip_png)
+    _export_geojson(edge_geom, state, edge_hw)
+
+
 def main(argv: list[str] | None = None) -> None:
     """Run the full bike route pipeline."""
     t0 = time.time()
@@ -137,8 +159,7 @@ def main(argv: list[str] | None = None) -> None:
             G = _load_graph([], state)
             render_data = _build_render_cache(G)
         edge_geom, edge_hw = render_data
-        _render(edge_geom, state, skip_png=skip_png)
-        _export_geojson(edge_geom, state, edge_hw)
+        _finalize(state, edge_geom, edge_hw, skip_png=skip_png)
 
         print(f"\nDone in {time.time() - t0:.1f}s (no new rides)")
         return
@@ -163,8 +184,7 @@ def main(argv: list[str] | None = None) -> None:
                 G = _load_graph([], state)
                 render_data = _build_render_cache(G)
             edge_geom, edge_hw = render_data
-            _render(edge_geom, state, skip_png=skip_png)
-            _export_geojson(edge_geom, state, edge_hw)
+            _finalize(state, edge_geom, edge_hw, skip_png=skip_png)
         print(f"\nDone in {time.time() - t0:.1f}s")
         return
 
@@ -241,8 +261,7 @@ def main(argv: list[str] | None = None) -> None:
     render_data = _get_render_data(G)
     assert render_data is not None
     edge_geom, edge_hw = render_data
-    _render(edge_geom, state, skip_png=skip_png)
-    _export_geojson(edge_geom, state, edge_hw)
+    _finalize(state, edge_geom, edge_hw, skip_png=skip_png)
 
     # Summary
     elapsed = time.time() - t0

@@ -14,6 +14,8 @@ The pipeline exports a compressed GeoJSON that powers an interactive
 [Leaflet](https://leafletjs.com/) map served via GitHub Pages. Features:
 
 - Coloring by ride frequency
+- Speed layer: how fast each street was actually ridden, split by direction
+  of travel (see below)
 - Hover for ride count, click for the full list of ride dates
 - Date-range slider with time-lapse playback (watch the network grow)
 - Collapsible stats panel with total rides, edges covered, and street
@@ -29,6 +31,46 @@ python -m bike_routes         # generates docs/rides.geojson.gz
 python -m http.server 8000 --directory docs
 ```
 
+## Direction-Split Speed
+
+Every ride CSV carries a per-fix timestamp, so the same traces that produce
+the frequency map also say how fast each stretch was ridden — and, because
+the trace is time-ordered, which way you were going. The **Speed** layer
+shows this for all rides back to 2021; no new data source is involved.
+
+Direction matters more than it sounds. Averaging a street's speed without it
+blends the climb into the descent and produces a plausible number that means
+nothing. Split by direction, the Manhattan Bridge bike path reconstructs its
+own elevation profile from timestamps alone:
+
+```
+                          southbound   northbound
+Brooklyn approach              16.3         7.9 mph
+                               16.0         8.1
+mid-span                       10.7         9.2
+                                9.4        10.9   <- crest
+                                7.8        14.2
+Manhattan approach              8.6        15.5
+```
+
+The direction gap swings from -8.5 mph to +6.8 mph across the span, while
+the *whole-span* average shows nothing at all (10.6 vs 10.8 mph). Two views are
+available: **Mean** colors each street by its overall speed, **Asymmetry** by
+the gap between its two directions, so hills, prevailing wind, and one-way
+light timing show up as the strongest lines on the map.
+
+Implementation notes: speeds are `distance / time` accumulated per direction
+(never a mean of per-point speeds), so stops are handled correctly and moving
+time is tracked separately. Long ways are measured in ~150 m chunks — the
+bridge is a single 2163 m OSM edge, and measured whole it averages its own
+climb against its descent. A street is colored at one measured pass; the
+direction split needs three in each direction before it is shown. Streets
+with no usable measurement render in grey rather than at the bottom of the
+ramp, so "no data" never reads as "slow".
+
+This is backfilled outside the map-matching config hash, so it can be
+recomputed (bump `SPEED_VERSION`) without reprocessing any rides.
+
 ## How It Works
 
 1. Loads GPS ride data from CSV files (longitude, latitude, timestamp)
@@ -36,7 +78,9 @@ python -m http.server 8000 --directory docs
 3. Fetches and merges OpenStreetMap bike/drive/walk street networks
 4. Map-matches GPS traces to street edges using heading-aware spatial snapping
 5. Routes between matched nodes, accumulates edge traversal counts
-6. Exports GeoJSON (gzipped) for the interactive map + renders static PNGs
+6. Projects each ride's timestamped trace back onto its matched edges to
+   recover per-direction speed
+7. Exports GeoJSON (gzipped) for the interactive map + renders static PNGs
 
 All intermediate results are cached. First run takes longer
 (OSM download + full processing). Subsequent runs process only new rides.
@@ -103,7 +147,7 @@ longitude,latitude,timestamp
 
 - One row per GPS fix, typically 1-second intervals
 - Longitude and latitude in decimal degrees (WGS-84)
-- Timestamp is used only for ordering (data should already be chronological)
+- Timestamps order the trace and drive the direction-split speed layer
 
 ## Configuration
 
@@ -119,6 +163,10 @@ Key parameters in `bike_routes/config.py`:
 | `MAX_GPS_GAP_M` | 300 | Split ride into segments at gaps larger than this |
 | `NETWORK_TYPES` | bike, drive, walk | OSM network types to fetch |
 | `SAMPLE_SIZE` | None | Limit number of rides processed (for testing) |
+| `SPEED_VERSION` | 2 | Bump to recompute the speed layer (no rematch) |
+| `SPEED_CHUNK_M` | 150 | Long ways are measured in chunks this size |
+| `SPEED_SNAP_M` | 25 | Max GPS-to-edge distance for a fix to count as on-edge |
+| `SPEED_SPLIT_PASSES` | 3 | Passes per direction before asymmetry is shown |
 
 Heuristic-matcher parameters (`SNAP_TOLERANCE_M`, `HEADING_PENALTY`,
 `HW_PENALTY`, ...) remain in `bike_routes/config.py` and apply when
@@ -216,7 +264,8 @@ The pipeline creates several cache files (auto-managed, gitignored):
 - `osm_graph_cache.pkl` — merged OSM street graph (~260 MB)
 - `hmm_map_cache.pkl` — HMM matcher's map index (nodes + adjacency); lets
   runs and worker processes skip loading the full graph
-- `state.pkl` — processed filenames, edge counts, config snapshot
+- `state.pkl` — processed filenames, edge counts, per-edge speeds, config
+  snapshot
 - `render_cache.pkl` — pre-extracted edge geometries + highway classes
 - `route_cache.pkl` — shortest-path results between node pairs
 - `cache_versions.json` — osmnx/networkx versions that wrote the graph cache

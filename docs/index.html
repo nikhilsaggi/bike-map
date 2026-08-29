@@ -65,6 +65,19 @@
     width: 180px; height: 12px; border-radius: 3px; margin-bottom: 4px;
   }
   #legend .labels { display: flex; justify-content: space-between; font-size: 11px; color: #888; }
+  #mode-toggle { display: flex; gap: 0; margin-bottom: 8px; border: 1px solid #333; border-radius: 4px; overflow: hidden; }
+  #mode-toggle button {
+    flex: 1; background: #1a1a1a; color: #888; border: 0; padding: 4px 6px;
+    font: inherit; font-size: 11px; cursor: pointer;
+  }
+  #mode-toggle button:hover { color: #ccc; }
+  #mode-toggle button.on { background: #333; color: #fff; }
+  #speed-sub { display: none; gap: 6px; font-size: 11px; color: #888; margin-bottom: 6px; }
+  #speed-sub label { cursor: pointer; }
+  #speed-sub input { vertical-align: middle; margin: 0 3px 0 0; }
+  #speed-note { display: none; font-size: 10px; color: #666; line-height: 1.4; margin-top: 6px; }
+  .nodata-key { display: flex; align-items: center; gap: 5px; font-size: 10px; color: #666; margin-top: 5px; }
+  .nodata-key i { width: 14px; height: 3px; background: #444; display: inline-block; }
   #filter-row {
     display: none; align-items: center; gap: 8px; margin-top: 10px;
     font-size: 11px; color: #888;
@@ -182,6 +195,7 @@
     <div><span class="label">Updated:</span> <strong id="stat-updated">—</strong></div>
     <div id="stat-years"></div>
     <div id="stat-riding"></div>
+    <div id="stat-speed"></div>
     <div id="stat-weather"></div>
     <button id="wrapped-btn">Year recap</button>
   </div>
@@ -200,9 +214,19 @@
 </div>
 
 <div id="legend">
+  <div id="mode-toggle">
+    <button id="mode-freq" class="on">Frequency</button>
+    <button id="mode-speed">Speed</button>
+  </div>
+  <div id="speed-sub">
+    <label><input type="radio" name="sv" value="mean" checked>Mean</label>
+    <label><input type="radio" name="sv" value="asym">Asymmetry</label>
+  </div>
   <div class="title">Ride frequency</div>
   <div class="bar" id="legend-bar"></div>
-  <div class="labels"><span>1</span><span id="legend-max">—</span></div>
+  <div class="labels"><span id="legend-min">1</span><span id="legend-max">—</span></div>
+  <div class="nodata-key" id="nodata-key" style="display:none"><i></i>not enough data</div>
+  <div id="speed-note"></div>
   <div id="filter-row">
     <button id="play-btn" title="Play time-lapse">&#9654;</button>
     <div id="slider">
@@ -335,6 +359,212 @@ function styleFor(count) {
     lineJoin: 'round',
     lineCap: 'round',
   };
+}
+
+// -- Speed layer -------------------------------------------------------------
+//
+// sp = [fwd_dkmh, fwd_n, rev_dkmh, rev_n] in tenths of km/h, where "forward"
+// means along this feature's own coordinate order.  A 0 speed is never real
+// and means that direction did not clear the publish threshold.  Compass
+// direction is derived from the geometry, so no bearing is shipped.
+
+// Blues: deliberately unlike the plasma frequency ramp, so the two layers can
+// never be mistaken for each other.
+const SPEED_RAMP = [
+  [0.00, [8, 29, 88]], [0.25, [34, 94, 168]], [0.50, [29, 145, 192]],
+  [0.75, [127, 205, 187]], [1.00, [237, 248, 251]],
+];
+// Diverging, for the asymmetry view. Blue/red rather than red/green.
+const ASYM_RAMP = [
+  [0.00, [33, 102, 172]], [0.25, [103, 169, 207]], [0.50, [235, 235, 235]],
+  [0.75, [239, 138, 98]], [1.00, [178, 24, 43]],
+];
+const NO_DATA_COLOR = '#444';
+const ASYM_FULL_KMH = 10;  // full scale of the asymmetry ramp
+const COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+
+let mode = 'freq';
+let speedView = 'mean';
+let speedLo = 8, speedHi = 21, splitN = 3;
+
+function rampColor(ramp, t) {
+  t = Math.max(0, Math.min(1, t));
+  for (let i = 0; i < ramp.length - 1; i++) {
+    const [t0, c0] = ramp[i];
+    const [t1, c1] = ramp[i + 1];
+    if (t <= t1) {
+      const f = (t - t0) / (t1 - t0);
+      return `rgb(${Math.round(c0[0] + f * (c1[0] - c0[0]))},` +
+             `${Math.round(c0[1] + f * (c1[1] - c0[1]))},` +
+             `${Math.round(c0[2] + f * (c1[2] - c0[2]))})`;
+    }
+  }
+  const last = ramp[ramp.length - 1][1];
+  return `rgb(${last[0]},${last[1]},${last[2]})`;
+}
+
+function speedOf(feature) {
+  const sp = feature.properties.sp;
+  if (!sp) return null;
+  const [fd, fn, rd, rn] = sp;
+  const fwd = fd ? fd / 10 : null;
+  const rev = rd ? rd / 10 : null;
+  if (fwd === null && rev === null) return null;
+  const mean = (fwd !== null && rev !== null)
+    ? (fwd * fn + rev * rn) / (fn + rn)
+    : (fwd !== null ? fwd : rev);
+  return { fwd, rev, fn, rn, mean };
+}
+
+// Bearing of the feature's own chord, and whether that chord is a fair
+// summary of the line. A hairpin's chord points nowhere useful, so those
+// features describe direction relative to the drawn line instead.
+function chordInfo(feature) {
+  const c = feature.geometry.coordinates;
+  const a = c[0], b = c[c.length - 1];
+  const mPerLat = 110540, mPerLon = 111320 * Math.cos(40.73 * Math.PI / 180);
+  const dx = (b[0] - a[0]) * mPerLon, dy = (b[1] - a[1]) * mPerLat;
+  const chord = Math.hypot(dx, dy);
+  let len = 0;
+  for (let i = 1; i < c.length; i++) {
+    len += Math.hypot((c[i][0] - c[i - 1][0]) * mPerLon, (c[i][1] - c[i - 1][1]) * mPerLat);
+  }
+  const deg = (Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360;
+  return { deg, reliable: len > 0 && chord / len >= 0.5 };
+}
+
+function dirLabels(feature) {
+  const { deg, reliable } = chordInfo(feature);
+  if (!reliable) return ['one way', 'the other way'];
+  const i = Math.round(deg / 45) % 8;
+  return [COMPASS[i], COMPASS[(i + 4) % 8]];
+}
+
+function speedStyle(feature) {
+  const s = speedOf(feature);
+  const blank = { color: NO_DATA_COLOR, weight: 2, opacity: 0.35, lineJoin: 'round', lineCap: 'round' };
+  if (!s) return blank;
+  if (speedView === 'asym') {
+    if (s.fwd === null || s.rev === null || s.fn < splitN || s.rn < splitN) return blank;
+    const t = Math.max(-1, Math.min(1, (s.fwd - s.rev) / ASYM_FULL_KMH));
+    return {
+      color: rampColor(ASYM_RAMP, (t + 1) / 2),
+      weight: 1.5 + Math.abs(t) * 3.5,
+      opacity: 0.9, lineJoin: 'round', lineCap: 'round',
+    };
+  }
+  const t = (s.mean - speedLo) / (speedHi - speedLo || 1);
+  return {
+    color: rampColor(SPEED_RAMP, t),
+    weight: 1.5 + Math.max(0, Math.min(1, t)) * 3,
+    opacity: 0.85, lineJoin: 'round', lineCap: 'round',
+  };
+}
+
+function speedTooltip(feature) {
+  const s = speedOf(feature);
+  if (!s) return 'no speed data';
+  const [fl, rl] = dirLabels(feature);
+  const part = (v, n, label) => v === null
+    ? `${label} —`
+    : `${label} ${(v * KM_TO_MI).toFixed(1)} mph (${n})`;
+  return `${part(s.fwd, s.fn, fl)}<br>${part(s.rev, s.rn, rl)}`;
+}
+
+// Two lines nudged a few metres either side of the centreline, drawn only
+// while hovering: 22k permanent offset pairs would double the canvas layers
+// for an affordance that is sub-pixel below zoom 16 anyway.
+let dirOverlay = null;
+
+function clearDirOverlay() {
+  if (dirOverlay) { map.removeLayer(dirOverlay); dirOverlay = null; }
+}
+
+function showDirOverlay(feature) {
+  clearDirOverlay();
+  const s = speedOf(feature);
+  if (!s || s.fwd === null || s.rev === null) return;
+  const c = feature.geometry.coordinates;
+  if (c.length < 2) return;
+  const mPerLat = 110540, mPerLon = 111320 * Math.cos(40.73 * Math.PI / 180);
+  const off = 3;
+  const side = sign => c.map((pt, i) => {
+    const a = c[Math.max(i - 1, 0)], b = c[Math.min(i + 1, c.length - 1)];
+    const dx = (b[0] - a[0]) * mPerLon, dy = (b[1] - a[1]) * mPerLat;
+    const m = Math.hypot(dx, dy) || 1;
+    return [pt[1] + sign * off * (-dx / m) / mPerLat, pt[0] + sign * off * (dy / m) / mPerLon];
+  });
+  const span = Math.max(Math.abs(s.fwd - s.rev), 0.1);
+  const col = v => rampColor(ASYM_RAMP, 0.5 + 0.5 * Math.max(-1, Math.min(1, (v - s.mean) / span)));
+  // An explicit SVG renderer: the map prefers canvas, and the overlay has to
+  // sit above the base network rather than blend into the same canvas.
+  // interactive:false is load-bearing: the overlay is drawn directly under the
+  // cursor, so if it accepts pointer events it steals them from the street,
+  // firing mouseout -> clear -> mouseover -> draw, and the pair flickers.
+  const r = L.svg();
+  const opts = { weight: 3, opacity: 0.95, renderer: r, interactive: false };
+  dirOverlay = L.layerGroup([
+    L.polyline(side(1), { ...opts, color: col(s.fwd) }),
+    L.polyline(side(-1), { ...opts, color: col(s.rev) }),
+  ]).addTo(map);
+}
+
+function setMode(m) {
+  mode = m;
+  document.getElementById('mode-freq').classList.toggle('on', m === 'freq');
+  document.getElementById('mode-speed').classList.toggle('on', m === 'speed');
+  document.getElementById('speed-sub').style.display = m === 'speed' ? 'flex' : 'none';
+  document.getElementById('speed-note').style.display = m === 'speed' ? 'block' : 'none';
+  document.getElementById('nodata-key').style.display = m === 'speed' ? 'flex' : 'none';
+  // Speeds are an all-time aggregate -- there is no per-ride timing in the
+  // payload -- so the date filter is hidden rather than left live and inert.
+  // These default to display:none in CSS and are switched on by
+  // initDateFilter, so restoring them means 'flex', not ''.
+  const showFilter = m === 'freq' && dateList.length >= 2;
+  document.getElementById('filter-row').style.display = showFilter ? 'flex' : 'none';
+  document.getElementById('filter-dates').style.display = showFilter ? 'flex' : 'none';
+  if (m === 'speed') {
+    if (stopPlayback) stopPlayback();
+    filterLo = 0; filterHi = Infinity;
+  }
+  clearDirOverlay();
+  updateLegend();
+  applyFilter();
+}
+
+function updateLegend() {
+  const bar = document.getElementById('legend-bar');
+  const minEl = document.getElementById('legend-min');
+  const maxEl = document.getElementById('legend-max');
+  const title = document.querySelector('#legend .title');
+  if (mode === 'freq') {
+    bar.style.background = buildGradientCSS();
+    title.textContent = 'Rides per street';
+    minEl.textContent = '1';
+    maxEl.textContent = fullMaxCount;
+    return;
+  }
+  if (speedView === 'asym') {
+    bar.style.background = 'linear-gradient(to right,' +
+      ASYM_RAMP.map(([t, c]) => `rgb(${c[0]},${c[1]},${c[2]}) ${t * 100}%`).join(',') + ')';
+    title.textContent = 'Direction difference';
+    const m = (ASYM_FULL_KMH * KM_TO_MI).toFixed(0);
+    minEl.textContent = `-${m} mph`;
+    maxEl.textContent = `+${m} mph`;
+    document.getElementById('speed-note').textContent =
+      `Difference between the two directions of travel, where each has at least ` +
+      `${splitN} passes. Colour shows which way is faster, not why: grade, wind ` +
+      `and light timing all land in the same number.`;
+  } else {
+    bar.style.background = 'linear-gradient(to right,' +
+      SPEED_RAMP.map(([t, c]) => `rgb(${c[0]},${c[1]},${c[2]}) ${t * 100}%`).join(',') + ')';
+    title.textContent = 'Average speed';
+    minEl.textContent = `${(speedLo * KM_TO_MI).toFixed(0)} mph`;
+    maxEl.textContent = `${(speedHi * KM_TO_MI).toFixed(0)} mph`;
+    document.getElementById('speed-note').textContent =
+      'All-time average including time stopped at lights. Hover a street to ' +
+      'see each direction separately.';
+  }
 }
 
 function popupContent(rideIds) {
@@ -498,20 +728,25 @@ function applyFilter(renormalize = true) {
   });
   if (renormalize) {
     sqrtMax = Math.sqrt(filteredMax);
-    document.getElementById('legend-max').textContent = filteredMax;
+    // Only the frequency legend counts rides; in speed mode updateLegend owns
+    // these labels and this would clobber them.
+    if (mode === 'freq') {
+      document.getElementById('legend-max').textContent = filteredMax;
+      fullMaxCount = Math.max(fullMaxCount, filteredMax);
+    }
   }
   geoLayer.eachLayer(layer => {
     const c = layer._newCount;
-    if (!renormalize && c === layer._filteredCount) return;
+    if (mode !== 'speed' && !renormalize && c === layer._filteredCount) return;
     layer._filteredCount = c;
-    if (c === 0) {
+    if (c === 0 && mode !== 'speed') {
       map.removeLayer(layer);
     } else {
       if (!map.hasLayer(layer)) layer.addTo(map);
-      layer.setStyle(styleFor(c));
+      layer.setStyle(mode === 'speed' ? speedStyle(layer.feature) : styleFor(c));
     }
   });
-  restackLayers();
+  if (mode === 'speed') restackSpeedLayers(); else restackLayers();
 }
 
 // Restack visible lines so frequent (bright) edges draw above rare (dark)
@@ -527,10 +762,19 @@ function restackLayers() {
   for (const l of visible) l.bringToFront();
 }
 
+// In speed mode the grey "no data" lines must not sit on top of measured
+// ones, so stack by whether a feature has a published speed.
+function restackSpeedLayers() {
+  const withData = [];
+  geoLayer.eachLayer(l => { if (speedOf(l.feature)) withData.push(l); });
+  for (const l of withData) l.bringToFront();
+}
+
 // -- Date-range slider + time-lapse playback --------------------------------
 
 const PLAY_DURATION_MS = 25000;
 let playing = false;
+let stopPlayback = null;  // set by initDateFilter; lets setMode halt playback
 
 function initDateFilter() {
   if (dateList.length < 2) return;
@@ -620,6 +864,7 @@ function initDateFilter() {
   }
 
   btn.addEventListener('click', () => (playing ? stopPlay() : startPlay()));
+  stopPlayback = stopPlay;
 
   updateUI();
   document.getElementById('filter-row').style.display = 'flex';
@@ -717,12 +962,29 @@ fetch('rides.geojson.gz')
     sqrtMax = Math.sqrt(maxCount);
     fullMaxCount = maxCount;
 
+    const speedMeta = data.properties?.speed;
+    if (speedMeta) {
+      speedLo = speedMeta.lo;
+      speedHi = speedMeta.hi;
+      splitN = speedMeta.split_n ?? 3;
+      const el = document.getElementById('stat-speed');
+      el.innerHTML =
+        `<div><span class="label">Median speed:</span> ` +
+        `<strong>${(speedMeta.med * KM_TO_MI).toFixed(1)} mph</strong></div>` +
+        `<div><span class="label">Measured spans:</span> ` +
+        `<strong>${speedMeta.n.toLocaleString()}</strong></div>`;
+      el.style.display = 'block';
+    } else {
+      document.getElementById('mode-speed').style.display = 'none';
+    }
+
     geoLayer = L.geoJSON(data, {
       style: feature => styleFor((feature.properties.rides || []).length || 1),
       onEachFeature: (feature, layer) => {
         const idxs = feature.properties.rides || [];
         layer._filteredCount = idxs.length;
         layer.bindTooltip(() => {
+          if (mode === 'speed') return speedTooltip(feature);
           const c = countInRange(idxs);
           return `${c} ride${c !== 1 ? 's' : ''}`;
         }, {
@@ -732,10 +994,24 @@ fetch('rides.geojson.gz')
         if (idxs.length) {
           layer.bindPopup(() => popupContent(idxs), { className: 'ride-popup' });
         }
+        layer.on('mouseover', () => { if (mode === 'speed') showDirOverlay(feature); });
+        layer.on('mouseout', clearDirOverlay);
       },
     }).addTo(map);
 
+    document.getElementById('mode-freq').addEventListener('click', () => setMode('freq'));
+    document.getElementById('mode-speed').addEventListener('click', () => setMode('speed'));
+    for (const r of document.querySelectorAll('#speed-sub input')) {
+      r.addEventListener('change', () => {
+        speedView = r.value;
+        clearDirOverlay();
+        updateLegend();
+        applyFilter();
+      });
+    }
+
     initDateFilter();
+    updateLegend();
   })
   .catch(err => {
     document.getElementById('stat-rides').textContent = 'Error loading data';
