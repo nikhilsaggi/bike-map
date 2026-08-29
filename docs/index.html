@@ -140,6 +140,7 @@
   }
   .sp-row:last-child { border-bottom: none; }
   .sp-row:hover .sp-name { color: #fff; }
+  .sp-row.on .sp-name, .sp-row.on:hover .sp-name { color: #00e5ff; font-weight: 600; }
   .sp-name { flex: 1; color: #9fd8ff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .sp-dir {
     flex: none; color: #666; font-size: 9px; letter-spacing: 0.5px;
@@ -442,18 +443,29 @@ function hasRide(arr, id) {
 // twice -- its two descents -- rather than averaging itself to nothing.
 
 let speedMarker = null;
+let speedRow = null;
 
 function clearSpeedMarker() {
   if (speedMarker) { map.removeLayer(speedMarker); speedMarker = null; }
+  if (speedRow) { speedRow.classList.remove('on'); speedRow = null; }
 }
 
-function showCorridor(c) {
+function showCorridor(c, row) {
   clearSpeedMarker();
   const [lon, lat] = c.at;
   speedMarker = L.circleMarker([lat, lon], {
     radius: 9, color: '#00e5ff', weight: 2, fill: false, interactive: false,
   }).addTo(map);
+  speedRow = row;
+  row.classList.add('on');
   map.flyTo([lat, lon], Math.max(map.getZoom(), 15), { duration: 0.6 });
+}
+
+// A second click on the row already circled takes the circle back off, so the
+// row that placed it can also remove it. Clicking a different row moves it.
+function toggleCorridor(c, row) {
+  if (speedRow === row) clearSpeedMarker();
+  else showCorridor(c, row);
 }
 
 function renderStreets(props) {
@@ -500,7 +512,7 @@ function renderSpeedSplits(speed) {
     detail.textContent =
       `${mi(c.fast).toFixed(1)} vs ${mi(c.slow).toFixed(1)} mph over ` +
       `${(mi(c.m / 1000)).toFixed(2)} mi, ${c.n}+ passes each way`;
-    row.addEventListener('click', () => showCorridor(c));
+    row.addEventListener('click', () => toggleCorridor(c, row));
     list.appendChild(row);
     list.appendChild(detail);
   }
