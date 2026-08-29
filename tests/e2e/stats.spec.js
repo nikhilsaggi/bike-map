@@ -40,17 +40,46 @@ test.describe('stats panel', () => {
     await expect(riding.locator('.histo').nth(1).locator('div')).toHaveCount(7);
   });
 
-  test('shows weather ride-probability bars', async ({ page }) => {
+  test('weather bars show each band\'s share of rides', async ({ page }) => {
     await gotoMap(page);
     await openSection(page, 'stat-weather');
     const weather = page.locator('#stat-weather');
-    await expect(weather).toContainText('Ride days by temperature');
-    await expect(weather).toContainText('Ride days by precipitation');
+    await expect(weather).toContainText('Rides by temperature');
+    await expect(weather).toContainText('Rides by precipitation');
     const rows = weather.locator('.weather-bar-row');
     await expect(rows).toHaveCount(5); // 3 temp bands + 2 rain bands
     await expect(rows.nth(0)).toContainText('<40°F');
     await expect(rows.nth(0).locator('.weather-bar-val')).toHaveText('10%');
-    await expect(rows.nth(1).locator('.weather-bar-fill')).toHaveAttribute('style', /width:35\.5%/);
+    await expect(rows.nth(1).locator('.weather-bar-fill')).toHaveAttribute('style', /width:30%/);
+    // The tick marks the band's share of days, not of rides.
+    await expect(rows.nth(1).locator('.weather-bar-tick')).toHaveAttribute('style', /40%/);
+    // Bars are a composition, so each chart's shares sum to 100.
+    const shares = await weather.locator('.weather-bar-val').allTextContents();
+    expect(shares).toEqual(['10%', '30%', '60%', '72%', '28%']);
+  });
+
+  test('weather bars carry the counts behind each share', async ({ page }) => {
+    await gotoMap(page);
+    await openSection(page, 'stat-weather');
+    await expect(page.locator('.weather-bar-row').nth(0))
+      .toHaveAttribute('title', '5 of 30 <40°F days, 5 mi avg');
+  });
+
+  test('each weather chart states what its ticks show', async ({ page }) => {
+    await gotoMap(page);
+    await openSection(page, 'stat-weather');
+    const notes = page.locator('#stat-weather .weather-note');
+    // >60°F: 60% of rides on 30% of days -- the largest deviation either way.
+    await expect(notes.nth(0)).toHaveText('>60°F days are 30% of the year but 60% of rides.');
+    // Rain shares sit within 5% of expected, so there is nothing to claim.
+    await expect(notes.nth(1)).toContainText('no preference here');
+  });
+
+  test('a weather payload predating the rewrite is not drawn', async ({ page }) => {
+    await gotoMap(page, buildFixture({
+      weather: { temp: [{ label: '<40°F', pct: 10.0 }], rain: [{ label: 'dry', pct: 50.0 }] },
+    }));
+    await expect(chip(page, 'stat-weather')).toBeHidden();
   });
 
   test('names every section on a chip', async ({ page }) => {
