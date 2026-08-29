@@ -459,6 +459,22 @@ def _merge_parallel_features(
         cluster_geoms = (
             [features[i]["geometry"]["coordinates"] for i in members] if len(members) > 1 else []
         )
+        # Phase 1 builds fresh feature dicts, so the street name has to be
+        # carried across explicitly.  Take the most-ridden named member: the
+        # kept geometry can be an unnamed service way running alongside the
+        # named street the rides actually belong to.
+        cluster_name = next(
+            (
+                nm
+                for m in sorted(
+                    members,
+                    key=lambda m: len(features[m]["properties"]["_rides"]),
+                    reverse=True,
+                )
+                if (nm := features[m]["properties"].get("_name"))
+            ),
+            None,
+        )
         merged.extend(
             {
                 "type": "Feature",
@@ -466,7 +482,12 @@ def _merge_parallel_features(
                     "type": "LineString",
                     "coordinates": features[m]["geometry"]["coordinates"],
                 },
-                "properties": {"_rides": set(rides), "_alts": alts, "_cluster": cluster_geoms},
+                "properties": {
+                    "_rides": set(rides),
+                    "_alts": alts,
+                    "_cluster": cluster_geoms,
+                    "_name": cluster_name,
+                },
             }
             for m in keep
         )
@@ -523,6 +544,8 @@ def _merge_parallel_features(
         n_absorbed += 1
         for j in receivers:
             merged[j]["properties"]["_rides"] |= merged[i]["properties"]["_rides"]
+            if not merged[j]["properties"].get("_name"):
+                merged[j]["properties"]["_name"] = merged[i]["properties"].get("_name")
 
     # Restore pass: absorbing feature B can erode the cover that justified
     # absorbing feature A earlier, leaving a hole in the drawn corridor.

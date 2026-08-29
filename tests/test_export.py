@@ -52,6 +52,54 @@ def test_export_geojson(tmp_path, monkeypatch):
     assert features[0]["properties"]["rides"] == [0]
     assert features[1]["properties"]["rides"] == [0, 1]
     assert all("ride_count" not in f["properties"] for f in features)
+    # Per-feature names are stripped; only the top segment's is shipped.
+    assert all("_name" not in f["properties"] for f in features)
+
+
+def test_export_names_the_most_ridden_segment(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(br.config, "GEOJSON_OUTPUT_PATH", tmp_path / "docs" / "rides.geojson.gz")
+
+    edge_geom = {
+        (1, 2): [lonlat(0.0, 0.0), lonlat(300.0, 0.0)],
+        (3, 4): [lonlat(0.0, 1000.0), lonlat(300.0, 1000.0)],
+    }
+    state = {
+        "processed_files": {R1, R2},
+        "edge_counts": {(1, 2): 2, (3, 4): 1},
+        "edge_rides": {(1, 2): [R1, R2], (3, 4): [R1]},
+        "ride_stats": {},
+    }
+    edge_name = {(1, 2): "Montrose Avenue", (3, 4): "Quiet Lane"}
+
+    br._export_geojson(edge_geom, state, {}, edge_name)
+    with gzip.open(tmp_path / "docs" / "rides.geojson.gz") as f:
+        props = json.load(f)["properties"]
+
+    # (1, 2) has both rides, so it is the busiest -- not the other one.
+    assert props["top_segment"]["name"] == "Montrose Avenue"
+    assert props["max_count"] == 2
+    # Points at the busy edge (y=0), not the quiet one 1 km north.
+    _lon, lat = props["top_segment"]["at"]
+    assert abs(lat - lonlat(0.0, 0.0)[1]) < 0.001
+
+
+def test_export_top_segment_unnamed_when_the_edge_has_no_name(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(br.config, "GEOJSON_OUTPUT_PATH", tmp_path / "docs" / "rides.geojson.gz")
+
+    edge_geom = {(1, 2): [lonlat(0.0, 0.0), lonlat(300.0, 0.0)]}
+    state = {
+        "processed_files": {R1},
+        "edge_counts": {(1, 2): 1},
+        "edge_rides": {(1, 2): [R1]},
+        "ride_stats": {},
+    }
+
+    br._export_geojson(edge_geom, state)
+    with gzip.open(tmp_path / "docs" / "rides.geojson.gz") as f:
+        props = json.load(f)["properties"]
+    assert props["top_segment"]["name"] is None
 
 
 def test_export_geojson_no_edges_is_noop(tmp_path, monkeypatch):

@@ -133,6 +133,9 @@
   #stat-streets { line-height: 1.5; }
   #streets-totals .r-row { margin: 1px 0; }
   .r-sub { color: #666; font-size: 9px; text-align: right; margin: -1px 0 2px; }
+  .r-link { color: #9fd8ff; cursor: pointer; }
+  .r-link:hover { text-decoration: underline; }
+  .r-link.on { color: #00e5ff; font-weight: 600; }
   #speed-block { display: none; }
   .sp-row {
     display: flex; align-items: baseline; gap: 6px; padding: 2px 0; cursor: pointer;
@@ -484,15 +487,26 @@ function renderStreets(props) {
     rows.push(['Of rideable NYC', `${cov.pct}%`, `${Math.round(mi(cov.ridden_km)).toLocaleString()} of ` +
       `${Math.round(mi(cov.network_km)).toLocaleString()} mi, paths excluded`]);
   }
+  const top = props.top_segment;
   if (props.max_count != null) {
-    rows.push(['Most-ridden segment', `${props.max_count.toLocaleString()}\u00d7`]);
+    // The count alone says how often without saying what. The name is only
+    // available because export.py carries it through the merge -- OSM street
+    // names reach the browser for nothing else.
+    rows.push(['Most-ridden segment', `${props.max_count.toLocaleString()}\u00d7`,
+      top && top.name ? '<span class="r-link"></span>' : null]);
   }
   if (!rows.length) return;
-  document.getElementById('streets-totals').innerHTML =
+  const totals = document.getElementById('streets-totals');
+  totals.innerHTML =
     `<div class="sub-title">Network</div>` +
     rows.map(([k, v, sub]) =>
       `<div class="r-row"><span class="label">${k}</span><strong>${v}</strong></div>` +
       (sub ? `<div class="r-sub">${sub}</div>` : '')).join('');
+  const link = totals.querySelector('.r-link');
+  if (link) {
+    link.textContent = top.name;  // textContent, not innerHTML: this is OSM data
+    link.addEventListener('click', () => toggleCorridor(top, link));
+  }
   showChip('stat-streets');
 }
 

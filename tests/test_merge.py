@@ -7,12 +7,12 @@ from conftest import lonlat
 import bike_routes as br
 
 
-def _feature(points_m, rides):
+def _feature(points_m, rides, name=None):
     coords = [lonlat(x, y) for x, y in points_m]
     return {
         "type": "Feature",
         "geometry": {"type": "LineString", "coordinates": coords},
-        "properties": {"_rides": set(rides)},
+        "properties": {"_rides": set(rides), "_name": name},
     }
 
 
@@ -50,6 +50,48 @@ def test_parallel_lines_merge_to_one():
     assert props["ride_count"] == 2
     assert props["rides"] == sorted([R1, R2])
     assert "_rides" not in props
+
+
+def test_merge_keeps_the_busiest_members_name():
+    """The kept geometry can be an unnamed way beside the named street."""
+    named = _feature(_line(0, 300, 0.0), {R1, R2}, name="Bedford Avenue")
+    unnamed = _feature(_line(0, 300, 10.0), {R3})
+    out = br._merge_parallel_features([named, unnamed])
+    assert len(out) == 1
+    assert out[0]["properties"]["_name"] == "Bedford Avenue"
+
+    # Order of the inputs must not decide it -- ridership does.
+    out = br._merge_parallel_features([unnamed, named])
+    assert len(out) == 1
+    assert out[0]["properties"]["_name"] == "Bedford Avenue"
+
+
+def test_merge_leaves_an_unnamed_cluster_unnamed():
+    f1 = _feature(_line(0, 300, 0.0), {R1})
+    f2 = _feature(_line(0, 300, 10.0), {R2})
+    out = br._merge_parallel_features([f1, f2])
+    assert len(out) == 1
+    assert out[0]["properties"]["_name"] is None
+
+
+def test_absorbed_span_donates_its_name():
+    """A named span absorbed into unnamed receivers hands its name to them."""
+    left = _feature(_line(0, 300, 0.0), {R1})
+    right = _feature(_line(300, 600, 0.0), {R2})
+    span = _feature(_line(0, 600, 8.0), {R3}, name="Grand Street")
+    out = br._merge_parallel_features([left, right, span])
+    assert len(out) == 2
+    assert all(f["properties"]["_name"] == "Grand Street" for f in out)
+
+
+def test_absorbed_span_does_not_overwrite_a_named_receiver():
+    left = _feature(_line(0, 300, 0.0), {R1}, name="Bedford Avenue")
+    right = _feature(_line(300, 600, 0.0), {R2})
+    span = _feature(_line(0, 600, 8.0), {R3}, name="Grand Street")
+    out = br._merge_parallel_features([left, right, span])
+    assert len(out) == 2
+    names = sorted(f["properties"]["_name"] for f in out)
+    assert names == ["Bedford Avenue", "Grand Street"]
 
 
 def test_merge_unions_shared_rides_without_double_count():
