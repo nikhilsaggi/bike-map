@@ -76,6 +76,25 @@ test.describe('direction-split speed', () => {
     expect(await page.evaluate(() => speedMarker !== null)).toBe(false);
   });
 
+  test('stays reachable on a short viewport', async ({ page }) => {
+    // The panel outgrew the viewport when this section was added: below
+    // ~760px of height the last section fell off the bottom, with no
+    // scrollbar to say anything was there.
+    await page.setViewportSize({ width: 1280, height: 560 });
+    await gotoMap(page);
+
+    const fits = await page.evaluate(() => {
+      const s = document.getElementById('stats').getBoundingClientRect();
+      return s.bottom <= window.innerHeight;
+    });
+    expect(fits).toBe(true);
+
+    await page.locator('#stat-speed').scrollIntoViewIfNeeded();
+    await expect(page.locator('#speed-toggle')).toBeInViewport();
+    // Collapsing the panel must stay possible from anywhere in the scroll.
+    await expect(page.locator('#stats-toggle')).toBeInViewport();
+  });
+
   test('section stays hidden when no corridor qualifies', async ({ page }) => {
     await gotoMap(page, buildFixture({ speed: null }));
     await expect(page.locator('#stat-speed')).toBeHidden();
