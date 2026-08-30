@@ -18,9 +18,10 @@ test.describe('stats panel', () => {
     // total_edges lost its own row; it survives here.
     await expect(page.locator('#tile-km')).toHaveAttribute('title', '3 drawn street segments');
     // 12.3% is measured over a different subset than the 62 drawn miles, so
-    // the tooltip has to spell out what it is a percentage of.
-    await expect(page.locator('#tile-coverage'))
-      .toHaveAttribute('title', /28 of 230 mi of rideable NYC street/);
+    // the tooltip says what it is a percentage of -- in words, since any
+    // mileage here would invite a division against those drawn miles.
+    await expect(page.locator('#tile-coverage')).toHaveAttribute('title',
+      'Share of the rideable NYC street network; sidewalks, service roads and motorways excluded');
   });
 
   test('shows the riding summary with hour and weekday histograms', async ({ page }) => {

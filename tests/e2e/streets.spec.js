@@ -72,13 +72,15 @@ test.describe('streets', () => {
     await expect(page.locator('#streets-totals .r-link')).toHaveCount(0);
   });
 
-  test('the coverage percentage carries its own numerator and denominator', async ({ page }) => {
+  test('the coverage percentage qualifies itself without a second mileage', async ({ page }) => {
     await gotoMap(page);
     await openSection(page, STREETS);
     // 12.3% is measured over a narrower network than the 62 drawn miles, so
-    // the two must not read as one division. 45.5 km of 370 km.
+    // neither side of it may appear next to them: 28 mi ridden read as
+    // contradicting the drawn miles, and 230 mi recovers it by multiplying.
+    // The exclusions define "rideable" and carry no arithmetic, so they stay.
     await expect(page.locator('#streets-totals .r-sub').first())
-      .toHaveText('28 of 230 mi; sidewalks, service roads and motorways excluded');
+      .toHaveText('sidewalks, service roads and motorways excluded');
   });
 
   test('the exclusion caption follows the export, not hardcoded prose', async ({ page }) => {
@@ -93,7 +95,7 @@ test.describe('streets', () => {
     }));
     await openSection(page, STREETS);
     await expect(page.locator('#streets-totals .r-sub').first())
-      .toHaveText('28 of 230 mi; motorways and sidewalks excluded');
+      .toHaveText('motorways and sidewalks excluded');
   });
 
   test('an unlabelled exclusion tag renders as itself', async ({ page }) => {
@@ -107,16 +109,19 @@ test.describe('streets', () => {
     }));
     await openSection(page, STREETS);
     await expect(page.locator('#streets-totals .r-sub').first())
-      .toHaveText('28 of 230 mi; bus guideway excluded');
+      .toHaveText('bus guideway excluded');
   });
 
-  test('coverage with no exclusions claims none', async ({ page }) => {
+  test('coverage with no exclusions gets no caption at all', async ({ page }) => {
     await gotoMap(page, buildFixture({
       coverage: { pct: 12.3, ridden_km: 45.5, network_km: 370, new_km_by_year: {} },
     }));
     await openSection(page, STREETS);
-    await expect(page.locator('#streets-totals .r-sub').first())
-      .toHaveText('28 of 230 mi');
+    // Nothing to qualify and no mileage to fall back on, so the row is bare.
+    // The one remaining sub-line belongs to the most-ridden segment.
+    const subs = page.locator('#streets-totals .r-sub');
+    await expect(subs).toHaveCount(1);
+    await expect(subs.locator('.r-link')).toHaveCount(1);
   });
 
   test('lists corridors in rank order with mph converted from km/h', async ({ page }) => {

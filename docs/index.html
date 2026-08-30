@@ -504,14 +504,11 @@ function renderStreets(props) {
   }
   const cov = props.coverage;
   if (cov) {
-    // The percentage is measured over a narrower network than the drawn
-    // miles above it, so its own numerator and denominator go directly under
-    // it, with what the denominator drops.
-    const excl = excludedLabel(cov);
-    rows.push(['Of rideable NYC', `${cov.pct}%`,
-      `${Math.round(mi(cov.ridden_km)).toLocaleString()} of ` +
-      `${Math.round(mi(cov.network_km)).toLocaleString()} mi` +
-      (excl ? `; ${excl}` : '')]);
+    // Only the percentage is shown. Its numerator is the drawn miles minus
+    // the excluded tags -- a smaller number nobody actually rode, which read
+    // as contradicting the Drawn row directly above it. The exclusions are
+    // what "rideable" means here, so those stay; the mileage does not.
+    rows.push(['Of rideable NYC', `${cov.pct}%`, excludedLabel(cov) || null]);
   }
   const top = props.top_segment;
   if (props.max_count != null) {
@@ -939,16 +936,15 @@ fetch('rides.geojson.gz')
     }
     // coverage.pct is measured over a different subset than total_km: it
     // excludes config.COVERAGE_EXCLUDE ways, which the drawn miles include.
-    // Side by side the two invite a division that does not hold, so the real
-    // numerator and denominator go in the tooltip rather than staying implicit.
+    // Quoting either side of the fraction invites a division against the
+    // drawn miles that does not hold, so the tooltip qualifies the network
+    // in words and ships no second mileage to compare against.
     if (coverage) {
       document.getElementById('stat-coverage').textContent = `${coverage.pct}%`;
       const tile = document.getElementById('tile-coverage');
       const excl = excludedLabel(coverage);
       tile.title =
-        `${Math.round(mi(coverage.ridden_km)).toLocaleString()} of ` +
-        `${Math.round(mi(coverage.network_km)).toLocaleString()} mi of rideable ` +
-        `NYC street` + (excl ? `; ${excl}, which the drawn street miles include` : '');
+        `Share of the rideable NYC street network` + (excl ? `; ${excl}` : '');
       tile.classList.remove('hidden');
     }
     if (ridesPerYear && Object.keys(ridesPerYear).length) {
