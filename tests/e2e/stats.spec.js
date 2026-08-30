@@ -65,14 +65,14 @@ test.describe('stats panel', () => {
       .toHaveAttribute('title', '5 of 30 <40°F days, 5 mi avg');
   });
 
-  test('each weather chart states what its ticks show', async ({ page }) => {
+  test('a skewed weather chart states what its ticks show', async ({ page }) => {
     await gotoMap(page);
     await openSection(page, 'stat-weather');
     const notes = page.locator('#stat-weather .weather-note');
     // >60°F: 60% of rides on 30% of days -- the largest deviation either way.
-    await expect(notes.nth(0)).toHaveText('>60°F days are 30% of the year but 60% of rides.');
-    // Rain shares sit within 5% of expected, so there is nothing to claim.
-    await expect(notes.nth(1)).toContainText('no preference here');
+    await expect(notes.nth(0)).toHaveText('e.g. >60°F days are 30% of the year but 60% of rides.');
+    // Rain shares sit within 5% of expected, so that chart gets no note.
+    await expect(notes).toHaveCount(1);
   });
 
   test('a weather payload predating the rewrite is not drawn', async ({ page }) => {

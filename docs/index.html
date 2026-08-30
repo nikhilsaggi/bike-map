@@ -999,26 +999,27 @@ fetch('rides.geojson.gz')
         `</div>`
       ).join('');
       // Say what the ticks show rather than leaving the reader to infer it.
-      // Derived from the same rows that are drawn, so it cannot drift.
+      // Derived from the same rows that are drawn, so it cannot drift. An
+      // even split has nothing to interpret, so it gets no note at all
+      // rather than a line saying there is nothing to say.
       const weatherNote = (rows) => {
         const worst = rows.reduce((a, b) =>
           Math.abs(b.share / (b.expected || 1) - 1) > Math.abs(a.share / (a.expected || 1) - 1)
             ? b : a);
-        if (Math.abs(worst.share / (worst.expected || 1) - 1) < 0.1) {
-          return 'Your rides split just like the days do &mdash; no preference here.';
-        }
-        return `${worst.label} days are ${Math.round(worst.expected)}% of the ` +
-          `year but ${Math.round(worst.share)}% of rides.`;
+        if (Math.abs(worst.share / (worst.expected || 1) - 1) < 0.1) return '';
+        return `<div class="weather-note">e.g. ${worst.label} days are ` +
+          `${Math.round(worst.expected)}% of the year but ` +
+          `${Math.round(worst.share)}% of rides.</div>`;
       };
       const el = document.getElementById('stat-weather');
       el.innerHTML =
         `<div class="weather-key"><i>&#9474;</i> share of all days</div>` +
         `<div class="sub-title">Rides by temperature</div>` +
         weatherBars(weather.temp) +
-        `<div class="weather-note">${weatherNote(weather.temp)}</div>` +
+        weatherNote(weather.temp) +
         `<div class="sub-title">Rides by precipitation</div>` +
         weatherBars(weather.rain) +
-        `<div class="weather-note">${weatherNote(weather.rain)}</div>`;
+        weatherNote(weather.rain);
       showChip('stat-weather');
     }
 
