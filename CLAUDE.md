@@ -33,7 +33,7 @@ interactive Leaflet map (`docs/`, served via GitHub Pages) plus static PNGs.
    (leuvenmapmatching Viterbi) is the default; the "heuristic" snap+route
    matcher is kept for comparison. Parallel matching via worker processes
    in `matching.py`.
-4. `cache.py` -- state.pkl (processed files, edge counts), config-hash
+4. `cache.py` -- cache/state.pkl (processed files, edge counts), config-hash
    invalidation
 5. `merge.py` -- collapse parallel/duplicate edge geometries into corridors
 6. `edge_speed.py` -- direction-split per-edge speed, backfilled from the
@@ -42,13 +42,24 @@ interactive Leaflet map (`docs/`, served via GitHub Pages) plus static PNGs.
 7. `render.py` / `export.py` -- PNGs and `docs/rides.geojson.gz`
 8. `weather.py` -- Open-Meteo ride-weather stats embedded in the GeoJSON
 
+`bike_routes/ingest/` is the front of the pipeline (`garmin_sync`, `gpx_to_csv`),
+run as `python -m bike_routes.ingest.<mod>`; it fills `rides/` and is not
+imported by any pipeline stage. `tools/` holds standalone analysis that is not
+part of the pipeline at all (`hmm_matcher_eval.py`, `weather_correlation.py`),
+run from the repo root.
+
+The package `__init__` deliberately exports nothing -- import the stage you
+need (`from bike_routes import edge_speed`). It used to re-export ~150 names
+flat, which made every import pull in osmnx + matplotlib and hid which module
+owned what; don't reintroduce that.
+
 `docs/index.html` is a single self-contained Leaflet page (no build step); it
 reads everything from `rides.geojson.gz` top-level `properties`.
 
 ## Invariants
 
 - **Changing any parameter in `cache._processing_config()` triggers a full
-  reprocess** of all rides (config hash mismatch discards state.pkl). Don't
+  reprocess** of all rides (config hash mismatch discards cache/state.pkl). Don't
   add keys to it unless the change genuinely invalidates prior matches.
 - Edge keys are canonical `(min(u,v), max(u,v))` node pairs everywhere.
 - Matching results must be deterministic and independent of scheduling.
@@ -63,9 +74,16 @@ reads everything from `rides.geojson.gz` top-level `properties`.
   holds a file back until all its segments land -- checkpointing mid-file
   would mark it done and silently drop the rest on resume.
 - Workers on Windows use spawn: anything they need must be importable or on
-  disk (graph cache / hmm_map_cache.pkl), never closure state.
-- Caches are mtime/version-invalidated: hmm_map_cache.pkl must be newer than
-  osm_graph_cache.pkl; graph cache is bound to osmnx/networkx versions.
+  disk (graph cache / cache/hmm_map_cache.pkl), never closure state.
+- Every generated cache lives in `config.CACHE_DIR` (`cache/`); each writer
+  mkdirs its own parent, so a monkeypatched path never creates a stray dir.
+  `cache._migrate_legacy_caches()` moves pre-`cache/` files in from the repo
+  root on startup -- a rename, because the graph cache is ~260 MB and only
+  exists on the owner's machine, and because `shutil.move` keeps the mtimes
+  the check below depends on.
+- Caches are mtime/version-invalidated: cache/hmm_map_cache.pkl must be newer
+  than cache/osm_graph_cache.pkl; graph cache is bound to osmnx/networkx
+  versions.
 
 ### Edge speed (`edge_speed.py`)
 
@@ -113,7 +131,8 @@ export ships a top-10 corridor list in `properties.speed` instead
 
 - Matching is the hot path; leuvenmapmatching is pure Python. Profile before
   optimizing and benchmark against real rides + caches (repo root of a full
-  checkout with `rides/` and `*.pkl` present), not the synthetic test grids.
+  checkout with `rides/` and `cache/*.pkl` present), not the synthetic test
+  grids.
 - Build the HMM InMemMap by passing a prebuilt graph dict to the constructor
   (bulk rtree load); never via add_node/add_edge in a loop (~15x slower).
 - XY-projected matching (use_latlon=False) was benchmarked and is NOT faster;
@@ -133,7 +152,8 @@ export ships a top-10 corridor list in `properties.speed` instead
   (Garmin fetch -> GPX -> CSV -> pipeline -> commit) and pushed by hand.
   It is Python, not a shell script, because the owner's machine is Windows --
   a committed `.sh` gets CRLF endings on checkout there and bash refuses it.
-- Ride ingest is Garmin Connect (`garmin_sync.py`), authenticated from a
+- Ride ingest is Garmin Connect (`bike_routes/ingest/garmin_sync.py`),
+  authenticated from a
   token in `~/.garminconnect` (override with `GARMINTOKENS`). Keep it
   local: Garmin's login is behind Cloudflare TLS fingerprinting that blocks
   datacenter IPs, and the ride CSVs plus the ~260 MB graph cache only exist
@@ -143,5 +163,5 @@ export ships a top-10 corridor list in `properties.speed` instead
   (gitignored, never uploaded anywhere). Only `docs/rides.geojson.gz` is
   committed, and it holds edge counts, not traces -- losing `rides/` loses
   the history irrecoverably.
-- Personal data (`rides/*.csv`, caches, `weather_cache.json`) is gitignored --
+- Personal data (`rides/*.csv` and everything in `cache/`) is gitignored --
   never commit ride files or force-add ignored paths.

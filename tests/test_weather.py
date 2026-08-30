@@ -6,8 +6,8 @@ import gzip
 import json
 
 import pytest
-
 import weather_correlation as wc
+
 from bike_routes.weather import (
     RAIN_BANDS,
     TEMP_BANDS,
@@ -167,5 +167,5 @@ def test_cache_well_formed_rejects_missing_keys(tmp_path, monkeypatch):
 
     path = tmp_path / "weather_cache.json"
     path.write_text('{"2024-06-01": {"tmax": 70.0}}')
-    monkeypatch.setattr("bike_routes.weather.WEATHER_CACHE_PATH", path)
+    monkeypatch.setattr("bike_routes.config.WEATHER_CACHE_PATH", path)
     assert _load_cached_weather() is None

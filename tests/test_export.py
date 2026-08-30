@@ -7,7 +7,7 @@ import json
 
 from conftest import lonlat
 
-import bike_routes as br
+from bike_routes import config, edge_speed, export
 
 R1 = "2024-01-05_08-00-00_-0500.csv"
 R2 = "2025-06-01_12-00-00_-0400.csv"
@@ -15,7 +15,7 @@ R2 = "2025-06-01_12-00-00_-0400.csv"
 
 def test_export_geojson(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(br.config, "GEOJSON_OUTPUT_PATH", tmp_path / "docs" / "rides.geojson.gz")
+    monkeypatch.setattr(config, "GEOJSON_OUTPUT_PATH", tmp_path / "docs" / "rides.geojson.gz")
 
     edge_geom = {
         (1, 2): [lonlat(0.0, 0.0), lonlat(300.0, 0.0)],
@@ -28,7 +28,7 @@ def test_export_geojson(tmp_path, monkeypatch):
         "ride_stats": {R1: {"dist_m": 12345.6, "duration_s": 3600, "start": None}},
     }
 
-    br._export_geojson(edge_geom, state)
+    export._export_geojson(edge_geom, state)
 
     out_path = tmp_path / "docs" / "rides.geojson.gz"
     assert out_path.exists()
@@ -58,7 +58,7 @@ def test_export_geojson(tmp_path, monkeypatch):
 
 def test_export_names_the_most_ridden_segment(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(br.config, "GEOJSON_OUTPUT_PATH", tmp_path / "docs" / "rides.geojson.gz")
+    monkeypatch.setattr(config, "GEOJSON_OUTPUT_PATH", tmp_path / "docs" / "rides.geojson.gz")
 
     edge_geom = {
         (1, 2): [lonlat(0.0, 0.0), lonlat(300.0, 0.0)],
@@ -72,7 +72,7 @@ def test_export_names_the_most_ridden_segment(tmp_path, monkeypatch):
     }
     edge_name = {(1, 2): "Montrose Avenue", (3, 4): "Quiet Lane"}
 
-    br._export_geojson(edge_geom, state, {}, edge_name)
+    export._export_geojson(edge_geom, state, {}, edge_name)
     with gzip.open(tmp_path / "docs" / "rides.geojson.gz") as f:
         props = json.load(f)["properties"]
 
@@ -86,7 +86,7 @@ def test_export_names_the_most_ridden_segment(tmp_path, monkeypatch):
 
 def test_export_top_segment_unnamed_when_the_edge_has_no_name(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(br.config, "GEOJSON_OUTPUT_PATH", tmp_path / "docs" / "rides.geojson.gz")
+    monkeypatch.setattr(config, "GEOJSON_OUTPUT_PATH", tmp_path / "docs" / "rides.geojson.gz")
 
     edge_geom = {(1, 2): [lonlat(0.0, 0.0), lonlat(300.0, 0.0)]}
     state = {
@@ -96,7 +96,7 @@ def test_export_top_segment_unnamed_when_the_edge_has_no_name(tmp_path, monkeypa
         "ride_stats": {},
     }
 
-    br._export_geojson(edge_geom, state)
+    export._export_geojson(edge_geom, state)
     with gzip.open(tmp_path / "docs" / "rides.geojson.gz") as f:
         props = json.load(f)["properties"]
     assert props["top_segment"]["name"] is None
@@ -104,16 +104,16 @@ def test_export_top_segment_unnamed_when_the_edge_has_no_name(tmp_path, monkeypa
 
 def test_export_geojson_no_edges_is_noop(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(br.config, "GEOJSON_OUTPUT_PATH", tmp_path / "docs" / "rides.geojson.gz")
-    br._export_geojson({}, {"edge_counts": {}, "processed_files": set()})
+    monkeypatch.setattr(config, "GEOJSON_OUTPUT_PATH", tmp_path / "docs" / "rides.geojson.gz")
+    export._export_geojson({}, {"edge_counts": {}, "processed_files": set()})
     assert not (tmp_path / "docs" / "rides.geojson.gz").exists()
 
 
 def test_export_ranks_corridors_and_leaves_features_alone(tmp_path, monkeypatch):
     """Speed rides in the top-level block; features stay one per edge."""
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(br.config, "GEOJSON_OUTPUT_PATH", tmp_path / "docs" / "rides.geojson.gz")
-    monkeypatch.setattr(br.config, "SPEED_SPLIT_PASSES", 2)
+    monkeypatch.setattr(config, "GEOJSON_OUTPUT_PATH", tmp_path / "docs" / "rides.geojson.gz")
+    monkeypatch.setattr(config, "SPEED_SPLIT_PASSES", 2)
 
     long_edge = [lonlat(0.0, 0.0), lonlat(600.0, 0.0)]
     short_edge = [lonlat(0.0, 1000.0), lonlat(60.0, 1000.0)]
@@ -126,15 +126,18 @@ def test_export_ranks_corridors_and_leaves_features_alone(tmp_path, monkeypatch)
         "edge_speed": {
             # 600 m -> 4 chunks, 18 km/h forward against 9 km/h reverse.
             (1, 2): {
-                "b": br._chord_bearing(long_edge),
+                "b": edge_speed._chord_bearing(long_edge),
                 "c": [[100, 20, 20, 2, 100, 40, 40, 2] for _ in range(4)],
             },
             # Too short to be a corridor, and only measured one way.
-            (3, 4): {"b": br._chord_bearing(short_edge), "c": [[60, 12, 12, 1, 0, 0, 0, 0]]},
+            (3, 4): {
+                "b": edge_speed._chord_bearing(short_edge),
+                "c": [[60, 12, 12, 1, 0, 0, 0, 0]],
+            },
         },
     }
 
-    br._export_geojson(edge_geom, state, None, {(1, 2): "Kent Avenue"})
+    export._export_geojson(edge_geom, state, None, {(1, 2): "Kent Avenue"})
     with gzip.open(tmp_path / "docs" / "rides.geojson.gz") as f:
         data = json.load(f)
 
@@ -155,7 +158,7 @@ def test_export_ranks_corridors_and_leaves_features_alone(tmp_path, monkeypatch)
 
 def test_export_omits_speed_without_a_qualifying_corridor(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(br.config, "GEOJSON_OUTPUT_PATH", tmp_path / "docs" / "rides.geojson.gz")
+    monkeypatch.setattr(config, "GEOJSON_OUTPUT_PATH", tmp_path / "docs" / "rides.geojson.gz")
 
     geom = [lonlat(0.0, 0.0), lonlat(600.0, 0.0)]
     state = {
@@ -166,12 +169,12 @@ def test_export_omits_speed_without_a_qualifying_corridor(tmp_path, monkeypatch)
         # Measured, but one direction only -- nothing to compare.
         "edge_speed": {
             (1, 2): {
-                "b": br._chord_bearing(geom),
+                "b": edge_speed._chord_bearing(geom),
                 "c": [[100, 20, 20, 5, 0, 0, 0, 0] for _ in range(4)],
             }
         },
     }
-    br._export_geojson({(1, 2): geom}, state, None, {(1, 2): "Kent Avenue"})
+    export._export_geojson({(1, 2): geom}, state, None, {(1, 2): "Kent Avenue"})
     with gzip.open(tmp_path / "docs" / "rides.geojson.gz") as f:
         data = json.load(f)
     assert data["properties"]["speed"] is None
@@ -180,8 +183,8 @@ def test_export_omits_speed_without_a_qualifying_corridor(tmp_path, monkeypatch)
 def test_export_ignores_unnamed_corridors(tmp_path, monkeypatch):
     """A ranking row with no street name is unusable in the stats panel."""
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(br.config, "GEOJSON_OUTPUT_PATH", tmp_path / "docs" / "rides.geojson.gz")
-    monkeypatch.setattr(br.config, "SPEED_SPLIT_PASSES", 2)
+    monkeypatch.setattr(config, "GEOJSON_OUTPUT_PATH", tmp_path / "docs" / "rides.geojson.gz")
+    monkeypatch.setattr(config, "SPEED_SPLIT_PASSES", 2)
 
     geom = [lonlat(0.0, 0.0), lonlat(600.0, 0.0)]
     state = {
@@ -191,12 +194,12 @@ def test_export_ignores_unnamed_corridors(tmp_path, monkeypatch):
         "ride_stats": {},
         "edge_speed": {
             (1, 2): {
-                "b": br._chord_bearing(geom),
+                "b": edge_speed._chord_bearing(geom),
                 "c": [[100, 20, 20, 2, 100, 40, 40, 2] for _ in range(4)],
             }
         },
     }
-    br._export_geojson({(1, 2): geom}, state, None, {})
+    export._export_geojson({(1, 2): geom}, state, None, {})
     with gzip.open(tmp_path / "docs" / "rides.geojson.gz") as f:
         data = json.load(f)
     assert data["properties"]["speed"] is None

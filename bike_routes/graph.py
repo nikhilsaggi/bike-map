@@ -84,6 +84,7 @@ def _fetch_graph(bbox: tuple[float, float, float, float]) -> nx.MultiDiGraph:
     G = ox.add_edge_travel_times(G)
     print(f"  Merged: {G.number_of_nodes():,} nodes, {G.number_of_edges():,} edges")
 
+    config.GRAPH_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
     with config.GRAPH_CACHE_PATH.open("wb") as f:
         pickle.dump(G, f, protocol=pickle.HIGHEST_PROTOCOL)
     _write_cache_versions()

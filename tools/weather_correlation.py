@@ -6,8 +6,8 @@ weather for Central Park, then reports how temperature and precipitation
 affect ride probability and distance.
 
 Usage:
-    python weather_correlation.py            # prints stats, writes chart
-    python weather_correlation.py --no-chart # stats only
+    python tools/weather_correlation.py            # prints stats, writes chart
+    python tools/weather_correlation.py --no-chart # stats only
 
 Outputs sample_output/weather_correlation.png unless --no-chart is given.
 """
@@ -28,8 +28,11 @@ import matplotlib as mpl
 mpl.use("Agg")
 import matplotlib.pyplot as plt  # backend must be set before this import
 
-GEOJSON_PATH = Path("docs/rides.geojson.gz")
-CHART_PATH = Path("sample_output/weather_correlation.png")
+# This script lives in tools/, so anchor outputs to the repo root rather
+# than the working directory it happens to be launched from.
+ROOT = Path(__file__).resolve().parent.parent
+GEOJSON_PATH = ROOT / "docs/rides.geojson.gz"
+CHART_PATH = ROOT / "sample_output/weather_correlation.png"
 NYC_LAT, NYC_LON = 40.78, -73.97  # Central Park
 KM_TO_MI = 0.621371
 

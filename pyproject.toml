@@ -18,8 +18,7 @@ dependencies = [
 ]
 
 [tool.setuptools]
-packages = ["bike_routes"]
-py-modules = ["gpx_to_csv"]
+packages = ["bike_routes", "bike_routes.ingest"]
 
 [project.optional-dependencies]
 # Only the ride sync needs a Garmin client; the pipeline and tests don't.
@@ -32,6 +31,9 @@ dev = ["ruff==0.16.3", "ty>=0.0.1a7", "pytest>=8.0"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# "." imports the bike_routes package from the working tree; "tools" makes
+# the standalone analysis scripts importable without a sys.path hack.
+pythonpath = [".", "tools"]
 
 [tool.ruff]
 target-version = "py39"
@@ -61,8 +63,8 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"bike_routes/__init__.py" = [
-    "F401",     # compatibility re-exports of the package surface
+"tools/*" = [
+    "INP001",   # standalone analysis scripts, deliberately not a package
 ]
 "tests/*" = [
     "D",        # docstrings not required in tests

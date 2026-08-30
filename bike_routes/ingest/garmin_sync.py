@@ -12,10 +12,10 @@ datacenter IPs like CI runners.
 
 Files are written as ``garmin_<activityId>.gpx``: the activity id is the dedup
 key, so re-running is cheap and only missing rides are downloaded. The GPX then
-feeds gpx_to_csv.py unchanged.
+feeds gpx_to_csv unchanged.
 
 Usage:
-    python garmin_sync.py incoming/ [--days 365]
+    python -m bike_routes.ingest.garmin_sync incoming/ [--days 365]
 """
 
 from __future__ import annotations

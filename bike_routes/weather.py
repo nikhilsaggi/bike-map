@@ -6,13 +6,12 @@ import json
 import urllib.parse
 import urllib.request
 from datetime import date, datetime, timedelta, timezone
-from pathlib import Path
 from typing import Any
+
+from . import config
 
 NYC_LAT, NYC_LON = 40.78, -73.97
 KM_TO_MI = 0.621371
-
-WEATHER_CACHE_PATH = Path("weather_cache.json")
 
 # Every key the band loop reads. A cache predating a new variable would other-
 # wise reach `w[key]` and raise mid-export, and only when the API is down --
@@ -77,10 +76,10 @@ def _cache_well_formed(cached: object) -> bool:
 
 
 def _load_cached_weather() -> dict[str, dict[str, float]] | None:
-    if not WEATHER_CACHE_PATH.exists():
+    if not config.WEATHER_CACHE_PATH.exists():
         return None
     try:
-        with WEATHER_CACHE_PATH.open() as f:
+        with config.WEATHER_CACHE_PATH.open() as f:
             cached = json.load(f)
     except Exception:
         return None
@@ -91,7 +90,8 @@ def _load_cached_weather() -> dict[str, dict[str, float]] | None:
 
 
 def _save_weather_cache(weather: dict[str, dict[str, float]]) -> None:
-    with WEATHER_CACHE_PATH.open("w") as f:
+    config.WEATHER_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with config.WEATHER_CACHE_PATH.open("w") as f:
         json.dump(weather, f, separators=(",", ":"))
 
 

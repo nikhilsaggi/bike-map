@@ -92,6 +92,20 @@ recomputed (bump `SPEED_VERSION`) without reprocessing any rides.
 All intermediate results are cached. First run takes longer
 (OSM download + full processing). Subsequent runs process only new rides.
 
+## Repository Layout
+
+```
+bike_routes/        the pipeline, one stage per module
+  ingest/           Garmin download and GPX -> CSV (the front of the pipeline)
+docs/               the published Leaflet map + its rides.geojson.gz
+tools/              standalone analysis run by hand, not part of the pipeline
+tests/              pytest suite (synthetic grids) + Playwright e2e for docs/
+rides/              ride CSVs (gitignored -- personal GPS traces)
+cache/              everything the pipeline generates (gitignored)
+sample_output/      the PNGs the README links to
+update.py           fetch -> convert -> reprocess -> commit, in one command
+```
+
 ## Setup
 
 ```bash
@@ -115,11 +129,12 @@ Tests also run in CI on every push and pull request.
 ## Usage
 
 1. Place GPS ride CSVs in the `rides/` folder (or GPX files in `incoming/` —
-   `python garmin_sync.py incoming/` fetches them from Garmin Connect)
+   `python -m bike_routes.ingest.garmin_sync incoming/` fetches them from
+   Garmin Connect)
 2. If using GPX files, convert them first:
 
 ```bash
-python gpx_to_csv.py incoming/ rides/
+python -m bike_routes.ingest.gpx_to_csv incoming/ rides/
 ```
 
 3. Run the pipeline:
@@ -220,8 +235,9 @@ sits behind Cloudflare TLS fingerprinting that tends to block datacenter IPs
 ### Setting up Garmin access
 
 Garmin has no personal-use API — the Connect Developer Program only accepts
-legal entities — so `garmin_sync.py` uses the endpoints the Connect web UI
-uses, via [python-garminconnect](https://github.com/cyberjunky/python-garminconnect).
+legal entities — so `bike_routes.ingest.garmin_sync` uses the endpoints the
+Connect web UI uses, via
+[python-garminconnect](https://github.com/cyberjunky/python-garminconnect).
 Log in once to leave a token behind:
 
 ```bash
@@ -242,7 +258,7 @@ five strategies still 429, wait it out — reports range from under an hour to
 about two days. `logging.basicConfig(level=logging.DEBUG)` before the login
 shows which strategies were actually tried.
 
-After that `garmin_sync.py` reads `~/.garminconnect` on its own. The token is
+After that `garmin_sync` reads `~/.garminconnect` on its own. The token is
 good for about a year; when it expires the script fails loudly with a re-mint
 message rather than silently fetching nothing. To keep tokens elsewhere, set
 `GARMINTOKENS` to a path — or, if you ever do want this in CI, to the token
@@ -254,33 +270,42 @@ skipped — they carry no usable GPS track.
 
 ## Weather Correlation
 
-`weather_correlation.py` joins the exported ride index against
+`tools/weather_correlation.py` joins the exported ride index against
 [Open-Meteo](https://open-meteo.com/) historical daily weather (keyless)
 and reports how temperature and precipitation affect ride probability and
 distance:
 
 ```bash
-python weather_correlation.py
+python tools/weather_correlation.py
 ```
 
 ![Weather correlation](sample_output/weather_correlation.png)
 
 ## Cache Files
 
-The pipeline creates several cache files (auto-managed, gitignored):
+The pipeline keeps everything it generates in `cache/` (auto-managed,
+gitignored):
 
-- `osm_graph_cache.pkl` — merged OSM street graph (~260 MB)
-- `hmm_map_cache.pkl` — HMM matcher's map index (nodes + adjacency); lets
-  runs and worker processes skip loading the full graph
-- `state.pkl` — processed filenames, edge counts, per-edge speeds, config
-  snapshot
-- `render_cache.pkl` — pre-extracted edge geometries, highway classes, names
-- `route_cache.pkl` — shortest-path results between node pairs
-- `cache_versions.json` — osmnx/networkx versions that wrote the graph cache
+- `cache/osm_graph_cache.pkl` — merged OSM street graph (~260 MB)
+- `cache/hmm_map_cache.pkl` — HMM matcher's map index (nodes + adjacency);
+  lets runs and worker processes skip loading the full graph
+- `cache/state.pkl` — processed filenames, edge counts, per-edge speeds,
+  config snapshot
+- `cache/render_cache.pkl` — pre-extracted edge geometries, highway classes,
+  names
+- `cache/route_cache.pkl` — shortest-path results between node pairs
+- `cache/cache_versions.json` — osmnx/networkx versions that wrote the graph
+- `cache/weather_cache.json` — Open-Meteo daily weather, so a failed API call
+  falls back to the last good copy
 
-Delete any cache file to force it to rebuild. Changing processing parameters
-automatically triggers a full reprocess, and upgrading osmnx/networkx
-automatically refetches the graph (pickled graphs are version-bound).
+These used to sit loose in the repo root; the first run after upgrading moves
+any it finds into `cache/` rather than refetching (a rename, so the 260 MB
+graph is not recopied).
+
+Delete any cache file — or the whole directory — to force a rebuild.
+Changing processing parameters automatically triggers a full reprocess, and
+upgrading osmnx/networkx automatically refetches the graph (pickled graphs
+are version-bound).
 
 ## License
 

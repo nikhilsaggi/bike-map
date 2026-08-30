@@ -1,15 +1,11 @@
-"""Shared fixtures: put the repo root on sys.path and build synthetic graphs."""
+"""Shared fixtures: synthetic street graphs and local-metre geometry helpers."""
 
 from __future__ import annotations
 
 import math
-import sys
-from pathlib import Path
 
 import networkx as nx
 import pytest
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 # Reference point for synthetic geometry: mid-NYC, matching the pipeline's
 # fixed-latitude meter conversions.

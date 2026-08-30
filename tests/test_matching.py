@@ -7,13 +7,17 @@ import numpy as np
 from conftest import add_street, lonlat
 from shapely.geometry import LineString
 
-import bike_routes as br
+from bike_routes import config, graph, matching
 
 
 def _match(G, coords, route_cache=None):
-    snap_data = br._build_snap_tree(G)
-    return br._map_match_ride(
-        G, coords, br.SNAP_TOLERANCE_M, route_cache if route_cache is not None else {}, *snap_data
+    snap_data = matching._build_snap_tree(G)
+    return matching._map_match_ride(
+        G,
+        coords,
+        config.SNAP_TOLERANCE_M,
+        route_cache if route_cache is not None else {},
+        *snap_data,
     )
 
 
@@ -30,18 +34,18 @@ def _trace(points_m):
 
 
 def test_path_to_edges_canonical(grid_graph):
-    edges = br._path_to_edges(grid_graph, [0, 1, 2], max_dist=1000)
+    edges = matching._path_to_edges(grid_graph, [0, 1, 2], max_dist=1000)
     assert edges == [(0, 1), (1, 2)]
 
 
 def test_path_to_edges_reversed_path_canonicalizes(grid_graph):
-    edges = br._path_to_edges(grid_graph, [2, 1, 0], max_dist=1000)
+    edges = matching._path_to_edges(grid_graph, [2, 1, 0], max_dist=1000)
     assert edges == [(1, 2), (0, 1)]
 
 
 def test_path_to_edges_exceeds_max_dist(grid_graph):
     # Two 100m blocks > 150m limit
-    assert br._path_to_edges(grid_graph, [0, 1, 2], max_dist=150) is None
+    assert matching._path_to_edges(grid_graph, [0, 1, 2], max_dist=150) is None
 
 
 # -- _remove_subsumed_edges --------------------------------------------------
@@ -62,7 +66,7 @@ def test_remove_subsumed_edge():
     G = _chain_graph()
     geom = LineString([(G.nodes[i]["x"], G.nodes[i]["y"]) for i in (1, 2, 3)])
     G.add_edge(1, 3, length=200.0, highway="residential", geometry=geom)
-    n = br._remove_subsumed_edges(G)
+    n = graph._remove_subsumed_edges(G)
     assert n == 1
     assert not G.has_edge(1, 3)
     assert G.has_edge(1, 2)
@@ -75,7 +79,7 @@ def test_keeps_edge_when_midpoint_is_not_a_node():
     mid = lonlat(150.0, 5.0)
     geom = LineString([(G.nodes[1]["x"], G.nodes[1]["y"]), mid, (G.nodes[3]["x"], G.nodes[3]["y"])])
     G.add_edge(1, 3, length=210.0, highway="residential", geometry=geom)
-    n = br._remove_subsumed_edges(G)
+    n = graph._remove_subsumed_edges(G)
     assert n == 0
     assert G.has_edge(1, 3)
 
