@@ -1,4 +1,4 @@
-"""Convert GPX files to the CSV format expected by bike_routes.py.
+"""Convert GPX files to the CSV format the pipeline reads from rides/.
 
 Parses <trkpt> elements from GPX XML and writes CSV with columns:
     longitude,latitude,timestamp
@@ -9,7 +9,7 @@ follows that convention, and export.py slices the date, hour and year
 straight out of the filename.
 
 Usage:
-    python gpx_to_csv.py incoming/ rides/
+    python -m bike_routes.ingest.gpx_to_csv incoming/ rides/
 """
 
 from __future__ import annotations
@@ -94,7 +94,9 @@ def gpx_to_csv(gpx_path: Path, output_dir: Path) -> Path | None:
 def main() -> None:
     """Convert all GPX files in a directory to pipeline-ready CSVs."""
     if len(sys.argv) != 3:
-        print(f"Usage: {sys.argv[0]} <gpx_dir> <csv_dir>")
+        # argv[0] is the module file under `python -m`, which is not how
+        # anyone invokes this; print the documented form instead.
+        print("Usage: python -m bike_routes.ingest.gpx_to_csv <gpx_dir> <csv_dir>")
         sys.exit(1)
 
     gpx_dir = Path(sys.argv[1])

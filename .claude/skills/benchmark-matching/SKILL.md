@@ -12,7 +12,7 @@ the real OSM graph and ride corpus.
 ## Setup
 
 - Benchmarks need a checkout root containing `rides/*.csv`,
-  `osm_graph_cache.pkl`, and (fast path) `hmm_map_cache.pkl`. Run scripts
+  `cache/osm_graph_cache.pkl`, and (fast path) `cache/hmm_map_cache.pkl`. Run scripts
   with that directory as cwd; import the code under test via
   `sys.path.insert(0, <repo root>)`.
 - Write benchmark scripts to a scratch directory, never the repo.
@@ -23,8 +23,8 @@ the real OSM graph and ride corpus.
 ## Rules (learned the hard way)
 
 - **Never call `cache._load_state()` in a benchmark.** On a config-hash
-  mismatch it DELETES route_cache.pkl (and possibly graph caches) as a side
-  effect. Unpickle `state.pkl` directly instead.
+  mismatch it DELETES cache/route_cache.pkl (and possibly graph caches) as a side
+  effect. Unpickle `cache/state.pkl` directly instead.
 - Redirect all outputs before importing pipeline stages:
   `config.GEOJSON_OUTPUT_PATH`, `config.OUTPUT_PATH_UNWEIGHTED/WEIGHTED`.
 - Load the map index via `hmm._load_cached_inmem_map()` (~4s) rather than
@@ -41,7 +41,7 @@ the real OSM graph and ride corpus.
 - **Parity** (for any matcher change): exact edge-sequence equality against
   the unmodified matcher on 15-20 sampled rides. Report count identical and
   set-intersection size for diffs. Result-changing optimizations need the
-  quality eval (`hmm_matcher_eval.py`, matched/GPS length-ratio metric)
+  quality eval (`tools/hmm_matcher_eval.py`, matched/GPS length-ratio metric)
   before adoption.
 
 ## Known results (July 2026, 4-core/16GB machine)

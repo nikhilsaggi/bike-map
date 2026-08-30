@@ -65,6 +65,7 @@ def _build_inmem_map(G: nx.MultiDiGraph) -> InMemMap:
 def _save_inmem_map_cache(mmap: InMemMap) -> None:
     """Persist the map index's node/adjacency dict for cheap reloads."""
     try:
+        config.HMM_MAP_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
         with config.HMM_MAP_CACHE_PATH.open("wb") as f:
             pickle.dump(
                 {"format": HMM_MAP_CACHE_FORMAT, "graph": mmap.graph},

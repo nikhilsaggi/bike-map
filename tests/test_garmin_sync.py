@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import garmin_sync
+from bike_routes.ingest import garmin_sync
 
 
 class _FakeFormat:

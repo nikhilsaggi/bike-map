@@ -10,7 +10,13 @@ from pathlib import Path
 from typing import Any
 
 from . import config
-from .cache import _load_route_cache, _load_state, _save_route_cache, _save_state
+from .cache import (
+    _load_route_cache,
+    _load_state,
+    _migrate_legacy_caches,
+    _save_route_cache,
+    _save_state,
+)
 from .edge_speed import _backfill_edge_speeds
 from .export import _export_geojson
 from .gps import _load_and_resample
@@ -118,7 +124,8 @@ def main(argv: list[str] | None = None) -> None:
         # _match_worker_count reads this; the env var also reaches workers
         os.environ["MATCH_WORKERS"] = str(args.workers)
 
-    # 1. Load state
+    # 1. Load state (relocating any caches left over from the flat layout)
+    _migrate_legacy_caches()
     state = _load_state()
 
     # 2. Find new rides (exclude already-processed and already-skipped files)

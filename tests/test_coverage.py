@@ -2,18 +2,18 @@
 
 from __future__ import annotations
 
-import bike_routes as br
+from bike_routes import export, render
 
 # ~0.009 deg latitude = ~1 km
 KM_SEG = [(-73.98, 40.760), (-73.98, 40.769)]
 
 
 def test_primary_hw_tag():
-    assert br._primary_hw_tag("residential") == "residential"
-    assert br._primary_hw_tag(["residential", "cycleway"]) == "cycleway"
-    assert br._primary_hw_tag(["footway", "residential"]) == "footway"
-    assert br._primary_hw_tag([]) == ""
-    assert br._primary_hw_tag("") == ""
+    assert render._primary_hw_tag("residential") == "residential"
+    assert render._primary_hw_tag(["residential", "cycleway"]) == "cycleway"
+    assert render._primary_hw_tag(["footway", "residential"]) == "footway"
+    assert render._primary_hw_tag([]) == ""
+    assert render._primary_hw_tag("") == ""
 
 
 def test_coverage_summary():
@@ -36,7 +36,7 @@ def test_coverage_summary():
             (5, 6): ["2024-01-01_08-00-00_-0500.csv"],
         },
     }
-    cov = br._coverage_summary(edge_geom, edge_hw, state)
+    cov = export._coverage_summary(edge_geom, edge_hw, state)
     assert cov["pct"] == 50.0  # 1 of 2 rideable km
     assert 0.9 < cov["ridden_km"] < 1.1
     assert cov["network_km"] == 2
@@ -57,12 +57,12 @@ def test_coverage_excluded_km_is_ordered_longest_first():
         (7, 8): KM_SEG,
     }
     edge_hw = {(1, 2): "residential", (3, 4): "footway", (5, 6): "service", (7, 8): "service"}
-    cov = br._coverage_summary(edge_geom, edge_hw, {"edge_counts": {}, "edge_rides": {}})
+    cov = export._coverage_summary(edge_geom, edge_hw, {"edge_counts": {}, "edge_rides": {}})
     # 2 km of service outranks 0.3 km of footway; the page reads the order.
     assert list(cov["excluded_km"]) == ["service", "footway"]
     assert cov["excluded_km"]["service"] > cov["excluded_km"]["footway"]
 
 
 def test_coverage_summary_empty():
-    assert br._coverage_summary({}, {}, {"edge_counts": {}}) is None
-    assert br._coverage_summary({(1, 2): KM_SEG}, {}, {"edge_counts": {}}) is None
+    assert export._coverage_summary({}, {}, {"edge_counts": {}}) is None
+    assert export._coverage_summary({(1, 2): KM_SEG}, {}, {"edge_counts": {}}) is None

@@ -76,12 +76,21 @@ OUTPUT_PATH_UNWEIGHTED = "bike_routes_coverage.png"
 OUTPUT_PATH_WEIGHTED = "bike_routes_frequency.png"
 GEOJSON_OUTPUT_PATH = Path("docs/rides.geojson.gz")
 SKIP_PNG_RENDER = os.environ.get("SKIP_PNG_RENDER") == "1"
-GRAPH_CACHE_PATH = Path("osm_graph_cache.pkl")
-HMM_MAP_CACHE_PATH = Path("hmm_map_cache.pkl")
-STATE_CACHE_PATH = Path("state.pkl")
-RENDER_CACHE_PATH = Path("render_cache.pkl")
-ROUTE_CACHE_PATH = Path("route_cache.pkl")
-CACHE_VERSIONS_PATH = Path("cache_versions.json")
+
+# -- Generated caches -------------------------------------------------------
+# All auto-managed; delete any (or the whole directory) to force a rebuild.
+# Paths are relative, so they resolve against the working directory the
+# pipeline is run from -- the repo root in normal use, tmp_path under test.
+CACHE_DIR = Path("cache")
+GRAPH_CACHE_PATH = CACHE_DIR / "osm_graph_cache.pkl"
+HMM_MAP_CACHE_PATH = CACHE_DIR / "hmm_map_cache.pkl"
+STATE_CACHE_PATH = CACHE_DIR / "state.pkl"
+RENDER_CACHE_PATH = CACHE_DIR / "render_cache.pkl"
+ROUTE_CACHE_PATH = CACHE_DIR / "route_cache.pkl"
+CACHE_VERSIONS_PATH = CACHE_DIR / "cache_versions.json"
+WEATHER_CACHE_PATH = CACHE_DIR / "weather_cache.json"
+
+
 RENDER_CACHE_FORMAT = "hw-name-v1"  # bump invalidates render_cache.pkl (rebuilt from the graph)
 MERGE_TOL_M = 20.0  # parallel features within this lateral distance may merge
 MERGE_SAMPLE_M = 8.0  # geometry sampling interval for coverage tests

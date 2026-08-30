@@ -89,6 +89,7 @@ def _build_render_cache(
         if canon not in edge_hw:
             edge_hw[canon] = tag
 
+    config.RENDER_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
     with config.RENDER_CACHE_PATH.open("wb") as f:
         pickle.dump(
             (config.RENDER_CACHE_FORMAT, edge_geom, edge_hw, edge_name),

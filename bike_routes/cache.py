@@ -5,6 +5,8 @@ from __future__ import annotations
 import hashlib
 import json
 import pickle
+import shutil
+from pathlib import Path
 from typing import Any
 
 import networkx as nx
@@ -70,6 +72,35 @@ def _empty_state() -> dict[str, Any]:
     }
 
 
+def _migrate_legacy_caches() -> None:
+    """Move caches written before they moved into config.CACHE_DIR.
+
+    Older runs wrote every cache loose in the working directory.  The graph
+    cache alone is ~260 MB and only exists on the machine that fetched it, so
+    a rename beats a silent 10-25 minute refetch.  shutil.move preserves
+    mtimes, which _load_cached_inmem_map's "hmm map newer than graph" check
+    depends on -- copying would invert it.
+    """
+    for dest in (
+        config.GRAPH_CACHE_PATH,
+        config.HMM_MAP_CACHE_PATH,
+        config.STATE_CACHE_PATH,
+        config.RENDER_CACHE_PATH,
+        config.ROUTE_CACHE_PATH,
+        config.CACHE_VERSIONS_PATH,
+        config.WEATHER_CACHE_PATH,
+    ):
+        legacy = Path(dest.name)
+        if not legacy.exists() or legacy.resolve() == dest.resolve():
+            continue
+        if dest.exists():
+            print(f"  {legacy} superseded by {dest}; leaving it in place")
+            continue
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(legacy), str(dest))
+        print(f"  Moved {legacy} -> {dest}")
+
+
 def _load_state() -> dict[str, Any]:
     """Load cached state, invalidating if processing config changed."""
     if not config.STATE_CACHE_PATH.exists():
@@ -98,6 +129,7 @@ def _save_state(state: dict[str, Any]) -> None:
     """Persist pipeline state to disk."""
     state["config_hash"] = _config_hash()
     state["config"] = _processing_config()
+    config.STATE_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
     with config.STATE_CACHE_PATH.open("wb") as f:
         pickle.dump(state, f, protocol=pickle.HIGHEST_PROTOCOL)
 
@@ -109,6 +141,7 @@ def _lib_versions() -> dict[str, str]:
 
 def _write_cache_versions() -> None:
     """Stamp the current library versions alongside the graph cache."""
+    config.CACHE_VERSIONS_PATH.parent.mkdir(parents=True, exist_ok=True)
     config.CACHE_VERSIONS_PATH.write_text(json.dumps(_lib_versions()))
 
 
@@ -157,5 +190,6 @@ def _save_route_cache(
     route_cache: dict[tuple[int, int], list[tuple[int, int]] | None],
 ) -> None:
     """Persist route cache to disk."""
+    config.ROUTE_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
     with config.ROUTE_CACHE_PATH.open("wb") as f:
         pickle.dump(route_cache, f, protocol=pickle.HIGHEST_PROTOCOL)

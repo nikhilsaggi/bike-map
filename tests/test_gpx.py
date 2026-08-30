@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import gpx_to_csv
+from bike_routes.ingest import gpx_to_csv
 
 GPX_TEMPLATE = """<?xml version="1.0" encoding="UTF-8"?>
 <gpx xmlns="http://www.topografix.com/GPX/1/1" version="1.1" creator="test">

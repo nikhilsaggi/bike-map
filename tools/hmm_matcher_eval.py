@@ -5,11 +5,11 @@ OSM graph and reports, per ride, the matched-length / GPS-length ratio
 (1.0 is ideal; parallel-way zigzag and block detours inflate it), runtime,
 and completion.
 
-Requires the pipeline caches (osm_graph_cache.pkl, state.pkl) and rides/,
-plus `pip install leuvenmapmatching rtree`.
+Requires the pipeline caches (cache/osm_graph_cache.pkl, cache/state.pkl)
+and rides/, plus `pip install leuvenmapmatching rtree`.
 
 Usage:
-    python hmm_matcher_eval.py [--rides N]
+    python tools/hmm_matcher_eval.py [--rides N]   # from the repo root
 
 Findings as of 2026-07 (12-ride sample): heuristic matches 12/12 at median
 ratio 2.89 in 0.3s total; the HMM completes 9/12 at median ratio 1.09 in
@@ -22,7 +22,6 @@ import argparse
 import pickle
 import random
 import time
-from pathlib import Path
 
 import numpy as np
 from leuvenmapmatching.map.inmem import InMemMap
@@ -47,9 +46,9 @@ def main() -> None:
     args = parser.parse_args()
 
     print("Loading graph...", flush=True)
-    with Path("osm_graph_cache.pkl").open("rb") as f:
+    with config.GRAPH_CACHE_PATH.open("rb") as f:
         G = pickle.load(f)
-    with Path("state.pkl").open("rb") as f:
+    with config.STATE_CACHE_PATH.open("rb") as f:
         state = pickle.load(f)
 
     rng = random.Random(42)  # noqa: S311 -- reproducible sampling, not crypto
