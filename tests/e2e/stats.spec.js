@@ -139,6 +139,26 @@ test.describe('stats panel', () => {
     expect(await height()).toBeGreaterThan(closed);
   });
 
+  test('a phone viewport keeps the panel at its desktop width', async ({ page }) => {
+    // The panel used to go full-bleed under 640px, which stretched everything
+    // width-driven inside it -- the hero grid, the right-justified rows, the
+    // flex:1 histogram bars -- to ~1.7x their desktop size.
+    await page.setViewportSize({ width: 430, height: 932 });
+    await gotoMap(page);
+    await openSection(page, 'stat-riding');
+    const box = () => page.locator('#stats').evaluate((el) => el.getBoundingClientRect());
+    expect((await box()).width).toBe(236);
+    // Still anchored to the right edge, same as on a desktop viewport.
+    expect((await box()).right).toBe(430 - 12);
+
+    // Only a viewport narrower than the panel itself shrinks it, and then it
+    // keeps its 12px margins rather than running off the screen.
+    await page.setViewportSize({ width: 200, height: 932 });
+    const narrow = await box();
+    expect(narrow.width).toBe(200 - 24);
+    expect(narrow.left).toBe(12);
+  });
+
   test('legend shows the max ride count and a gradient bar', async ({ page }) => {
     await gotoMap(page);
     await expect(page.locator('#legend-max')).toHaveText('4');

@@ -15,7 +15,12 @@
      one detail section at a time.  Stacking every section at once ran to ~32
      rows and 670-1080px, burying the map the panel floats over. */
   #stats {
-    position: absolute; top: 12px; right: 12px; z-index: 1000; width: 236px;
+    position: absolute; top: 12px; right: 12px; z-index: 1000;
+    /* Fixed content width, not a share of the viewport: everything inside is
+       width-driven (hero grid, right-justified rows, flex:1 histogram bars),
+       so a phone-width panel stretches them all to ~1.7x. Only a viewport
+       narrower than the panel itself shrinks it. */
+    width: min(236px, calc(100vw - 24px));
     background: rgba(13, 13, 13, 0.88); color: #ccc; padding: 12px 16px;
     border-radius: 8px; font-size: 13px; line-height: 1.6;
     border: 1px solid #333; backdrop-filter: blur(6px);
@@ -154,8 +159,6 @@
   #speed-lead { color: #777; font-size: 9px; line-height: 1.4; margin-bottom: 5px; }
 
   @media (max-width: 640px) {
-    #stats { left: 12px; right: 12px; width: auto; }
-    #stats.collapsed { left: auto; }
     #stats-sections.open { max-height: min(240px, calc(100vh - 300px)); }
   }
 
