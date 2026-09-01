@@ -107,11 +107,12 @@ RING_MIN_LEN_M = 30.0  # shorter features are corridor pieces, not rings
 RING_MAX_LEN_M = 300.0  # rings up to this perimeter may be dropped as redundant
 RING_NEAR_M = 40.0  # rings must hug covering features within this distance
 
-# -- Direction-split edge speed (backfilled; NOT part of _processing_config) --
-# Bumping SPEED_VERSION discards edge_speed/speed_rides and recomputes; it is
-# the invalidation lever for this data, deliberately separate from the config
-# hash so an algorithm change here never triggers a full rematch.
-SPEED_VERSION = 2  # 2: per-chunk records (was one bucket per whole edge)
+# -- Direction-split edge speed and traversal counts ------------------------
+# Backfilled from the ride CSVs; NOT part of _processing_config.  Bumping
+# SPEED_VERSION discards edge_speed/edge_traversals/speed_rides and recomputes
+# both; it is the invalidation lever for this data, deliberately separate from
+# the config hash so an algorithm change here never triggers a full rematch.
+SPEED_VERSION = 3  # 3: per-ride traversal counts (2: per-chunk speed records)
 SPEED_SAMPLE_M = 5.0  # edge polyline densification for the projection index
 SPEED_SNAP_M = 25.0  # max GPS-to-edge distance for a fix to count as on-edge
 SPEED_HYSTERESIS = 1.5  # stay on the previous edge within this factor of the best
@@ -130,5 +131,11 @@ SPEED_MIN_DIST_M = 50.0  # per-direction distance needed before a speed is usabl
 SPEED_SPLIT_PASSES = 3  # passes needed in EACH direction before a chunk is ranked
 SPEED_CORRIDOR_MIN_M = 250.0  # a shorter same-sign run is an anecdote, not a corridor
 SPEED_CORRIDOR_N = 10  # corridors listed in the stats panel
+# Traversal counting reuses the speed pass detector, but must not inherit its
+# split at recording gaps: a rider who stops mid-block for five minutes rode
+# that block once.  Two same-direction passes on one edge are the same
+# traversal when the second resumes within this distance of where the first
+# stopped; a second lap re-enters from the far end (median edge is 63 m).
+TRAVERSAL_RESUME_M = 30.0
 M_PER_LON = 111_320 * np.cos(np.radians(40.73))
 M_PER_LAT = 110_540

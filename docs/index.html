@@ -274,7 +274,7 @@
 </div>
 
 <div id="legend">
-  <div class="title">Ride frequency</div>
+  <div class="title">Pass frequency</div>
   <div class="bar" id="legend-bar"></div>
   <div class="labels"><span>1</span><span id="legend-max">—</span></div>
   <div id="filter-row">
@@ -405,7 +405,10 @@ function restoreSection() {
 
 // Each feature's properties.rides holds indices into the global rideList
 // ([dateIndex, "HH:MM"] per ride); [filterLo, filterHi] selects the active
-// date-index range.
+// date-index range.  One entry per traversal, so a ride that crossed the
+// segment twice appears twice and the array length is passes, not rides.
+// The array stays sorted (equal rides have equal indices), so hasRide's
+// binary search is unaffected.
 // Pipeline data is metric; convert to miles for display only.
 const KM_TO_MI = 0.621371;
 const mi = km => km * KM_TO_MI;
@@ -421,6 +424,7 @@ let fullMaxCount = 1;
 let geoLayer = null;
 let rideView = null;
 
+// Passes in range; the array repeats a ride once per traversal.
 function countInRange(rideIds) {
   if (filterLo === 0 && filterHi === Infinity) return rideIds.length;
   let n = 0;
@@ -579,19 +583,28 @@ function styleFor(count) {
   };
 }
 
+// The ids repeat once per traversal, so a ride that came back this way gets
+// one row marked x2 rather than two identical rows. The header carries both
+// numbers: the count on the map is passes, but the rows below are rides.
 function popupContent(rideIds) {
   const rows = [];
-  for (const ri of rideIds) {
+  let passes = 0;
+  for (let i = 0; i < rideIds.length; i++) {
+    const ri = rideIds[i];
     const di = rideDateIdx[ri];
     if (di < filterLo || di > filterHi) continue;
+    let n = 1;
+    while (i + 1 < rideIds.length && rideIds[i + 1] === ri) { n++; i++; }
+    passes += n;
     const d = dateList[di] ?? '';
     const t = rideList[ri]?.[1] || '';
     rows.push(
       `<div class="ride-row" onclick="viewRide(${ri})" title="Show this ride's route">` +
-      `${d}${t ? ` &middot; ${t}` : ''}</div>`
+      `${d}${t ? ` &middot; ${t}` : ''}${n > 1 ? ` &times;${n}` : ''}</div>`
     );
   }
-  const header = `<strong>${rows.length} ride${rows.length !== 1 ? 's' : ''}</strong>`;
+  const header = `<strong>${passes} pass${passes !== 1 ? 'es' : ''}</strong>` +
+    (passes !== rows.length ? ` across ${rows.length} ride${rows.length !== 1 ? 's' : ''}` : '');
   return `<div style="max-height:200px;overflow-y:auto">${header}${rows.join('')}</div>`;
 }
 
@@ -1036,7 +1049,7 @@ fetch('rides.geojson.gz')
         layer._filteredCount = idxs.length;
         layer.bindTooltip(() => {
           const c = countInRange(idxs);
-          return `${c} ride${c !== 1 ? 's' : ''}`;
+          return `${c} pass${c !== 1 ? 'es' : ''}`;
         }, {
           sticky: true,
           className: 'ride-tooltip',

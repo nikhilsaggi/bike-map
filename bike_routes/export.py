@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from . import config
-from .edge_speed import _speed_summary
+from .edge_speed import _speed_summary, ride_traversals
 from .merge import _audit_merge, _geom_len_m, _merge_parallel_features
 from .ride_stats import _riding_summary
 from .weather import _weather_summary
@@ -86,7 +86,13 @@ def _export_geojson(
                 "type": "Feature",
                 "geometry": {"type": "LineString", "coordinates": coords},
                 "properties": {
-                    "_rides": set(edge_rides.get(edge_key, ())),
+                    # Traversals per ride, floored at 1.  set() first: a ride
+                    # is listed once per edge no matter how the state was
+                    # written, so multiplicity comes only from measurement.
+                    "_rides": {
+                        r: ride_traversals(state, edge_key, r)
+                        for r in set(edge_rides.get(edge_key, ()))
+                    },
                     "_name": (edge_name or {}).get(edge_key),
                 },
             }
@@ -115,7 +121,10 @@ def _export_geojson(
     # rides by index (repeated filename/date strings would dominate the
     # payload), a single ride's full route is reconstructable client-side,
     # and per-ride distances power the yearly recap.
-    # ride_count is dropped from features since it equals len(rides).
+    # A feature's rides array holds one entry per traversal, so a ride that
+    # crossed the segment twice appears twice: the page's count is the array
+    # length, and equal filenames map to equal indices, so it stays sorted for
+    # the membership search.  ride_count is dropped since it equals len(rides).
     all_fnames = sorted(state["processed_files"])
     ride_id = {fname: i for i, fname in enumerate(all_fnames)}
     all_dates = sorted({fname[:10] for fname in all_fnames})

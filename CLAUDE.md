@@ -36,16 +36,18 @@ interactive Leaflet map (`docs/`, served via GitHub Pages) plus static PNGs.
 4. `cache.py` -- cache/state.pkl (processed files, edge counts), config-hash
    invalidation
 5. `merge.py` -- collapse parallel/duplicate edge geometries into corridors
-6. `edge_speed.py` -- direction-split per-edge speed, backfilled from the
-   ride CSVs' timestamps (see below); needs `edge_geom`, so it runs from
-   `cli._finalize` rather than the matching checkpoint
+6. `edge_speed.py` -- per-edge passes, backfilled from the ride CSVs'
+   timestamps (see below): direction-split speed, and how many times each
+   ride traversed each edge (the map's frequency). Needs `edge_geom`, so it
+   runs from `cli._finalize` rather than the matching checkpoint
 7. `render.py` / `export.py` -- PNGs and `docs/rides.geojson.gz`
 8. `weather.py` -- Open-Meteo ride-weather stats embedded in the GeoJSON
 
 `bike_routes/ingest/` is the front of the pipeline (`garmin_sync`, `gpx_to_csv`),
 run as `python -m bike_routes.ingest.<mod>`; it fills `rides/` and is not
 imported by any pipeline stage. `tools/` holds standalone analysis that is not
-part of the pipeline at all (`hmm_matcher_eval.py`, `weather_correlation.py`),
+part of the pipeline at all (`hmm_matcher_eval.py`, `weather_correlation.py`,
+`traversal_audit.py`),
 run from the repo root.
 
 The package `__init__` deliberately exports nothing -- import the stage you
@@ -62,6 +64,10 @@ reads everything from `rides.geojson.gz` top-level `properties`.
   reprocess** of all rides (config hash mismatch discards cache/state.pkl). Don't
   add keys to it unless the change genuinely invalidates prior matches.
 - Edge keys are canonical `(min(u,v), max(u,v))` node pairs everywhere.
+- **The map's frequency is traversals, not rides**, and they come from
+  `edge_speed`, never from the matcher (see below). `state["edge_counts"]` and
+  `edge_rides` stay per-ride: `_apply_results` counts a file once even when a
+  GPS gap split it into several segments.
 - Matching results must be deterministic and independent of scheduling.
   Results are folded into state chunk by chunk as they arrive (`cli.py`),
   which is safe because `edge_counts` accumulates by addition and
@@ -85,18 +91,21 @@ reads everything from `rides.geojson.gz` top-level `properties`.
   than cache/osm_graph_cache.pkl; graph cache is bound to osmnx/networkx
   versions.
 
-### Edge speed (`edge_speed.py`)
+### Edge passes (`edge_speed.py`)
 
-Direction-split traversal speed, backfilled from the ride CSVs' timestamps.
-It is a **stats-panel ranking, not a map layer**: measured across the whole
-network, only ~6% of drawn km ever has enough passes in both directions to
-compare them, so colouring features by it produced a 94%-empty map. The
+One pass detector, two outputs: direction-split speed, and per-ride traversal
+counts. Both are backfilled from the ride CSVs' timestamps.
+
+**Speed** is a **stats-panel ranking, not a map layer**: measured across the
+whole network, only ~6% of drawn km ever has enough passes in both directions
+to compare them, so colouring features by it produced a 94%-empty map. The
 export ships a top-10 corridor list in `properties.speed` instead
 (+0.5 KB); features carry no speed key and `merge.py` never sees it.
 
-- `state["edge_speed"]` / `state["speed_rides"]` are deliberately **outside**
-  `_processing_config()`: speed comes from timestamps the matcher never saw,
-  so changing it must never trigger a rematch of 1380 rides. Its own
+- `state["edge_speed"]` / `state["edge_traversals"]` / `state["speed_rides"]`
+  are deliberately **outside**
+  `_processing_config()`: both come from timestamps the matcher never saw,
+  so changing them must never trigger a rematch of 1380 rides. Their
   invalidation lever is `config.SPEED_VERSION` -- bump it and the next run
   discards and recomputes (`_records_well_formed` is a fail-closed shape
   guard for records that predate a layout change). Editing the algorithm
@@ -126,6 +135,39 @@ export ships a top-10 corridor list in `properties.speed` instead
   SE and NW, ~5 mph each. Collapsing to one row means the sign-change split
   broke; a single direction means orientation broke. A unit test on a
   synthetic grid cannot catch either -- grid orientation is uniform.
+
+#### Traversal counts
+
+`state["edge_traversals"][key][ride]` is how many times one ride crossed one
+edge, and it is what the map colours by. **Never derive this from the
+matcher's edge list**: it collapses consecutive repeats, and its
+non-consecutive repeats cannot be told apart from lattice oscillation at an
+intersection (`A->B->C->B->A` emits `(A,B)` twice for one pass). Passes can,
+because they come from the raw fixes.
+
+- **Only counts >= 2 are stored**, and every reader goes through
+  `ride_traversals()`, which floors at 1. So a ride the detector could not
+  measure -- unparsable timestamps, a trace beyond `SPEED_SNAP_M`, a pass
+  under `SPEED_MIN_PASS_M` -- still draws its edges exactly as before.
+  Measurement can raise a count; it can never take an edge off the map.
+- `_runs` cuts at `SPEED_MAX_FIX_GAP_S`, which is right for speed (a red
+  light is not riding time) and wrong for counting. `_merge_resumed` re-joins
+  same-direction passes that restart within `TRAVERSAL_RESUME_M` of where the
+  last stopped; a second lap re-enters from the far end instead. Removing it
+  scores every mid-block stop as an extra traversal.
+- `merge.py` combines a corridor's parallel members by **max** per ride
+  (`_merge_ride_counts`), not sum: one pass drifting from a street to its bike
+  lane must not become two. The cost is an out-and-back on separately mapped
+  directions reading as one. `tools/traversal_audit.py --merge` measures how
+  often the two rules actually disagree.
+- The export ships `properties.rides` with one entry per traversal, so the
+  page's count is array length and needs no new field. Equal filenames map to
+  equal indices, so the array stays sorted for `hasRide`'s binary search.
+- **Before changing any threshold here, run `tools/traversal_audit.py`** on
+  the real rides: it prints the inflation ratio (a few percent over 1.0 is
+  what real riding looks like) and the highest-multiplicity (ride, edge)
+  pairs to check against the trace. A synthetic grid cannot tell you whether
+  a threshold over-fires on real GPS.
 
 ## Performance notes
 

@@ -56,6 +56,31 @@ def test_export_geojson(tmp_path, monkeypatch):
     assert all("_name" not in f["properties"] for f in features)
 
 
+def test_export_repeats_a_ride_index_per_traversal(tmp_path, monkeypatch):
+    """The page counts array entries, so a round trip must appear twice."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(config, "GEOJSON_OUTPUT_PATH", tmp_path / "docs" / "rides.geojson.gz")
+
+    edge_geom = {(1, 2): [lonlat(0.0, 0.0), lonlat(300.0, 0.0)]}
+    state = {
+        "processed_files": {R1, R2},
+        "edge_counts": {(1, 2): 2},
+        "edge_rides": {(1, 2): [R1, R2]},
+        "edge_traversals": {(1, 2): {R1: 3}},
+        "ride_stats": {},
+    }
+
+    export._export_geojson(edge_geom, state)
+
+    with gzip.open(tmp_path / "docs" / "rides.geojson.gz") as f:
+        data = json.load(f)
+
+    # R1 crossed three times, R2 once: four passes, and the array stays sorted
+    # so the page's binary-search membership test still works.
+    assert data["properties"]["max_count"] == 4
+    assert data["features"][0]["properties"]["rides"] == [0, 0, 0, 1]
+
+
 def test_export_names_the_most_ridden_segment(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(config, "GEOJSON_OUTPUT_PATH", tmp_path / "docs" / "rides.geojson.gz")

@@ -57,7 +57,12 @@ def test_apply_results_counts_traversals_and_skips():
 
 
 def test_apply_results_counts_an_edge_once_per_ride():
-    """A ride retraversing an edge still counts as one visit."""
+    """edge_counts is rides, not passes.
+
+    The matcher's repeats cannot be trusted as traversals -- lattice
+    oscillation at an intersection looks the same -- so how many times a ride
+    crossed an edge is measured from timestamps in edge_speed.py instead.
+    """
     state = _state()
     _apply_results(state, [_results("a.csv", [(1, 2), (1, 2), (1, 2)])])
     assert state["edge_counts"][(1, 2)] == 1
@@ -102,3 +107,16 @@ def test_split_file_contributes_all_segments_once_complete():
     _apply_results(state, _ready_results(pending, seg_total, [_results("split.csv", [(3, 4)])]))
     assert state["processed_files"] == {"split.csv"}
     assert state["edge_counts"] == {(1, 2): 1, (3, 4): 1}
+
+
+def test_split_file_counts_a_shared_edge_once():
+    """An edge on both sides of a GPS gap is still one ride, listed once."""
+    pending = {}
+    seg_total = Counter({"split.csv": 2})
+    state = _state()
+
+    batch = [_results("split.csv", [(1, 2), (3, 4)]), _results("split.csv", [(1, 2), (5, 6)])]
+    _apply_results(state, _ready_results(pending, seg_total, batch))
+
+    assert state["edge_counts"] == {(1, 2): 1, (3, 4): 1, (5, 6): 1}
+    assert state["edge_rides"][(1, 2)] == ["split.csv"]

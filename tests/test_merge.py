@@ -8,11 +8,13 @@ from bike_routes import config, merge
 
 
 def _feature(points_m, rides, name=None):
+    """Build a feature; rides is a set of ride ids, or {ride: traversals}."""
     coords = [lonlat(x, y) for x, y in points_m]
+    counts = dict(rides) if isinstance(rides, dict) else dict.fromkeys(rides, 1)
     return {
         "type": "Feature",
         "geometry": {"type": "LineString", "coordinates": coords},
-        "properties": {"_rides": set(rides), "_name": name},
+        "properties": {"_rides": counts, "_name": name},
     }
 
 
@@ -102,6 +104,21 @@ def test_merge_unions_shared_rides_without_double_count():
     assert out[0]["properties"]["ride_count"] == 2
 
 
+def test_merge_keeps_the_larger_traversal_count_not_their_sum():
+    """A pass that drifts between a street and its bike lane crossed once."""
+    f1 = _feature(_line(0, 300, 0.0), {R1: 2, R2: 1})
+    f2 = _feature(_line(0, 300, 10.0), {R1: 1})
+    out = merge._merge_parallel_features([f1, f2])
+    assert len(out) == 1
+    assert out[0]["properties"]["ride_count"] == 3  # max(2,1) + 1, not 2+1+1
+
+
+def test_merge_repeats_a_ride_once_per_traversal():
+    f1 = _feature(_line(0, 300, 0.0), {R1: 3, R2: 1})
+    out = merge._merge_parallel_features([f1])
+    assert out[0]["properties"]["rides"] == sorted([R1, R1, R1, R2])
+
+
 def test_adjacent_segments_stay_separate():
     """End-to-end segments along a street have near-zero mutual coverage."""
     f1 = _feature(_line(0, 300, 0.0), {R1})
@@ -158,6 +175,17 @@ def test_ring_with_unique_ride_kept():
     box = _feature(
         [(200.0, 0.0), (230.0, 0.0), (230.0, 15.0), (200.0, 15.0), (200.0, 0.5)],
         {R2},
+    )
+    out = merge._drop_redundant_rings([corridor, box])
+    assert len(out) == 2
+
+
+def test_ring_with_extra_traversals_kept():
+    """Dropping it would lose a pass the corridor never recorded."""
+    corridor = _feature(_line(0, 400, 0.0), {R1: 1})
+    box = _feature(
+        [(200.0, 0.0), (230.0, 0.0), (230.0, 15.0), (200.0, 15.0), (200.0, 0.5)],
+        {R1: 2},
     )
     out = merge._drop_redundant_rings([corridor, box])
     assert len(out) == 2

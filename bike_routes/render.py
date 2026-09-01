@@ -151,14 +151,20 @@ def _render(
     edge_geom: dict[tuple[int, int], list[tuple[float, float]]],
     state: dict[str, Any],
     *,
+    counts: dict[tuple[int, int], int] | None = None,
     skip_png: bool = config.SKIP_PNG_RENDER,
 ) -> None:
-    """Render both coverage and frequency maps."""
+    """Render both coverage and frequency maps.
+
+    counts weights the frequency map; the caller passes traversals (see
+    edge_speed.traversal_counts), falling back to state's per-ride counts.
+    The coverage map only asks which edges appear, so both agree there.
+    """
     if skip_png:
         print("Skipping PNG render")
         return
 
-    edge_counts = state["edge_counts"]
+    edge_counts = state["edge_counts"] if counts is None else counts
 
     if not edge_counts:
         print("No edges to render")

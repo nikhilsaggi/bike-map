@@ -8,6 +8,33 @@ from typing import Any
 from . import config
 
 
+def _merge_ride_counts(dst: dict[str, int], src: dict[str, int]) -> None:
+    """Fold src's per-ride traversal counts into dst, keeping the larger.
+
+    Max, not sum, because the features being merged here are parallel
+    representations of one physical corridor -- a street and the bike lane
+    beside it, 20 m apart.  A single pass that drifts from one to the other
+    would sum to two traversals of a corridor it crossed once, which is
+    exactly the over-count this map must not invent.  The cost is the
+    opposite case: an out-and-back that rides the lane one way and the street
+    the other reads as one.  tools/traversal_audit.py measures how much the
+    two rules actually disagree on real rides.
+    """
+    for r, n in src.items():
+        if n > dst.get(r, 0):
+            dst[r] = n
+
+
+def _ride_total(counts: dict[str, int]) -> int:
+    """Total traversals a feature carries, across every ride."""
+    return sum(counts.values())
+
+
+def _covers(counts: dict[str, int], other: dict[str, int]) -> bool:
+    """Report whether other already accounts for every traversal in counts."""
+    return all(other.get(r, 0) >= n for r, n in counts.items())
+
+
 def _sample_line(coords: list) -> list[tuple[float, float, float]]:
     """Sample (x_m, y_m, heading_deg mod 180) every config.MERGE_SAMPLE_M along a line."""
     pts = [(c[0] * config.M_PER_LON, c[1] * config.M_PER_LAT) for c in coords]
@@ -148,17 +175,17 @@ def _drop_redundant_rings(features: list[dict[str, Any]]) -> list[dict[str, Any]
             out.append(f)
             continue
         rides = f["properties"]["_rides"]
-        covered: set[str] = set()
+        covered: dict[str, int] = {}
         for x, y, _h in _sample_line(f["geometry"]["coordinates"]):
             gx, gy = int(x // config.RING_NEAR_M), int(y // config.RING_NEAR_M)
             for dx in (-1, 0, 1):
                 for dy in (-1, 0, 1):
                     for j, jx, jy, _lon, _lat in grid.get((gx + dx, gy + dy), ()):
                         if (jx - x) ** 2 + (jy - y) ** 2 <= near_sq:
-                            covered |= others[j]["properties"]["_rides"]
-            if rides <= covered:
+                            _merge_ride_counts(covered, others[j]["properties"]["_rides"])
+            if _covers(rides, covered):
                 break
-        if rides <= covered:
+        if _covers(rides, covered):
             dropped += 1
         else:
             out.append(f)
@@ -348,10 +375,12 @@ def _merge_parallel_features(
     drops features almost entirely covered by the union of the others
     (e.g. long ways spanning several already-covered blocks).
 
-    Each input feature must carry properties["_rides"]: the set of ride ids
-    using that edge.  Merged counts are unions of these sets, so a ride is
-    never double-counted no matter how features combine.  Returns finalized
-    features with ride_count/ride_dates and no _rides.
+    Each input feature must carry properties["_rides"]: how many times each
+    ride traversed that edge, keyed by ride id.  Merging keeps the larger
+    count per ride (_merge_ride_counts), so a corridor can never claim more
+    traversals of itself than any one of its parallel members recorded, no
+    matter how features combine.  Returns finalized features with
+    ride_count/rides and no _rides.
     """
     tol_sq = config.MERGE_TOL_M * config.MERGE_TOL_M
     samples = [_sample_line(f["geometry"]["coordinates"]) for f in features]
@@ -401,9 +430,9 @@ def _merge_parallel_features(
 
     merged: list[dict[str, Any]] = []
     for members in clusters.values():
-        rides: set[str] = set()
+        rides: dict[str, int] = {}
         for i in members:
-            rides |= features[i]["properties"]["_rides"]
+            _merge_ride_counts(rides, features[i]["properties"]["_rides"])
         alts: list[list] = []
         if len(members) == 1:
             keep = members
@@ -422,7 +451,7 @@ def _merge_parallel_features(
             # between parallel ways, fragmenting the drawn line).
             remaining = sorted(
                 members,
-                key=lambda m: (len(features[m]["properties"]["_rides"]), line_len(m)),
+                key=lambda m: (_ride_total(features[m]["properties"]["_rides"]), line_len(m)),
                 reverse=True,
             )
 
@@ -468,7 +497,7 @@ def _merge_parallel_features(
                 nm
                 for m in sorted(
                     members,
-                    key=lambda m: len(features[m]["properties"]["_rides"]),
+                    key=lambda m: _ride_total(features[m]["properties"]["_rides"]),
                     reverse=True,
                 )
                 if (nm := features[m]["properties"].get("_name"))
@@ -483,7 +512,7 @@ def _merge_parallel_features(
                     "coordinates": features[m]["geometry"]["coordinates"],
                 },
                 "properties": {
-                    "_rides": set(rides),
+                    "_rides": dict(rides),
                     "_alts": alts,
                     "_cluster": cluster_geoms,
                     "_name": cluster_name,
@@ -511,7 +540,7 @@ def _merge_parallel_features(
     # has already been absorbed, so the busy feature survives.
     order = sorted(
         range(len(merged)),
-        key=lambda i: (len(merged[i]["properties"]["_rides"]), -len(m_samples[i])),
+        key=lambda i: (_ride_total(merged[i]["properties"]["_rides"]), -len(m_samples[i])),
     )
 
     def union_cov(i: int) -> float:
@@ -521,12 +550,15 @@ def _merge_parallel_features(
         corridor -- absorbing the corridor would leave its street drawn
         only by an almost-invisible low-count line.
         """
-        min_rides = len(merged[i]["properties"]["_rides"]) / 2
+        min_rides = _ride_total(merged[i]["properties"]["_rides"]) / 2
         rows = m_hits[i]
         n = sum(
             1
             for hit in rows
-            if any(active[j] and len(merged[j]["properties"]["_rides"]) >= min_rides for j in hit)
+            if any(
+                active[j] and _ride_total(merged[j]["properties"]["_rides"]) >= min_rides
+                for j in hit
+            )
         )
         return n / len(rows)
 
@@ -543,7 +575,7 @@ def _merge_parallel_features(
         active[i] = False
         n_absorbed += 1
         for j in receivers:
-            merged[j]["properties"]["_rides"] |= merged[i]["properties"]["_rides"]
+            _merge_ride_counts(merged[j]["properties"]["_rides"], merged[i]["properties"]["_rides"])
             if not merged[j]["properties"].get("_name"):
                 merged[j]["properties"]["_name"] = merged[i]["properties"].get("_name")
 
@@ -579,9 +611,11 @@ def _merge_parallel_features(
         rides = f["properties"].pop("_rides")
         f["properties"].pop("_alts", None)
         f["properties"].pop("_cluster", None)
-        f["properties"]["ride_count"] = len(rides)
-        # Sorted ride filenames; the export maps them to ride indices.
-        f["properties"]["rides"] = sorted(rides)
+        f["properties"]["ride_count"] = _ride_total(rides)
+        # Sorted ride filenames, one entry per traversal; the export maps them
+        # to ride indices, and repeats survive as repeats so the page's count
+        # is passes rather than distinct rides.
+        f["properties"]["rides"] = sorted(r for r, n in rides.items() for _ in range(n))
         out.append(f)
 
     print(
