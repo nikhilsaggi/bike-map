@@ -219,16 +219,103 @@ def test_oriented_chunks_reverses_chunk_order_too():
     assert flipped[1][edge_speed._REV] == 1
 
 
+# -- traversal counts --------------------------------------------------------
+# The map's frequency is passes, not rides, and everything below is about the
+# one thing that must not happen: inventing a traversal the rider never made.
+
+RIDE = "2024-06-19_12-00-00_-0400.csv"
+
+
+def _traversals(st, key=EDGE, ride=RIDE):
+    return edge_speed.ride_traversals(st, key, ride)
+
+
+def test_single_pass_counts_once(tmp_path, monkeypatch):
+    rows = [(10 * i, 0, 2 * i) for i in range(11)]
+    st = _run(tmp_path, rows, monkeypatch)
+    assert _traversals(st) == 1
+    # Ones are not stored: absence is what the floor reads.
+    assert st["edge_traversals"] == {}
+
+
+def test_out_and_back_counts_twice(tmp_path, monkeypatch):
+    """The turnaround _split_monotonic finds is a second traversal."""
+    out = [(10 * i, 0, 2 * i) for i in range(11)]
+    back = [(100 - 10 * i, 0, 22 + 2 * i) for i in range(1, 11)]
+    st = _run(tmp_path, out + back, monkeypatch)
+    assert _traversals(st) == 2
+
+
+def test_second_lap_counts_twice(tmp_path, monkeypatch):
+    """Leaving the edge and coming back the same way is two traversals."""
+    lap1 = [(10 * i, 0, 2 * i) for i in range(11)]
+    away = [(200, 500, 40), (300, 500, 60)]  # off-edge, beyond SPEED_SNAP_M
+    lap2 = [(10 * i, 0, 100 + 2 * i) for i in range(11)]
+    st = _run(tmp_path, lap1 + away + lap2, monkeypatch)
+    assert _traversals(st) == 2
+
+
+def test_stop_mid_edge_stays_one_traversal(tmp_path, monkeypatch):
+    """_runs cuts at a recording gap for speed's sake; counting must not.
+
+    A rider who stops for two minutes halfway down a block rode that block
+    once.  The resumed pass continues from where the first stopped, which is
+    what tells it apart from a second lap re-entering at the far end.
+    """
+    before = [(10 * i, 0, 2 * i) for i in range(5)]  # 0 -> 40 m
+    after = [(40 + 10 * i, 0, 128 + 2 * i) for i in range(7)]  # 120 s gap, 40 -> 100 m
+    st = _run(tmp_path, before + after, monkeypatch)
+    assert st["edge_speed"][EDGE]["c"][0][edge_speed._FWD + 3] == 2  # speed still splits
+    assert _traversals(st) == 1
+
+
+def test_gps_wobble_is_not_a_second_traversal(tmp_path, monkeypatch):
+    """A backtrack shorter than SPEED_REVERSAL_M is noise, not a turnaround."""
+    xs = [0, 10, 20, 14, 30, 40, 50, 45, 60, 70, 80, 90, 100]
+    rows = [(x, 0, 2 * i) for i, x in enumerate(xs)]
+    st = _run(tmp_path, rows, monkeypatch)
+    assert _traversals(st) == 1
+
+
+def test_unmeasurable_ride_still_counts_once(tmp_path, monkeypatch):
+    """The floor: measurement can raise a count, never take an edge off the map."""
+    far = {EDGE: [lonlat(0, 500), lonlat(100, 500)]}
+    rows = [(10 * i, 0, 2 * i) for i in range(11)]
+    st = _run(tmp_path, rows, monkeypatch, geom=far)
+    assert st["edge_traversals"] == {}
+    assert _traversals(st) == 1
+
+
+def test_traversal_counts_total_over_rides():
+    st = {
+        "edge_rides": {EDGE: ["a.csv", "b.csv"], (3, 4): ["a.csv"]},
+        "edge_traversals": {EDGE: {"a.csv": 3}},
+    }
+    assert edge_speed.traversal_counts(st) == {EDGE: 4, (3, 4): 1}
+
+
+def test_traversal_counts_ignore_a_repeated_ride_id():
+    """Multiplicity comes from measurement, never from how state was written."""
+    st = {"edge_rides": {EDGE: ["a.csv", "a.csv"]}, "edge_traversals": {}}
+    assert edge_speed.traversal_counts(st) == {EDGE: 1}
+
+
 # -- version / format guards -------------------------------------------------
 
 
 def test_version_bump_discards_old_records(tmp_path, monkeypatch):
-    rows = [(10 * i, 0, 2 * i) for i in range(11)]
-    st = _run(tmp_path, rows, monkeypatch)
+    """One lever recomputes both outputs of the pass detector."""
+    out = [(10 * i, 0, 2 * i) for i in range(11)]
+    back = [(100 - 10 * i, 0, 22 + 2 * i) for i in range(1, 11)]
+    st = _run(tmp_path, out + back, monkeypatch)
     assert st["edge_speed"]
+    assert st["edge_traversals"]
     monkeypatch.setattr(config, "SPEED_VERSION", config.SPEED_VERSION + 1)
+    st["processed_files"] = set()  # nothing to re-measure, so the reset shows
     edge_speed._backfill_edge_speeds(st, GEOM)
     assert st["speed_version"] == config.SPEED_VERSION
+    assert st["edge_speed"] == {}
+    assert st["edge_traversals"] == {}
 
 
 def test_malformed_records_are_discarded():
@@ -374,22 +461,25 @@ def test_summary_is_none_without_data():
 
 
 def test_speed_settings_are_not_in_the_processing_config(monkeypatch):
-    """Speed must never be able to trigger a full rematch."""
+    """Speed and traversal counts must never be able to trigger a rematch."""
     before = cache._config_hash()
     for name, value in [
         ("SPEED_VERSION", 99),
         ("SPEED_CHUNK_M", 42.0),
         ("SPEED_CORRIDOR_MIN_M", 7.0),
         ("SPEED_SPLIT_PASSES", 9),
+        ("TRAVERSAL_RESUME_M", 7.0),
     ]:
         monkeypatch.setattr(config, name, value)
     assert cache._config_hash() == before
-    assert not [k for k in cache._processing_config() if "speed" in k.lower()]
+    keys = cache._processing_config()
+    assert not [k for k in keys if "speed" in k.lower() or "traversal" in k.lower()]
 
 
 def test_empty_state_carries_speed_keys():
     st = cache._empty_state()
     assert st["edge_speed"] == {}
+    assert st["edge_traversals"] == {}
     assert st["speed_rides"] == set()
     assert st["speed_version"] == config.SPEED_VERSION
 

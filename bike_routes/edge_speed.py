@@ -1,10 +1,27 @@
-"""Direction-split per-edge traversal speed, backfilled from raw GPS timestamps.
+"""Per-edge traversal passes, backfilled from raw GPS timestamps.
 
 The matching pipeline throws timestamps away (gps.py reads only lon/lat and
 resamples by distance), so speed is recovered here in a separate pass that
 never re-runs the matcher: for each processed ride we already know which
 edges it used (state["edge_rides"]), so the raw trace only has to be
 projected onto that ride's own ~58 edges rather than the whole network.
+
+Detecting passes gives two things: direction-split speed (state["edge_speed"],
+a stats-panel ranking) and how many times each ride actually traversed each
+edge (state["edge_traversals"], which drives the map's frequency colouring).
+
+TRAVERSAL COUNTS
+----------------
+The matcher cannot answer "how many times": its edge list collapses
+consecutive repeats and its non-consecutive repeats cannot be told apart from
+lattice oscillation at an intersection.  Passes can, because they are derived
+from the raw fixes -- _split_monotonic separates a real turnaround from GPS
+wobble, and _assign's hysteresis stops a trace flapping between a bike lane
+and its roadway.  Counting differs from speed in one place: _runs cuts a run
+at a recording gap (right for speed, since a red light is not riding time),
+so counting re-joins same-direction passes that resume where the last one
+stopped (config.TRAVERSAL_RESUME_M).  Counts are floored at 1 per ride
+downstream, so a ride whose passes are all rejected still draws its edges.
 
 CHUNKING
 --------
@@ -322,13 +339,84 @@ def _split_monotonic(along: np.ndarray, i: int, j: int, tol: float) -> list[tupl
     return out
 
 
+def _pass_dir(along: np.ndarray, i: int, j: int) -> int:
+    """Return +1 when a pass runs along the stored vertex order, -1 when against."""
+    return 1 if along[j - 1] > along[i] else -1
+
+
+def _merge_resumed(
+    passes: list[tuple[int, int, int]], along: np.ndarray
+) -> list[tuple[int, int, int]]:
+    """Re-join passes that a recording gap split mid-traversal.
+
+    _runs cuts at config.SPEED_MAX_FIX_GAP_S so a red light or a bodega stop
+    does not land in the speed average, but for counting, a block ridden with
+    a stop in the middle is still one traversal.  Two passes are the same
+    traversal when they are adjacent in time on the same edge, run the same
+    way along it, and the second resumes within config.TRAVERSAL_RESUME_M of
+    where the first stopped.  A second lap re-enters from the far end instead,
+    and a turnaround (which _split_monotonic already separated) reverses
+    direction, so neither is absorbed here.
+
+    Returns [(slot, start_index, stop_index)] with stop exclusive, spanning
+    the whole traversal -- so the caller measures its full extent rather than
+    the leading scrap the gap left behind.
+    """
+    out: list[tuple[int, int, int]] = []
+    for s, i, j in passes:
+        if out:
+            ps, pi, pj = out[-1]
+            if (
+                ps == s
+                and _pass_dir(along, pi, pj) == _pass_dir(along, i, j)
+                and abs(along[i] - along[pj - 1]) <= config.TRAVERSAL_RESUME_M
+            ):
+                out[-1] = (ps, pi, j)
+                continue
+        out.append((s, i, j))
+    return out
+
+
+def _count_traversals(
+    passes: list[tuple[int, int, int]],
+    along: np.ndarray,
+    times: np.ndarray,
+    slot_keys: list[tuple[int, int]],
+    slot_len: list[float],
+) -> dict[tuple[int, int], int]:
+    """Count how many times this ride traversed each edge.
+
+    Same admission rules as the speed fold -- a pass covering only a few
+    metres of an edge is the trace clipping a corner, and an implausibly fast
+    one is a GPS jump -- applied to whole traversals rather than to the
+    fragments a recording gap left.
+    """
+    counts: dict[tuple[int, int], int] = {}
+    for s, i, j in _merge_resumed(passes, along):
+        dist = abs(along[j - 1] - along[i])
+        dt = times[j - 1] - times[i]
+        if dt <= 0 or dist <= 0:
+            continue
+        if 3.6 * dist / dt > config.SPEED_MAX_KMH:
+            continue
+        if dist < min(config.SPEED_MIN_PASS_M, 0.5 * slot_len[s]):
+            continue
+        key = slot_keys[s]
+        counts[key] = counts.get(key, 0) + 1
+    return counts
+
+
 def _fold_ride(
     state: dict[str, Any],
     edge_geom: dict[tuple[int, int], list[tuple[float, float]]],
     keys: list[tuple[int, int]],
     path: Path,
 ) -> int:
-    """Measure one ride's edge traversals into state["edge_speed"]. Returns runs folded."""
+    """Measure one ride's edge passes into state. Returns runs folded.
+
+    Writes speed into state["edge_speed"] and, for edges this ride crossed
+    more than once, its traversal count into state["edge_traversals"].
+    """
     track = _load_ride_track(path)
     if track is None:
         return 0
@@ -392,6 +480,14 @@ def _fold_ride(
         for ci in touched:
             chunks[ci][base + 3] += 1
         folded += 1
+
+    # Traversal counts come from the same passes, re-joined across recording
+    # gaps.  Only repeats are stored: a missing entry means one, which is also
+    # what an unmeasurable ride falls back to.
+    edge_traversals = state["edge_traversals"]
+    for key, n in _count_traversals(passes, along, times, slot_keys, slot_len).items():
+        if n >= 2:
+            edge_traversals.setdefault(key, {})[path.name] = n
     return folded
 
 
@@ -429,9 +525,11 @@ def _backfill_edge_speeds(
         state.get("edge_speed")
     ):
         state["edge_speed"] = {}
+        state["edge_traversals"] = {}
         state["speed_rides"] = set()
         state["speed_version"] = config.SPEED_VERSION
     state.setdefault("edge_speed", {})
+    state.setdefault("edge_traversals", {})
     done: set[str] = state.setdefault("speed_rides", set())
 
     pending = sorted(state["processed_files"] - done)
@@ -459,6 +557,31 @@ def _backfill_edge_speeds(
             print(f"    ... measured {n:,}/{len(pending):,} rides")
             _save_state(state)
     return n
+
+
+def ride_traversals(state: dict[str, Any], key: tuple[int, int], ride: str) -> int:
+    """How many times one ride traversed one edge; at least 1.
+
+    The floor is what makes this change additive: the matcher put the ride on
+    the edge, so it is drawn even when no pass could be measured (a ride with
+    unparsable timestamps, a trace further than config.SPEED_SNAP_M from the
+    geometry, a pass too short to admit).  Measurement can only ever raise the
+    count above 1, never take an edge off the map.
+    """
+    return max(1, state.get("edge_traversals", {}).get(key, {}).get(ride, 1))
+
+
+def traversal_counts(state: dict[str, Any]) -> dict[tuple[int, int], int]:
+    """Total traversals per edge across every ride, for the PNG frequency map.
+
+    state["edge_counts"] stays what it has always been -- rides, not passes --
+    because export.py's coverage numerator only asks whether an edge was ever
+    ridden, and it is written during matching, which never sees timestamps.
+    """
+    out: dict[tuple[int, int], int] = {}
+    for key, rides in state.get("edge_rides", {}).items():
+        out[key] = sum(ride_traversals(state, key, r) for r in set(rides))
+    return out
 
 
 def _chunk_speed_kmh(chunk: list[float], base: int) -> float | None:

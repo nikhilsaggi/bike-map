@@ -64,9 +64,10 @@ def _empty_state() -> dict[str, Any]:
         "edge_rides": {},
         "graph_bbox": None,
         # Backfilled by edge_speed.py, deliberately outside _processing_config():
-        # speed is derived from timestamps the matcher never saw, so changing it
-        # must never invalidate matches.  speed_version is its own lever.
+        # both are derived from timestamps the matcher never saw, so changing
+        # them must never invalidate matches.  speed_version is their lever.
         "edge_speed": {},
+        "edge_traversals": {},
         "speed_rides": set(),
         "speed_version": config.SPEED_VERSION,
     }

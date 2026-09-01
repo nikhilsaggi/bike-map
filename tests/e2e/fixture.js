@@ -7,13 +7,15 @@
 // pixel position computable from lat/lng (see edgePoint in helpers.js).
 
 export const CENTER = { lat: 40.735, lng: -73.96 }; // map initial view
+// A feature's rides array holds one entry per traversal, so a ride that came
+// back the same way appears twice and the count the page draws is passes.
 export const EDGES = {
-  // rides [0,1,2,3] -> count 4 (the hottest street, through screen center)
+  // rides [0,1,2,3] -> 4 passes (the hottest street, through screen center)
   center: { lat: 40.735, rides: [0, 1, 2, 3] },
-  // rides [0,1] -> 2023 only
+  // rides [0,1] -> 2 passes, 2023 only
   north: { lat: 40.7395, rides: [0, 1] },
-  // ride [3] -> 2024 only
-  south: { lat: 40.7305, rides: [3] },
+  // ride 3 twice (a round trip) -> 2 passes across 1 ride, 2024 only
+  south: { lat: 40.7305, rides: [3, 3] },
 };
 
 // Direction-split speed corridors, ranked by the pipeline. Speeds are km/h

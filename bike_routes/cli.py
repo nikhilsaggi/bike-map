@@ -17,7 +17,7 @@ from .cache import (
     _save_route_cache,
     _save_state,
 )
-from .edge_speed import _backfill_edge_speeds
+from .edge_speed import _backfill_edge_speeds, traversal_counts
 from .export import _export_geojson
 from .gps import _load_and_resample
 from .graph import _load_graph
@@ -57,12 +57,22 @@ def _apply_results(
     Application order is free: edge_counts accumulates by addition, and
     edge_rides is only ever read via min() and set() in export.py, so folding
     results chunk by chunk is equivalent to one globally sorted pass.
+
+    Segments are unioned per file first.  A file split at a GPS gap arrives as
+    several entries (_ready_results holds them until all of them land), and
+    counting each separately would give an edge crossing the gap two visits
+    for one ride, and list that ride twice in edge_rides.  How often a ride
+    crossed an edge is measured from timestamps in edge_speed.py, not counted
+    here -- these are rides.
     """
     edge_rides = state.setdefault("edge_rides", {})
     total_skipped = 0
+    by_file: dict[str, set[tuple[int, int]]] = {}
     for fname, edges, skipped in sorted(batch):
         total_skipped += skipped
-        for edge in set(edges):
+        by_file.setdefault(fname, set()).update(edges)
+    for fname, edges_seen in by_file.items():
+        for edge in edges_seen:
             state["edge_counts"][edge] = state["edge_counts"].get(edge, 0) + 1
             edge_rides.setdefault(edge, []).append(fname)
         state["processed_files"].add(fname)
@@ -108,7 +118,7 @@ def _finalize(
     if n_speed:
         print(f"Measured edge speeds for {n_speed:,} ride(s)")
         _save_state(state)
-    _render(edge_geom, state, skip_png=skip_png)
+    _render(edge_geom, state, counts=traversal_counts(state), skip_png=skip_png)
     _export_geojson(edge_geom, state, edge_hw, edge_name)
 
 
