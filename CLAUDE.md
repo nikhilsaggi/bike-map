@@ -98,9 +98,9 @@ reads everything from `rides.geojson.gz` top-level `properties`.
 - Every generated cache lives in `config.CACHE_DIR` (`cache/`); each writer
   mkdirs its own parent, so a monkeypatched path never creates a stray dir.
   `cache._migrate_legacy_caches()` moves pre-`cache/` files in from the repo
-  root on startup -- a rename, because the graph cache is ~260 MB and only
-  exists on the owner's machine, and because `shutil.move` keeps the mtimes
-  the check below depends on.
+  root on startup, and must keep using `shutil.move`: it is a rename rather
+  than a copy of a 260 MB graph, and it preserves the mtimes the check below
+  depends on.
 - Caches are mtime/version-invalidated: cache/hmm_map_cache.pkl must be newer
   than cache/osm_graph_cache.pkl; graph cache is bound to osmnx/networkx
   versions.
@@ -108,135 +108,97 @@ reads everything from `rides.geojson.gz` top-level `properties`.
 ### Edge passes (`edge_speed.py`)
 
 One pass detector, two outputs: direction-split speed, and per-ride traversal
-counts. Both are backfilled from the ride CSVs' timestamps.
+counts. Both are backfilled from the ride CSVs' timestamps, which the matcher
+never saw. Full derivation of every rule below, with the numbers that
+produced it, is in [findings/traversal-counting.md](findings/traversal-counting.md).
 
 **"Passes" and "traversals" are the same thing** -- the state keys and this
 file say traversals, `docs/index.html` and the README say passes, because
 that is what reads clearly in a tooltip. Neither is a ride count.
 
-**Speed** is a **stats-panel ranking, not a map layer**: measured across the
-whole network, only ~6% of drawn km ever has enough passes in both directions
-to compare them, so colouring features by it produced a 94%-empty map. The
-export ships a top-10 corridor list in `properties.speed` instead
-(+0.5 KB); features carry no speed key and `merge.py` never sees it.
+**Speed is a stats-panel ranking, not a map layer.** Only ~6% of drawn km has
+enough passes in both directions to compare them, so a speed layer was
+94% empty; the export ships a top-10 corridor list in `properties.speed`
+instead. Features carry no speed key and `merge.py` never sees it
+([why](findings/direction-split-speed.md)).
 
 - `state["edge_speed"]` / `state["edge_traversals"]` / `state["speed_rides"]`
-  are deliberately **outside**
-  `_processing_config()`: both come from timestamps the matcher never saw,
-  so changing them must never trigger a rematch of 1380 rides. Their
-  invalidation lever is `config.SPEED_VERSION` -- bump it and the next run
-  discards and recomputes (`_records_well_formed` is a fail-closed shape
-  guard for records that predate a layout change). Editing the algorithm
+  are deliberately **outside** `_processing_config()`, so changing them never
+  triggers a rematch. Their invalidation lever is `config.SPEED_VERSION` --
+  bump it and the next run discards and recomputes. Editing the algorithm
   without bumping it leaves stale records in place, silently.
+  (`_records_well_formed` is a fail-closed shape guard for records that
+  predate a layout change.)
 - **Forward means "along the stored vertex order of `edge_geom[key]`", not
   `min(u,v)` -> `max(u,v)`.** `render.py` builds `edge_geom[canon]` from
   whichever *directed* edge won the shortest-edge tie-break, so ~9.5% of
-  geometries run max->min. Anchoring direction to the node key would invert
-  a scattered subset. `_oriented_chunks` re-expresses a record against the
-  current geometry, so a rebuilt render cache cannot silently flip it.
+  geometries run max->min; anchoring to the node key would invert a scattered
+  subset. `_oriented_chunks` re-expresses a record against the current
+  geometry, so a rebuilt render cache cannot silently flip it.
 - Records are per-chunk (~`SPEED_CHUNK_M`), not per-edge: the Manhattan
-  Bridge bike path is a single 2163 m edge whose climb cancels its descent
-  (10.37 vs 10.23 mph -- no signal), and the street grid's median 63 m edge
-  stays one chunk regardless.
-- Each direction bucket is `[dist, time, moving, n]`, so it combines by
+  Bridge bike path is a single 2163 m edge whose climb cancels its descent.
+  Each direction bucket is `[dist, time, moving, n]`, so it combines by
   addition and survives chunked folding like `edge_counts`.
 - **`_top_corridors` splits a corridor wherever the faster direction flips**,
-  and that is the point rather than an implementation detail: a bridge's
-  entire signal is the crest reversal, so it must be reported as its two
-  descents. Runs are disjoint by construction, so one stretch can never
-  appear twice; two rows for one street are always different stretches.
+  and that is the point, not an implementation detail: a bridge's entire
+  signal is the crest reversal, so it must be reported as its two descents.
+  Runs are disjoint, so two rows for one street are always different
+  stretches.
 - Street names come from the render cache (`edge_name`, `RENDER_CACHE_FORMAT`
   = `hw-name-v1`). Bumping that format costs one graph load to rebuild; it
   does not touch the config hash.
-- **Regression oracle for any change here:** the Manhattan Bridge
-  (`edge_geom[(1371803831, 7480410407)]`) must appear twice in the ranking,
-  SE and NW, ~5 mph each. Collapsing to one row means the sign-change split
-  broke; a single direction means orientation broke. A unit test on a
-  synthetic grid cannot catch either -- grid orientation is uniform.
 
 #### Traversal counts
 
-`state["edge_traversals"][key][ride]` is how many times one ride crossed one
-edge, and it is what the map colours by. **Never derive this from the
-matcher's edge list**: it collapses consecutive repeats, and its
-non-consecutive repeats cannot be told apart from lattice oscillation at an
-intersection (`A->B->C->B->A` emits `(A,B)` twice for one pass). Passes can,
-because they come from the raw fixes.
+`state["edge_traversals"][key][ride]` is `[forward, reverse]` -- how many
+times one ride crossed one edge, in the stored vertex order of
+`edge_geom[key]`. It is what the map colours by.
 
-- `state["edge_traversals"][key][ride]` is `[forward, reverse]`, forward
-  being the stored vertex order of `edge_geom[key]` -- the same anchor speed
-  uses. **Every measured pass is stored, singles included**, because
-  `merge.py` combines a corridor per direction and one pass on each of two
-  members is the out-and-back it most needs to see. Storing only repeats (as
-  the first version did) left a single pass reading `(0, 0)`, and the
-  direction-aware merge could never fire.
+- **Never derive this from the matcher's edge list.** It collapses
+  consecutive repeats, and its non-consecutive repeats cannot be told apart
+  from lattice oscillation at an intersection. The raw fixes can.
+- **Every measured pass is stored, singles included**, because `merge.py`
+  combines a corridor per direction and one pass on each of two members is
+  the out-and-back it most needs to see.
 - **A missing entry means nothing was measured, which is not the same as one
   pass.** Readers go through `ride_traversals()` (total, floored at 1) or
-  `ride_pass_dirs()` (the raw pair, `(0, 0)` when unmeasured). So a ride the
-  detector could not measure -- unparsable timestamps, a trace beyond
-  `SPEED_SNAP_M`, a pass under `SPEED_MIN_PASS_M` -- still draws its edges
-  exactly as before. Measurement can raise a count; it can never take an
-  edge off the map. The floor lives in `merge._ride_passes`, per corridor
-  rather than per member: an unmeasured pass has no direction, and giving it
-  one would let two members whose geometries happen to run opposite ways sum
-  to two out of nothing. Never reach that floor through a `dict.get`
-  default -- an absent ride must read 0, or an empty neighbour set appears
-  to cover everything and `_drop_redundant_rings` drops every ring.
+  `ride_pass_dirs()` (the raw pair, `(0, 0)` when unmeasured), so a ride the
+  detector could not measure still draws its edges exactly as before:
+  measurement can raise a count, never take an edge off the map. The floor
+  lives in `merge._ride_passes`, per corridor rather than per member -- an
+  unmeasured pass has no direction, and giving it one would let two members
+  whose geometries run opposite ways sum to two out of nothing. Never reach
+  that floor through a `dict.get` default: an absent ride must read 0, or an
+  empty neighbour set appears to cover everything and
+  `_drop_redundant_rings` drops every ring.
 - **A crossing arrives in fragments, and neither rule below is optional.**
-  `_runs` ends a run at `SPEED_MAX_FIX_GAP_S` (right for speed -- a red light
-  is not riding time) and again whenever the trace snaps to a neighbouring
-  way, so one crossing of the 2.3 km Williamsburg Bridge path landed as 23
-  fragments. `_merge_resumed` re-joins them by **progression**: a fragment
-  that resumes at or ahead of where the last stopped, in that pass's own
-  direction of travel, is the same traversal, with `TRAVERSAL_RESUME_M` of
-  slack on the backward side for a stop letting the trace drift. A second lap
-  re-enters from the far end -- far behind, never ahead -- and a turnaround
-  reverses direction, so neither is absorbed. Merging can only lower a count,
-  never raise one.
+  `_runs` ends a run at `SPEED_MAX_FIX_GAP_S` and again whenever the trace
+  snaps to a neighbouring way. `_merge_resumed` rejoins the pieces by
+  progression -- resuming at or ahead of where the last stopped, in that
+  pass's own direction, with `TRAVERSAL_RESUME_M` of backward slack -- so a
+  second lap (re-enters from the far end) and a turnaround (reverses) are not
+  absorbed. Merging can only lower a count.
 - **`TRAVERSAL_MIN_COVER`: a traversal has to sweep the edge, not clip it.**
-  Speed will happily average any stretch it can measure, so its
-  `SPEED_MIN_PASS_M` floor is absolute; counting needs a fraction, or a 25 m
-  wobble at one end of a 2.3 km bridge outvotes the ride that crossed it.
+  Speed's `SPEED_MIN_PASS_M` is an absolute floor; counting needs a fraction,
+  or a wobble at one end of a long edge outvotes the ride that crossed it.
   Under the bar the pass is ignored and the floor puts the edge back at 1.
-  Both rules were added after the first version shipped 10 traversals for a
-  ride that crossed that bridge twice -- the audit's top-20 list is what
-  caught it, and the fix took the whole network's inflation from 1.013x to
-  1.009x.
 - **`merge.py` combines a corridor's members by max *within* a direction and
-  sum *across* the two** (`_merge_ride_counts`). The two mistakes available
-  here differ in direction and nothing else: a pass drifting from a street to
-  its bike lane is one direction recorded twice, so max holds it at one; an
-  out-and-back riding the lane north and the street south is each direction
-  recorded once, so the sum is two. With every pass running one way this is
-  exactly the plain max rule that shipped first -- which read a 99%-retraced
-  ride as 16% repeated. Either feature's stored vertex order is arbitrary
-  (~9.5% run max->min), so every merge site decides a flip with `_opposed`
-  before taking the max; without it one physical pass on two
-  oppositely-stored members reads as an out-and-back.
-  `tools/traversal_audit.py --merge` runs the whole merge under all three
-  rules and reports how far apart they land.
+  sum *across* the two** (`_merge_ride_counts`): a pass drifting from a
+  street to its bike lane is one direction twice, so max holds it at one; an
+  out-and-back on the two is each direction once, so the sum is two. Stored
+  vertex order is arbitrary, so every merge site resolves a flip with
+  `_opposed` first -- without it one physical pass on two oppositely-stored
+  members reads as an out-and-back.
 - The export ships `properties.rides` with one entry per traversal, so the
-  page's count is array length and needs no new field. Equal filenames map to
-  equal indices, so the array stays sorted for `hasRide`'s binary search.
+  page's count is array length. Equal filenames map to equal indices, so the
+  array stays sorted for `hasRide`'s binary search.
 - **Before changing any threshold here, run `tools/traversal_audit.py`** on
-  the real rides: it prints the inflation ratio (a few percent over 1.0 is
-  what real riding looks like) and the highest-multiplicity (ride, edge)
-  pairs to check against the trace. A synthetic grid cannot tell you whether
-  a threshold over-fires on real GPS. Read the top-20 list as the audit
-  intends: **a long edge near the top is the alarm.** Genuine repeats are
-  short -- a block ridden three times, a park lap -- because sweeping a 2 km
-  edge four times is a rare thing to do and fragmenting one is not. Check the
-  suspects against the raw CSV before believing them; the detector measures
-  the ride's own edge set, so reproduce that (`state["edge_rides"]`) rather
-  than indexing the whole graph, or the fragmentation changes under you.
-- **Measuring an under-count needs a corridor-aware oracle.** "Fraction of a
-  ride's fixes within 25 m of an earlier part of the same ride" finds the
-  retraced rides, but as a per-corridor truth it overstates: two ways of one
-  street are ~15 m apart, so a leg on one counts as a visit to the other.
-  Before calling a corridor under-counted, check whether a *different* drawn
-  feature within 25 m carries the same ride -- if so the second leg is on the
-  map already, as its own way ridden once, and nothing is missing. Every
-  residual on the five most-retraced rides turned out to be exactly that.
+  the real rides, and read its top-20 list as the audit intends: a long edge
+  near the top is the alarm, not a discovery. A synthetic grid cannot tell
+  you whether a threshold over-fires on real GPS, and it cannot catch a
+  direction bug either -- the oracle for that is the Manhattan Bridge
+  appearing twice in the speed ranking, SE and NW.
+
 
 ## Performance notes
 
@@ -264,12 +226,10 @@ because they come from the raw fixes.
   It is Python, not a shell script, because the owner's machine is Windows --
   a committed `.sh` gets CRLF endings on checkout there and bash refuses it.
 - Ride ingest is Garmin Connect (`bike_routes/ingest/garmin_sync.py`),
-  authenticated from a
-  token in `~/.garminconnect` (override with `GARMINTOKENS`). Keep it
-  local: Garmin's login is behind Cloudflare TLS fingerprinting that blocks
-  datacenter IPs, and the ride CSVs plus the ~260 MB graph cache only exist
-  on the owner's machine. The previous Dropbox-based `update-map.yml` failed
-  all 8 of its scheduled runs and was removed rather than fixed.
+  authenticated from a token in `~/.garminconnect` (override with
+  `GARMINTOKENS`). It stays local -- the ride CSVs and the graph cache only
+  exist on the owner's machine, and Garmin's login blocks datacenter IPs
+  ([details](findings/garmin-access.md)).
 - **`rides/*.csv` on that machine is the only copy of the 2021-2025 rides**
   (gitignored, never uploaded anywhere). Only `docs/rides.geojson.gz` is
   committed, and it holds edge counts, not traces -- losing `rides/` loses

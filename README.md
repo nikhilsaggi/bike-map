@@ -202,6 +202,8 @@ part of it; `findings/` holds what they found:
   `tools/weather_correlation.py`, joining rides against Open-Meteo history
 - [Garmin access](findings/garmin-access.md) — how ride ingest authenticates
   and how to unstick it
+- [Traversal counting](findings/traversal-counting.md) — how a pass is
+  detected from raw fixes, and why a corridor's members combine the way they do
 
 `tools/hmm_matcher_eval.py` compares the two matchers on real rides, and
 `tools/traversal_audit.py` checks pass counting against the raw traces.
