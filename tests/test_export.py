@@ -66,7 +66,7 @@ def test_export_repeats_a_ride_index_per_traversal(tmp_path, monkeypatch):
         "processed_files": {R1, R2},
         "edge_counts": {(1, 2): 2},
         "edge_rides": {(1, 2): [R1, R2]},
-        "edge_traversals": {(1, 2): {R1: 3}},
+        "edge_traversals": {(1, 2): {R1: [2, 1]}},
         "ride_stats": {},
     }
 

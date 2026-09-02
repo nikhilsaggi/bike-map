@@ -7,32 +7,93 @@ from typing import Any
 
 from . import config
 
+# A per-ride traversal count is a [forward, reverse] pair, oriented to its own
+# feature's stored vertex order.  Pairs, not totals, because merging needs
+# direction (see _merge_ride_counts).
+Pair = tuple[int, int]
 
-def _merge_ride_counts(dst: dict[str, int], src: dict[str, int]) -> None:
-    """Fold src's per-ride traversal counts into dst, keeping the larger.
 
-    Max, not sum, because the features being merged here are parallel
-    representations of one physical corridor -- a street and the bike lane
-    beside it, 20 m apart.  A single pass that drifts from one to the other
-    would sum to two traversals of a corridor it crossed once, which is
-    exactly the over-count this map must not invent.  The cost is the
-    opposite case: an out-and-back that rides the lane one way and the street
-    the other reads as one.  tools/traversal_audit.py measures how much the
-    two rules actually disagree on real rides.
+def _chord(coords: list) -> tuple[float, float]:
+    """Metric first-to-last vector of a line."""
+    return (
+        (coords[-1][0] - coords[0][0]) * config.M_PER_LON,
+        (coords[-1][1] - coords[0][1]) * config.M_PER_LAT,
+    )
+
+
+def _opposed(a: list, b: list) -> bool:
+    """Report whether two aligned lines are stored in opposite vertex order.
+
+    Merging only ever compares near-parallel members, so the sign of the
+    chord dot product is the whole question.  A ring's chord is ~zero and its
+    sign meaningless; the dot product is then ~0, which reads as not opposed
+    -- the conservative answer, since a wrong flip could only ever raise a
+    count.
     """
-    for r, n in src.items():
-        if n > dst.get(r, 0):
-            dst[r] = n
+    (ax, ay), (bx, by) = _chord(a), _chord(b)
+    return ax * bx + ay * by < 0
 
 
-def _ride_total(counts: dict[str, int]) -> int:
+def _merge_ride_counts(dst: dict[str, Pair], src: dict[str, Pair], *, flip: bool) -> None:
+    """Fold src's per-ride passes into dst: max per direction, sum across them.
+
+    The features merged here are parallel representations of one physical
+    corridor -- a street and the bike lane beside it, 20 m apart.  Plain sum
+    would turn a single pass drifting from one to the other into two
+    traversals of a corridor it crossed once, the over-count this map must
+    not invent.  Plain max fixed that but paid for it the other way: an
+    out-and-back riding the lane north and the street south read as one, and
+    on real rides that is the dominant error -- a 99%-retraced ride scored
+    16% of its edges as repeated.
+
+    Max *within* a direction and sum *across* the two settles both, because
+    the two mistakes differ in direction and nothing else.  Drift is one
+    direction recorded twice, so max keeps it at one.  An out-and-back is
+    each direction recorded once, so the sum is two.  With every pass running
+    one way this is exactly the old max rule.
+
+    flip re-expresses src against dst's vertex order; the caller decides it
+    with _opposed, since either feature's stored order is arbitrary.
+    """
+    for r, pair in src.items():
+        f, v = (pair[1], pair[0]) if flip else (pair[0], pair[1])
+        df, dv = dst.get(r, (0, 0))
+        dst[r] = (max(df, f), max(dv, v))
+
+
+def _ride_passes(pair: Pair) -> int:
+    """Return the passes one ride made along one feature; at least 1.
+
+    edge_speed leaves an unmeasured ride at (0, 0) so it cannot be attributed
+    to a direction.  The floor lands here instead, once per feature per ride,
+    which keeps the guarantee that measurement can raise a count but never
+    take an edge off the map.
+    """
+    return max(1, pair[0] + pair[1])
+
+
+def _ride_total(counts: dict[str, Pair]) -> int:
     """Total traversals a feature carries, across every ride."""
-    return sum(counts.values())
+    return sum(_ride_passes(p) for p in counts.values())
 
 
-def _covers(counts: dict[str, int], other: dict[str, int]) -> bool:
-    """Report whether other already accounts for every traversal in counts."""
-    return all(other.get(r, 0) >= n for r, n in counts.items())
+def _covers(counts: dict[str, Pair], other: dict[str, Pair]) -> bool:
+    """Report whether other already accounts for every traversal in counts.
+
+    A ride other has never seen contributes nothing -- _ride_passes' floor
+    applies to a ride that is present, so it must not be reached through a
+    default, or an empty other would appear to cover everything.
+    """
+    return all(
+        (_ride_passes(other[r]) if r in other else 0) >= _ride_passes(p) for r, p in counts.items()
+    )
+
+
+def _oriented(counts: dict[str, Pair], src_geom: list, dst_geom: list) -> dict[str, Pair]:
+    """Copy counts, re-expressed against dst_geom's vertex order."""
+    if not _opposed(src_geom, dst_geom):
+        return dict(counts)
+    return {r: (v, f) for r, (f, v) in counts.items()}
 
 
 def _sample_line(coords: list) -> list[tuple[float, float, float]]:
@@ -175,14 +236,19 @@ def _drop_redundant_rings(features: list[dict[str, Any]]) -> list[dict[str, Any]
             out.append(f)
             continue
         rides = f["properties"]["_rides"]
-        covered: dict[str, int] = {}
+        # Totals only: _covers compares floored per-ride passes, so which way
+        # round a neighbour stores its geometry cannot matter here.
+        covered: dict[str, Pair] = {}
         for x, y, _h in _sample_line(f["geometry"]["coordinates"]):
             gx, gy = int(x // config.RING_NEAR_M), int(y // config.RING_NEAR_M)
             for dx in (-1, 0, 1):
                 for dy in (-1, 0, 1):
                     for j, jx, jy, _lon, _lat in grid.get((gx + dx, gy + dy), ()):
                         if (jx - x) ** 2 + (jy - y) ** 2 <= near_sq:
-                            _merge_ride_counts(covered, others[j]["properties"]["_rides"])
+                            for r, pair in others[j]["properties"]["_rides"].items():
+                                n = _ride_passes(pair)
+                                if n > (_ride_passes(covered[r]) if r in covered else 0):
+                                    covered[r] = (n, 0)
             if _covers(rides, covered):
                 break
         if _covers(rides, covered):
@@ -430,9 +496,13 @@ def _merge_parallel_features(
 
     merged: list[dict[str, Any]] = []
     for members in clusters.values():
-        rides: dict[str, int] = {}
+        # Accumulate in the first member's frame, then re-express the total
+        # for whichever members are kept -- their vertex orders are unrelated.
+        ref = features[members[0]]["geometry"]["coordinates"]
+        rides: dict[str, Pair] = {}
         for i in members:
-            _merge_ride_counts(rides, features[i]["properties"]["_rides"])
+            geom = features[i]["geometry"]["coordinates"]
+            _merge_ride_counts(rides, features[i]["properties"]["_rides"], flip=_opposed(ref, geom))
         alts: list[list] = []
         if len(members) == 1:
             keep = members
@@ -512,7 +582,7 @@ def _merge_parallel_features(
                     "coordinates": features[m]["geometry"]["coordinates"],
                 },
                 "properties": {
-                    "_rides": dict(rides),
+                    "_rides": _oriented(rides, ref, features[m]["geometry"]["coordinates"]),
                     "_alts": alts,
                     "_cluster": cluster_geoms,
                     "_name": cluster_name,
@@ -575,7 +645,13 @@ def _merge_parallel_features(
         active[i] = False
         n_absorbed += 1
         for j in receivers:
-            _merge_ride_counts(merged[j]["properties"]["_rides"], merged[i]["properties"]["_rides"])
+            _merge_ride_counts(
+                merged[j]["properties"]["_rides"],
+                merged[i]["properties"]["_rides"],
+                flip=_opposed(
+                    merged[j]["geometry"]["coordinates"], merged[i]["geometry"]["coordinates"]
+                ),
+            )
             if not merged[j]["properties"].get("_name"):
                 merged[j]["properties"]["_name"] = merged[i]["properties"].get("_name")
 
@@ -615,7 +691,9 @@ def _merge_parallel_features(
         # Sorted ride filenames, one entry per traversal; the export maps them
         # to ride indices, and repeats survive as repeats so the page's count
         # is passes rather than distinct rides.
-        f["properties"]["rides"] = sorted(r for r, n in rides.items() for _ in range(n))
+        f["properties"]["rides"] = sorted(
+            r for r, pair in rides.items() for _ in range(_ride_passes(pair))
+        )
         out.append(f)
 
     print(

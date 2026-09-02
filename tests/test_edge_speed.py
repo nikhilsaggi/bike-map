@@ -234,8 +234,9 @@ def test_single_pass_counts_once(tmp_path, monkeypatch):
     rows = [(10 * i, 0, 2 * i) for i in range(11)]
     st = _run(tmp_path, rows, monkeypatch)
     assert _traversals(st) == 1
-    # Ones are not stored: absence is what the floor reads.
-    assert st["edge_traversals"] == {}
+    # Stored even though it is one, because merge.py needs its direction.
+    assert st["edge_traversals"] == {EDGE: {RIDE: [1, 0]}}
+    assert edge_speed.ride_pass_dirs(st, EDGE, RIDE) == (1, 0)
 
 
 def test_out_and_back_counts_twice(tmp_path, monkeypatch):
@@ -304,7 +305,7 @@ def test_a_fragmented_crossing_of_a_long_edge_counts_once(tmp_path, monkeypatch)
     ahead of where the last stopped, so the merged span sweeps the edge once.
     """
     st = _run(tmp_path, _fragmented_crossing(0), monkeypatch, geom=LONG)
-    assert st["edge_traversals"] == {}
+    assert st["edge_traversals"] == {EDGE: {RIDE: [1, 0]}}
     assert _traversals(st) == 1
 
 
@@ -347,7 +348,7 @@ def test_unmeasurable_ride_still_counts_once(tmp_path, monkeypatch):
 def test_traversal_counts_total_over_rides():
     st = {
         "edge_rides": {EDGE: ["a.csv", "b.csv"], (3, 4): ["a.csv"]},
-        "edge_traversals": {EDGE: {"a.csv": 3}},
+        "edge_traversals": {EDGE: {"a.csv": [2, 1]}},
     }
     assert edge_speed.traversal_counts(st) == {EDGE: 4, (3, 4): 1}
 

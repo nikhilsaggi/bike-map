@@ -112,7 +112,7 @@ RING_NEAR_M = 40.0  # rings must hug covering features within this distance
 # SPEED_VERSION discards edge_speed/edge_traversals/speed_rides and recomputes
 # both; it is the invalidation lever for this data, deliberately separate from
 # the config hash so an algorithm change here never triggers a full rematch.
-SPEED_VERSION = 4  # 4: traversal coverage rule (3: per-ride traversal counts)
+SPEED_VERSION = 6  # 6: single passes stored too, for merge (5: direction split)
 SPEED_SAMPLE_M = 5.0  # edge polyline densification for the projection index
 SPEED_SNAP_M = 25.0  # max GPS-to-edge distance for a fix to count as on-edge
 SPEED_HYSTERESIS = 1.5  # stay on the previous edge within this factor of the best
