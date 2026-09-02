@@ -259,3 +259,32 @@ because they come from the raw fixes.
   the history irrecoverably.
 - Personal data (`rides/*.csv` and everything in `cache/`) is gitignored --
   never commit ride files or force-add ignored paths.
+
+## Documentation
+
+`README.md` is for someone running the pipeline: what the map shows, how to
+install it, how to run it, what the knobs are, and where the outputs land.
+`findings/` is for the reasoning behind the numbers -- why a design was
+chosen, what an experiment showed, what broke and how it was diagnosed.
+Keeping those apart is the reason `findings/` exists; direction-split speed,
+weather correlation, and Garmin auth all lived in the README first and buried
+the instructions.
+
+- **A rationale longer than a paragraph belongs in `findings/`**, linked from
+  the README in one line. The exception is a rationale a reader needs in
+  order to *use* the thing correctly (why `MATCHER` defaults to `hmm`, why
+  `update.py` runs locally) -- that stays inline, trimmed.
+- **Changing a default in `config.py` means checking the README's config
+  table**, which lists literal values (`SPEED_VERSION` was stale at 2 for
+  four bumps). Same for `cli.py` flags, the `cache/` file list, and the
+  repository layout block. Prefer adding a row only for parameters a user
+  would plausibly change; the file itself is commented for the rest.
+- **The map counts passes, not rides** (see Edge passes above). Any README or
+  UI wording that says "ride count" or "ride frequency" for a drawn feature
+  is wrong -- an out-and-back is two passes on one ride.
+- Each README section should be answerable in one place: don't describe the
+  matcher in "How It Works" *and* "Map-Matching" with different words, which
+  is how the README ended up claiming the default matcher was heading-aware
+  snapping.
+- `docs/` is the published GitHub Pages site, not a documentation folder --
+  prose goes in `findings/`, never there.
