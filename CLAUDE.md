@@ -6,6 +6,8 @@ interactive Leaflet map (`docs/`, served via GitHub Pages) plus static PNGs.
 
 ## Commands
 
+- Dev install: `pip install . pytest 'ruff==0.16.3'` (what CI does; the same
+  pins live in `[dependency-groups] dev`)
 - Run pipeline: `python -m bike_routes` (flags: `--sample N`, `--rides FILE...`,
   `--no-png`, `--workers N`)
 - Tests: `pytest -q` (synthetic grid graphs only -- no network, no OSM data)
@@ -17,11 +19,20 @@ interactive Leaflet map (`docs/`, served via GitHub Pages) plus static PNGs.
   behavior changes, update/extend `tests/e2e/*.spec.js`.
 - Lint: `ruff check .` (CI enforces this; config is `select = ["ALL"]` with a
   curated ignore list in pyproject.toml -- keep new code clean rather than
-  adding ignores)
+  adding ignores). **Run the pinned 0.16.3**: `select = ["ALL"]` opts into
+  every rule ruff ships, so another version reports findings CI does not --
+  0.15.8 flags S310 on the Open-Meteo `urlopen` calls, 0.16.3 does not.
+  A lint error that CI is green on is a version mismatch, not a bug; check
+  `ruff --version` before touching the code.
 - Format: `ruff format .` -- run after every change; CI fails on
   unformatted code (`ruff format --check .`).
-- `ty check` runs but is not enforced; ~28 known diagnostics, mostly
-  Optional-narrowing in tests.
+- `ty check` runs but is not enforced; a few dozen known diagnostics (mostly
+  `not-subscriptable`, ~3/4 of them in tests). The count is not a gate --
+  don't chase it, and don't quote it here.
+- Analysis (real rides + caches, never the synthetic grids):
+  `python tools/traversal_audit.py` before any `TRAVERSAL_*`/`SPEED_*`
+  threshold change, `python tools/hmm_matcher_eval.py` before any matcher
+  change. Both read state; neither writes it.
 
 ## Architecture
 
@@ -33,23 +44,25 @@ interactive Leaflet map (`docs/`, served via GitHub Pages) plus static PNGs.
    (leuvenmapmatching Viterbi) is the default; the "heuristic" snap+route
    matcher is kept for comparison. Parallel matching via worker processes
    in `matching.py`.
-4. `cache.py` -- cache/state.pkl (processed files, edge counts), config-hash
-   invalidation
-5. `merge.py` -- collapse parallel/duplicate edge geometries into corridors
-6. `edge_speed.py` -- per-edge passes, backfilled from the ride CSVs'
+4. `cache.py` -- cache/state.pkl (processed files, edge counts, per-edge
+   passes and speeds), config-hash invalidation
+5. `edge_speed.py` -- per-edge passes, backfilled from the ride CSVs'
    timestamps (see below): direction-split speed, and how many times each
    ride traversed each edge (the map's frequency). Needs `edge_geom`, so it
    runs from `cli._finalize` rather than the matching checkpoint
-7. `render.py` / `export.py` -- PNGs and `docs/rides.geojson.gz`
+6. `render.py` / `export.py` -- PNGs and `docs/rides.geojson.gz`
+7. `merge.py` -- collapse parallel/duplicate edge geometries into corridors.
+   Not a stage of its own: `export.py` calls it on the built features, so it
+   runs *after* the speed/pass backfill and sees its counts
 8. `weather.py` -- Open-Meteo ride-weather stats embedded in the GeoJSON
 
 `bike_routes/ingest/` is the front of the pipeline (`garmin_sync`, `gpx_to_csv`),
 run as `python -m bike_routes.ingest.<mod>`; it fills `rides/` and is not
 imported by any pipeline stage. `tools/` holds standalone analysis that is not
 part of the pipeline at all (`hmm_matcher_eval.py`, `weather_correlation.py`,
-`traversal_audit.py`),
-run from the repo root; `findings/` holds the write-ups of what that analysis
-found (moved out of the README to keep it about running the pipeline).
+`traversal_audit.py`), run from the repo root; `findings/` holds the write-ups
+of what that analysis found (moved out of the README to keep it about running
+the pipeline).
 
 The package `__init__` deliberately exports nothing -- import the stage you
 need (`from bike_routes import edge_speed`). It used to re-export ~150 names
@@ -96,6 +109,10 @@ reads everything from `rides.geojson.gz` top-level `properties`.
 
 One pass detector, two outputs: direction-split speed, and per-ride traversal
 counts. Both are backfilled from the ride CSVs' timestamps.
+
+**"Passes" and "traversals" are the same thing** -- the state keys and this
+file say traversals, `docs/index.html` and the README say passes, because
+that is what reads clearly in a tooltip. Neither is a ride count.
 
 **Speed** is a **stats-panel ranking, not a map layer**: measured across the
 whole network, only ~6% of drawn km ever has enough passes in both directions
@@ -288,3 +305,8 @@ the instructions.
   snapping.
 - `docs/` is the published GitHub Pages site, not a documentation folder --
   prose goes in `findings/`, never there.
+- **This file quotes the code too**, and drifts the same way: symbol names,
+  the stage order, `RENDER_CACHE_FORMAT`, the ride count in "rematch of 1380
+  rides". Verify a number here before repeating it, and prefer a claim that
+  stays true (a rule, an invariant, a filename) over one that decays (a
+  diagnostic count, a percentage measured once).
