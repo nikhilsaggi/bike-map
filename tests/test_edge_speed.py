@@ -277,6 +277,64 @@ def test_gps_wobble_is_not_a_second_traversal(tmp_path, monkeypatch):
     assert _traversals(st) == 1
 
 
+# A 2 km edge, the shape that breaks counting rules a 100 m block cannot: the
+# Manhattan and Williamsburg bridge paths are each a single edge that long.
+LONG = {EDGE: [lonlat(0, 0), lonlat(2000, 0)]}
+
+
+def _fragmented_crossing(t0):
+    """One 2 km crossing at 5 m/s, arriving as three fragments.
+
+    The two off-edge fixes are the trace snapping to a neighbouring way --
+    beside a bridge path, the roadway -- which ends the run in _runs exactly
+    as a recording gap does.
+    """
+    rows = []
+    for i in range(21):
+        x, t = 100 * i, t0 + 20 * i
+        rows.append((x, 500, t) if x in (700, 1400) else (x, 0, t))
+    return rows
+
+
+def test_a_fragmented_crossing_of_a_long_edge_counts_once(tmp_path, monkeypatch):
+    """Every fragment of a crossing is not itself a crossing.
+
+    One ride over the Williamsburg Bridge arrived here as 23 fragments and
+    scored 10 traversals of the 2.3 km path.  They are one: each resumes
+    ahead of where the last stopped, so the merged span sweeps the edge once.
+    """
+    st = _run(tmp_path, _fragmented_crossing(0), monkeypatch, geom=LONG)
+    assert st["edge_traversals"] == {}
+    assert _traversals(st) == 1
+
+
+def test_two_fragmented_crossings_still_count_twice(tmp_path, monkeypatch):
+    """Merging fragments is what lets real repeats clear the coverage bar.
+
+    Unmerged, no fragment covers enough of the edge to count and both
+    crossings would floor to one.
+    """
+    away = [(2500, 500, 420), (2600, 500, 440)]
+    rows = _fragmented_crossing(0) + away + _fragmented_crossing(600)
+    st = _run(tmp_path, rows, monkeypatch, geom=LONG)
+    assert _traversals(st) == 2
+
+
+def test_clipping_a_long_edge_twice_is_not_two_traversals(tmp_path, monkeypatch):
+    """A pass has to sweep the edge, not nick the end of it.
+
+    Both visits here cover 100 m of 2 km.  Without the coverage rule each one
+    scored as a full crossing, so a wobble at one end of a bridge outvoted the
+    ride that actually rode it.
+    """
+    first = [(10 * i, 0, 2 * i) for i in range(11)]  # 0 -> 100 m
+    away = [(200, 500, 60), (300, 500, 80)]  # off-edge, beyond SPEED_SNAP_M
+    second = [(10 * i, 0, 100 + 2 * i) for i in range(11)]  # 0 -> 100 m again
+    st = _run(tmp_path, first + away + second, monkeypatch, geom=LONG)
+    assert st["edge_traversals"] == {}
+    assert _traversals(st) == 1
+
+
 def test_unmeasurable_ride_still_counts_once(tmp_path, monkeypatch):
     """The floor: measurement can raise a count, never take an edge off the map."""
     far = {EDGE: [lonlat(0, 500), lonlat(100, 500)]}
@@ -469,6 +527,7 @@ def test_speed_settings_are_not_in_the_processing_config(monkeypatch):
         ("SPEED_CORRIDOR_MIN_M", 7.0),
         ("SPEED_SPLIT_PASSES", 9),
         ("TRAVERSAL_RESUME_M", 7.0),
+        ("TRAVERSAL_MIN_COVER", 0.9),
     ]:
         monkeypatch.setattr(config, name, value)
     assert cache._config_hash() == before

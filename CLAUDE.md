@@ -150,11 +150,26 @@ because they come from the raw fixes.
   measure -- unparsable timestamps, a trace beyond `SPEED_SNAP_M`, a pass
   under `SPEED_MIN_PASS_M` -- still draws its edges exactly as before.
   Measurement can raise a count; it can never take an edge off the map.
-- `_runs` cuts at `SPEED_MAX_FIX_GAP_S`, which is right for speed (a red
-  light is not riding time) and wrong for counting. `_merge_resumed` re-joins
-  same-direction passes that restart within `TRAVERSAL_RESUME_M` of where the
-  last stopped; a second lap re-enters from the far end instead. Removing it
-  scores every mid-block stop as an extra traversal.
+- **A crossing arrives in fragments, and neither rule below is optional.**
+  `_runs` ends a run at `SPEED_MAX_FIX_GAP_S` (right for speed -- a red light
+  is not riding time) and again whenever the trace snaps to a neighbouring
+  way, so one crossing of the 2.3 km Williamsburg Bridge path landed as 23
+  fragments. `_merge_resumed` re-joins them by **progression**: a fragment
+  that resumes at or ahead of where the last stopped, in that pass's own
+  direction of travel, is the same traversal, with `TRAVERSAL_RESUME_M` of
+  slack on the backward side for a stop letting the trace drift. A second lap
+  re-enters from the far end -- far behind, never ahead -- and a turnaround
+  reverses direction, so neither is absorbed. Merging can only lower a count,
+  never raise one.
+- **`TRAVERSAL_MIN_COVER`: a traversal has to sweep the edge, not clip it.**
+  Speed will happily average any stretch it can measure, so its
+  `SPEED_MIN_PASS_M` floor is absolute; counting needs a fraction, or a 25 m
+  wobble at one end of a 2.3 km bridge outvotes the ride that crossed it.
+  Under the bar the pass is ignored and the floor puts the edge back at 1.
+  Both rules were added after the first version shipped 10 traversals for a
+  ride that crossed that bridge twice -- the audit's top-20 list is what
+  caught it, and the fix took the whole network's inflation from 1.013x to
+  1.009x.
 - `merge.py` combines a corridor's parallel members by **max** per ride
   (`_merge_ride_counts`), not sum: one pass drifting from a street to its bike
   lane must not become two. The cost is an out-and-back on separately mapped
@@ -167,7 +182,13 @@ because they come from the raw fixes.
   the real rides: it prints the inflation ratio (a few percent over 1.0 is
   what real riding looks like) and the highest-multiplicity (ride, edge)
   pairs to check against the trace. A synthetic grid cannot tell you whether
-  a threshold over-fires on real GPS.
+  a threshold over-fires on real GPS. Read the top-20 list as the audit
+  intends: **a long edge near the top is the alarm.** Genuine repeats are
+  short -- a block ridden three times, a park lap -- because sweeping a 2 km
+  edge four times is a rare thing to do and fragmenting one is not. Check the
+  suspects against the raw CSV before believing them; the detector measures
+  the ride's own edge set, so reproduce that (`state["edge_rides"]`) rather
+  than indexing the whole graph, or the fragmentation changes under you.
 
 ## Performance notes
 
