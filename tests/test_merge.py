@@ -8,9 +8,14 @@ from bike_routes import config, merge
 
 
 def _feature(points_m, rides, name=None):
-    """Build a feature; rides is a set of ride ids, or {ride: traversals}."""
+    """Build a feature.
+
+    rides is a set of ride ids -- one pass each, direction unmeasured, which
+    is what most of these tests want -- or {ride: (forward, reverse)} to say
+    which way along this feature's own points each pass ran.
+    """
     coords = [lonlat(x, y) for x, y in points_m]
-    counts = dict(rides) if isinstance(rides, dict) else dict.fromkeys(rides, 1)
+    counts = dict(rides) if isinstance(rides, dict) else dict.fromkeys(rides, (0, 0))
     return {
         "type": "Feature",
         "geometry": {"type": "LineString", "coordinates": coords},
@@ -106,17 +111,61 @@ def test_merge_unions_shared_rides_without_double_count():
 
 def test_merge_keeps_the_larger_traversal_count_not_their_sum():
     """A pass that drifts between a street and its bike lane crossed once."""
-    f1 = _feature(_line(0, 300, 0.0), {R1: 2, R2: 1})
-    f2 = _feature(_line(0, 300, 10.0), {R1: 1})
+    # Both features record R1 running the same way, which is what drift is.
+    f1 = _feature(_line(0, 300, 0.0), {R1: (2, 0), R2: (1, 0)})
+    f2 = _feature(_line(0, 300, 10.0), {R1: (1, 0)})
     out = merge._merge_parallel_features([f1, f2])
     assert len(out) == 1
     assert out[0]["properties"]["ride_count"] == 3  # max(2,1) + 1, not 2+1+1
 
 
 def test_merge_repeats_a_ride_once_per_traversal():
-    f1 = _feature(_line(0, 300, 0.0), {R1: 3, R2: 1})
+    f1 = _feature(_line(0, 300, 0.0), {R1: (2, 1), R2: (1, 0)})
     out = merge._merge_parallel_features([f1])
     assert out[0]["properties"]["rides"] == sorted([R1, R1, R1, R2])
+
+
+def test_out_and_back_on_two_members_counts_twice():
+    """The case plain max used to lose: one leg on each parallel way.
+
+    A 99%-retraced ride scored 16% of its edges as repeated because its
+    outbound and return legs matched to different members of one corridor.
+    They are opposite directions, so they add.
+    """
+    street = _feature(_line(0, 300, 0.0), {R1: (1, 0)})
+    lane = _feature(_line(0, 300, 10.0), {R1: (0, 1)})
+    out = merge._merge_parallel_features([street, lane])
+    assert len(out) == 1
+    assert out[0]["properties"]["ride_count"] == 2
+    assert out[0]["properties"]["rides"] == [R1, R1]
+
+
+def test_opposite_vertex_order_is_not_two_traversals():
+    """Which way a member stores its points is arbitrary and must not count.
+
+    Both features here record the same physical pass, but one's geometry runs
+    the other way, so its (1, 0) means the opposite direction.  Without the
+    flip these would read as an out-and-back.
+    """
+    street = _feature(_line(0, 300, 0.0), {R1: (1, 0)})
+    lane = _feature(_line(300, 0, 10.0), {R1: (0, 1)})
+    out = merge._merge_parallel_features([street, lane])
+    assert len(out) == 1
+    assert out[0]["properties"]["ride_count"] == 1
+
+
+def test_an_unmeasured_ride_on_two_members_still_counts_once():
+    """The floor is per corridor, not per member.
+
+    Neither member knows which way the ride ran, so neither may claim a
+    direction -- flooring each to one pass and adding them would invent a
+    second traversal out of nothing.
+    """
+    street = _feature(_line(0, 300, 0.0), {R1})
+    lane = _feature(_line(300, 0, 10.0), {R1})
+    out = merge._merge_parallel_features([street, lane])
+    assert len(out) == 1
+    assert out[0]["properties"]["ride_count"] == 1
 
 
 def test_adjacent_segments_stay_separate():
@@ -182,10 +231,10 @@ def test_ring_with_unique_ride_kept():
 
 def test_ring_with_extra_traversals_kept():
     """Dropping it would lose a pass the corridor never recorded."""
-    corridor = _feature(_line(0, 400, 0.0), {R1: 1})
+    corridor = _feature(_line(0, 400, 0.0), {R1: (1, 0)})
     box = _feature(
         [(200.0, 0.0), (230.0, 0.0), (230.0, 15.0), (200.0, 15.0), (200.0, 0.5)],
-        {R1: 2},
+        {R1: (2, 0)},
     )
     out = merge._drop_redundant_rings([corridor, box])
     assert len(out) == 2

@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from . import config
-from .edge_speed import _speed_summary, ride_traversals
+from .edge_speed import _speed_summary, ride_pass_dirs
 from .merge import _audit_merge, _geom_len_m, _merge_parallel_features
 from .ride_stats import _riding_summary
 from .weather import _weather_summary
@@ -90,7 +90,7 @@ def _export_geojson(
                     # is listed once per edge no matter how the state was
                     # written, so multiplicity comes only from measurement.
                     "_rides": {
-                        r: ride_traversals(state, edge_key, r)
+                        r: ride_pass_dirs(state, edge_key, r)
                         for r in set(edge_rides.get(edge_key, ()))
                     },
                     "_name": (edge_name or {}).get(edge_key),

@@ -145,11 +145,25 @@ non-consecutive repeats cannot be told apart from lattice oscillation at an
 intersection (`A->B->C->B->A` emits `(A,B)` twice for one pass). Passes can,
 because they come from the raw fixes.
 
-- **Only counts >= 2 are stored**, and every reader goes through
-  `ride_traversals()`, which floors at 1. So a ride the detector could not
-  measure -- unparsable timestamps, a trace beyond `SPEED_SNAP_M`, a pass
-  under `SPEED_MIN_PASS_M` -- still draws its edges exactly as before.
-  Measurement can raise a count; it can never take an edge off the map.
+- `state["edge_traversals"][key][ride]` is `[forward, reverse]`, forward
+  being the stored vertex order of `edge_geom[key]` -- the same anchor speed
+  uses. **Every measured pass is stored, singles included**, because
+  `merge.py` combines a corridor per direction and one pass on each of two
+  members is the out-and-back it most needs to see. Storing only repeats (as
+  the first version did) left a single pass reading `(0, 0)`, and the
+  direction-aware merge could never fire.
+- **A missing entry means nothing was measured, which is not the same as one
+  pass.** Readers go through `ride_traversals()` (total, floored at 1) or
+  `ride_pass_dirs()` (the raw pair, `(0, 0)` when unmeasured). So a ride the
+  detector could not measure -- unparsable timestamps, a trace beyond
+  `SPEED_SNAP_M`, a pass under `SPEED_MIN_PASS_M` -- still draws its edges
+  exactly as before. Measurement can raise a count; it can never take an
+  edge off the map. The floor lives in `merge._ride_passes`, per corridor
+  rather than per member: an unmeasured pass has no direction, and giving it
+  one would let two members whose geometries happen to run opposite ways sum
+  to two out of nothing. Never reach that floor through a `dict.get`
+  default -- an absent ride must read 0, or an empty neighbour set appears
+  to cover everything and `_drop_redundant_rings` drops every ring.
 - **A crossing arrives in fragments, and neither rule below is optional.**
   `_runs` ends a run at `SPEED_MAX_FIX_GAP_S` (right for speed -- a red light
   is not riding time) and again whenever the trace snaps to a neighbouring
@@ -170,11 +184,19 @@ because they come from the raw fixes.
   ride that crossed that bridge twice -- the audit's top-20 list is what
   caught it, and the fix took the whole network's inflation from 1.013x to
   1.009x.
-- `merge.py` combines a corridor's parallel members by **max** per ride
-  (`_merge_ride_counts`), not sum: one pass drifting from a street to its bike
-  lane must not become two. The cost is an out-and-back on separately mapped
-  directions reading as one. `tools/traversal_audit.py --merge` measures how
-  often the two rules actually disagree.
+- **`merge.py` combines a corridor's members by max *within* a direction and
+  sum *across* the two** (`_merge_ride_counts`). The two mistakes available
+  here differ in direction and nothing else: a pass drifting from a street to
+  its bike lane is one direction recorded twice, so max holds it at one; an
+  out-and-back riding the lane north and the street south is each direction
+  recorded once, so the sum is two. With every pass running one way this is
+  exactly the plain max rule that shipped first -- which read a 99%-retraced
+  ride as 16% repeated. Either feature's stored vertex order is arbitrary
+  (~9.5% run max->min), so every merge site decides a flip with `_opposed`
+  before taking the max; without it one physical pass on two
+  oppositely-stored members reads as an out-and-back.
+  `tools/traversal_audit.py --merge` runs the whole merge under all three
+  rules and reports how far apart they land.
 - The export ships `properties.rides` with one entry per traversal, so the
   page's count is array length and needs no new field. Equal filenames map to
   equal indices, so the array stays sorted for `hasRide`'s binary search.
@@ -189,6 +211,14 @@ because they come from the raw fixes.
   suspects against the raw CSV before believing them; the detector measures
   the ride's own edge set, so reproduce that (`state["edge_rides"]`) rather
   than indexing the whole graph, or the fragmentation changes under you.
+- **Measuring an under-count needs a corridor-aware oracle.** "Fraction of a
+  ride's fixes within 25 m of an earlier part of the same ride" finds the
+  retraced rides, but as a per-corridor truth it overstates: two ways of one
+  street are ~15 m apart, so a leg on one counts as a visit to the other.
+  Before calling a corridor under-counted, check whether a *different* drawn
+  feature within 25 m carries the same ride -- if so the second leg is on the
+  map already, as its own way ridden once, and nothing is missing. Every
+  residual on the five most-retraced rides turned out to be exactly that.
 
 ## Performance notes
 

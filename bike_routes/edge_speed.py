@@ -70,6 +70,11 @@ _CHUNK_W = 8
 # A stored edge record is {"b": chord bearing when measured, "c": [chunk, ...]}.
 
 
+# Indices into a stored [forward, reverse] traversal pair.  Forward is the
+# stored vertex order of edge_geom[key], exactly as for speed.
+_FWD_N, _REV_N = 0, 1
+
+
 def _new_chunk() -> list[float]:
     """Return a zeroed chunk record."""
     return [0.0] * _CHUNK_W
@@ -393,8 +398,14 @@ def _count_traversals(
     times: np.ndarray,
     slot_keys: list[tuple[int, int]],
     slot_len: list[float],
-) -> dict[tuple[int, int], int]:
-    """Count how many times this ride traversed each edge.
+) -> dict[tuple[int, int], list[int]]:
+    """Count how many times this ride traversed each edge, split by direction.
+
+    Returns [forward, reverse] per edge, forward being the stored vertex order
+    of edge_geom[key] -- the same anchor speed uses.  merge.py needs the
+    split, not a total: two members of one corridor carrying opposite legs of
+    an out-and-back are two traversals, the same leg drifting between them is
+    one, and only direction tells those apart.
 
     The speed fold's admission rules -- a pass covering only a few metres of
     an edge is the trace clipping a corner, an implausibly fast one is a GPS
@@ -405,7 +416,7 @@ def _count_traversals(
     Bridge path is not a crossing of it, and without the coverage rule every
     such scrap scored as one.
     """
-    counts: dict[tuple[int, int], int] = {}
+    counts: dict[tuple[int, int], list[int]] = {}
     for s, i, j in _merge_resumed(passes, along):
         dist = abs(along[j - 1] - along[i])
         dt = times[j - 1] - times[i]
@@ -419,7 +430,7 @@ def _count_traversals(
         if dist < config.TRAVERSAL_MIN_COVER * length:
             continue
         key = slot_keys[s]
-        counts[key] = counts.get(key, 0) + 1
+        counts.setdefault(key, [0, 0])[_FWD_N if _pass_dir(along, i, j) > 0 else _REV_N] += 1
     return counts
 
 
@@ -499,12 +510,13 @@ def _fold_ride(
         folded += 1
 
     # Traversal counts come from the same passes, re-joined across recording
-    # gaps.  Only repeats are stored: a missing entry means one, which is also
-    # what an unmeasurable ride falls back to.
+    # gaps.  Every measured pass is stored, singles included: merge.py combines
+    # a corridor's members per direction, and one pass on each of two members
+    # is the out-and-back it most needs to see.  A missing entry means the
+    # detector measured nothing, which ride_traversals floors back to one.
     edge_traversals = state["edge_traversals"]
-    for key, n in _count_traversals(passes, along, times, slot_keys, slot_len).items():
-        if n >= 2:
-            edge_traversals.setdefault(key, {})[path.name] = n
+    for key, pair in _count_traversals(passes, along, times, slot_keys, slot_len).items():
+        edge_traversals.setdefault(key, {})[path.name] = pair
     return folded
 
 
@@ -576,6 +588,18 @@ def _backfill_edge_speeds(
     return n
 
 
+def ride_pass_dirs(state: dict[str, Any], key: tuple[int, int], ride: str) -> tuple[int, int]:
+    """Return (forward, reverse) passes one ride made along one edge.
+
+    (0, 0) when the detector could not measure the ride, which is NOT the
+    same as one pass: an unmeasured pass has no direction, and attributing it
+    to one would let two members of a corridor whose geometries happen to run
+    opposite ways sum to two.  merge.py floors the corridor instead, once.
+    """
+    pair = state.get("edge_traversals", {}).get(key, {}).get(ride)
+    return (pair[0], pair[1]) if pair else (0, 0)
+
+
 def ride_traversals(state: dict[str, Any], key: tuple[int, int], ride: str) -> int:
     """How many times one ride traversed one edge; at least 1.
 
@@ -585,7 +609,7 @@ def ride_traversals(state: dict[str, Any], key: tuple[int, int], ride: str) -> i
     geometry, a pass too short to admit).  Measurement can only ever raise the
     count above 1, never take an edge off the map.
     """
-    return max(1, state.get("edge_traversals", {}).get(key, {}).get(ride, 1))
+    return max(1, sum(ride_pass_dirs(state, key, ride)))
 
 
 def traversal_counts(state: dict[str, Any]) -> dict[tuple[int, int], int]:

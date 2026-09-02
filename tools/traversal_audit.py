@@ -12,12 +12,14 @@ this script is the evidence for the two judgement calls that involves:
    highest-multiplicity pairs are listed with their dates and street names so
    they can be checked against the actual ride.
 
-2. **Should merged corridors combine by max or by sum?**  merge.py collapses
+2. **Is the corridor merge rule still earning its keep?**  merge.py collapses
    parallel ways (a street and the bike lane beside it) into one drawn
-   corridor and keeps the LARGER per-ride count, because summing would turn
-   one pass that drifts between them into two.  --merge runs the whole merge
-   both ways and reports how much they actually disagree, so the rule can be
-   revisited with numbers rather than argument.
+   corridor, keeping the larger per-ride count WITHIN each direction of
+   travel and adding the two directions.  Plain sum would turn one pass
+   drifting between the ways into two; plain max would read an out-and-back
+   riding one way out and the other back as one.  --merge runs the whole
+   merge under all three rules and reports how far apart they land, so the
+   rule can be revisited with numbers rather than argument.
 
 Reads cache/state.pkl, cache/render_cache.pkl and rides/; writes nothing.
 Safe to run before the pipeline has ever computed traversals -- it measures
@@ -55,7 +57,7 @@ def _measure(
     state: dict[str, Any],
     edge_geom: dict[tuple[int, int], list[tuple[float, float]]],
     rides: list[str],
-) -> dict[tuple[int, int], dict[str, int]]:
+) -> dict[tuple[int, int], dict[str, list[int]]]:
     """Measure traversals for the given rides into a throwaway state.
 
     Deliberately not read from state["edge_traversals"]: the point is to be
@@ -82,14 +84,14 @@ def _measure(
 
 def _report_distribution(
     state: dict[str, Any],
-    traversals: dict[tuple[int, int], dict[str, int]],
+    traversals: dict[tuple[int, int], dict[str, list[int]]],
     rides: list[str],
 ) -> None:
     """Print how many (ride, edge) pairs got more than one traversal."""
     ride_set = set(rides)
     pairs = sum(len(ride_set.intersection(users)) for users in state.get("edge_rides", {}).values())
-    hist = Counter(n for per_ride in traversals.values() for n in per_ride.values())
-    repeats = sum(hist.values())
+    hist = Counter(sum(pair) for per_ride in traversals.values() for pair in per_ride.values())
+    repeats = sum(c for n, c in hist.items() if n >= 2)
     extra = sum((n - 1) * c for n, c in hist.items())
 
     print(f"\nRides measured:            {len(rides):,}")
@@ -97,18 +99,24 @@ def _report_distribution(
     print(f"  crossed more than once:  {repeats:,} ({100 * repeats / max(pairs, 1):.2f}%)")
     print(f"  inflation ratio:         {(pairs + extra) / max(pairs, 1):.3f}x")
     print("\nTraversals per (ride, edge):")
+    # Singles are stored too now (merge.py needs their direction), so the
+    # ones line counts every pair that is not a repeat, measured or not.
     print(f"  1  {pairs - repeats:>9,}")
-    for n in sorted(hist):
+    for n in sorted(n for n in hist if n >= 2):
         print(f"  {n:<2} {hist[n]:>9,}")
 
 
 def _report_top_pairs(
-    traversals: dict[tuple[int, int], dict[str, int]],
+    traversals: dict[tuple[int, int], dict[str, list[int]]],
     edge_geom: dict[tuple[int, int], list[tuple[float, float]]],
     edge_name: dict[tuple[int, int], str],
 ) -> None:
     """List the highest counts, which are the ones worth eyeballing."""
-    rows = [(n, key, ride) for key, per_ride in traversals.items() for ride, n in per_ride.items()]
+    rows = [
+        (sum(pair), key, ride)
+        for key, per_ride in traversals.items()
+        for ride, pair in per_ride.items()
+    ]
     rows.sort(key=lambda r: (-r[0], r[2]))
     print(f"\nTop {TOP_N} (ride, edge) pairs -- check these against the ride:")
     print(f"  {'x':>3}  {'length':>7}  {'date':<10}  street")
@@ -120,7 +128,7 @@ def _report_top_pairs(
 
 def _report_merge_rule(
     state: dict[str, Any],
-    traversals: dict[tuple[int, int], dict[str, int]],
+    traversals: dict[tuple[int, int], dict[str, list[int]]],
     edge_geom: dict[tuple[int, int], list[tuple[float, float]]],
     edge_name: dict[tuple[int, int], str],
 ) -> None:
@@ -137,7 +145,7 @@ def _report_merge_rule(
                     "type": "Feature",
                     "geometry": {"type": "LineString", "coordinates": edge_geom[key]},
                     "properties": {
-                        "_rides": {r: max(1, per_ride.get(r, 1)) for r in set(users)},
+                        "_rides": {r: tuple(per_ride.get(r, (0, 0))) for r in set(users)},
                         "_name": edge_name.get(key),
                     },
                 }
@@ -154,29 +162,41 @@ def _report_merge_rule(
         print(f"  {label:<5} corridors {len(out):,}  total {total:,}  max {max(counts.values()):,}")
         return counts
 
-    print("\nMerge rule, max (shipped) vs sum:")
-    by_max = summarize("max")
+    print("\nMerge rule: shipped (max per direction) vs the two it replaced:")
+    by_dir = summarize("dir")
 
     original = merge._merge_ride_counts  # noqa: SLF001
 
-    def summed(dst: dict[str, int], src: dict[str, int]) -> None:
-        for r, n in src.items():
-            dst[r] = dst.get(r, 0) + n
+    def collapsed(dst: dict, src: dict, *, flip: bool) -> None:  # noqa: ARG001
+        """Plain max: what the map did before direction was recorded."""
+        for r, pair in src.items():
+            n = pair[0] + pair[1]
+            # A ride with nothing measured still belongs to the corridor, so
+            # insert it rather than comparing it away: _ride_passes floors it.
+            if r not in dst or n > dst[r][0]:
+                dst[r] = (n, 0)
 
-    merge._merge_ride_counts = summed  # noqa: SLF001
-    try:
-        by_sum = summarize("sum")
-    finally:
-        merge._merge_ride_counts = original  # noqa: SLF001
+    def summed(dst: dict, src: dict, *, flip: bool) -> None:  # noqa: ARG001
+        for r, pair in src.items():
+            dst[r] = (dst.get(r, (0, 0))[0] + pair[0] + pair[1], 0)
 
-    shared = set(by_max) & set(by_sum)
-    differ = [k for k in shared if by_max[k] != by_sum[k]]
-    inflation = sum(by_sum[k] - by_max[k] for k in differ)
-    print(f"  corridors compared:      {len(shared):,}")
-    print(
-        f"  where the rules differ:  {len(differ):,} ({100 * len(differ) / max(len(shared), 1):.1f}%)"
-    )
-    print(f"  passes sum would add:    {inflation:,}")
+    by_rule = {}
+    for label, fn in (("max", collapsed), ("sum", summed)):
+        merge._merge_ride_counts = fn  # noqa: SLF001
+        try:
+            by_rule[label] = summarize(label)
+        finally:
+            merge._merge_ride_counts = original  # noqa: SLF001
+
+    for label in ("max", "sum"):
+        other = by_rule[label]
+        shared = set(by_dir) & set(other)
+        differ = [k for k in shared if by_dir[k] != other[k]]
+        delta = sum(other[k] - by_dir[k] for k in differ)
+        print(
+            f"  vs {label}: {len(differ):,}/{len(shared):,} corridors differ "
+            f"({100 * len(differ) / max(len(shared), 1):.1f}%), {delta:+,} passes"
+        )
     print("  Every one of those is either a genuine out-and-back on separately")
     print("  mapped directions, or one pass double-counted. Spot-check a few.")
 
