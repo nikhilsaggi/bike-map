@@ -112,7 +112,7 @@ RING_NEAR_M = 40.0  # rings must hug covering features within this distance
 # SPEED_VERSION discards edge_speed/edge_traversals/speed_rides and recomputes
 # both; it is the invalidation lever for this data, deliberately separate from
 # the config hash so an algorithm change here never triggers a full rematch.
-SPEED_VERSION = 3  # 3: per-ride traversal counts (2: per-chunk speed records)
+SPEED_VERSION = 4  # 4: traversal coverage rule (3: per-ride traversal counts)
 SPEED_SAMPLE_M = 5.0  # edge polyline densification for the projection index
 SPEED_SNAP_M = 25.0  # max GPS-to-edge distance for a fix to count as on-edge
 SPEED_HYSTERESIS = 1.5  # stay on the previous edge within this factor of the best
@@ -137,5 +137,10 @@ SPEED_CORRIDOR_N = 10  # corridors listed in the stats panel
 # traversal when the second resumes within this distance of where the first
 # stopped; a second lap re-enters from the far end (median edge is 63 m).
 TRAVERSAL_RESUME_M = 30.0
+# A traversal has to sweep the edge, not clip it: a 25 m wobble on the 2.3 km
+# Williamsburg Bridge path is not a second crossing.  Short of this the pass
+# is ignored, and ride_traversals() floors the edge back to 1 -- measurement
+# can raise a count, never take an edge off the map.
+TRAVERSAL_MIN_COVER = 0.5  # fraction of the edge a counted traversal must cover
 M_PER_LON = 111_320 * np.cos(np.radians(40.73))
 M_PER_LAT = 110_540

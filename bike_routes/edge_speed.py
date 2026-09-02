@@ -347,29 +347,39 @@ def _pass_dir(along: np.ndarray, i: int, j: int) -> int:
 def _merge_resumed(
     passes: list[tuple[int, int, int]], along: np.ndarray
 ) -> list[tuple[int, int, int]]:
-    """Re-join passes that a recording gap split mid-traversal.
+    """Re-join the fragments that one traversal was cut into.
 
     _runs cuts at config.SPEED_MAX_FIX_GAP_S so a red light or a bodega stop
-    does not land in the speed average, but for counting, a block ridden with
-    a stop in the middle is still one traversal.  Two passes are the same
-    traversal when they are adjacent in time on the same edge, run the same
-    way along it, and the second resumes within config.TRAVERSAL_RESUME_M of
-    where the first stopped.  A second lap re-enters from the far end instead,
-    and a turnaround (which _split_monotonic already separated) reverses
-    direction, so neither is absorbed here.
+    does not land in the speed average, and it also ends a run whenever the
+    trace briefly snaps to a neighbouring edge -- on a long bridge, where the
+    bike path runs beside the roadway, one crossing can arrive here as a
+    dozen fragments.  Both are one traversal.
+
+    What separates a fragment from a real repeat is progression: a fragment
+    resumes at or ahead of where the last one stopped, measured in that
+    pass's own direction of travel, so the merged span still sweeps the edge
+    once.  A second lap re-enters from the far end -- far behind, never
+    ahead -- and a turnaround (which _split_monotonic already separated)
+    reverses direction, so neither is absorbed here.  The
+    config.TRAVERSAL_RESUME_M slack is for the backward side only: a stop
+    lets the trace drift a few metres back before it picks up again.
 
     Returns [(slot, start_index, stop_index)] with stop exclusive, spanning
     the whole traversal -- so the caller measures its full extent rather than
-    the leading scrap the gap left behind.
+    the leading scrap the cut left behind.
     """
     out: list[tuple[int, int, int]] = []
     for s, i, j in passes:
         if out:
             ps, pi, pj = out[-1]
+            d = _pass_dir(along, pi, pj)
+            # d * (resume - stop) is how far along the edge the next fragment
+            # picks up, signed by travel direction: positive is further on,
+            # negative is back the way it came.
             if (
                 ps == s
-                and _pass_dir(along, pi, pj) == _pass_dir(along, i, j)
-                and abs(along[i] - along[pj - 1]) <= config.TRAVERSAL_RESUME_M
+                and _pass_dir(along, i, j) == d
+                and d * (along[i] - along[pj - 1]) >= -config.TRAVERSAL_RESUME_M
             ):
                 out[-1] = (ps, pi, j)
                 continue
@@ -386,10 +396,14 @@ def _count_traversals(
 ) -> dict[tuple[int, int], int]:
     """Count how many times this ride traversed each edge.
 
-    Same admission rules as the speed fold -- a pass covering only a few
-    metres of an edge is the trace clipping a corner, and an implausibly fast
-    one is a GPS jump -- applied to whole traversals rather than to the
-    fragments a recording gap left.
+    The speed fold's admission rules -- a pass covering only a few metres of
+    an edge is the trace clipping a corner, an implausibly fast one is a GPS
+    jump -- applied to whole traversals rather than to the fragments a cut
+    left, plus one rule speed does not need: a traversal must cover
+    config.TRAVERSAL_MIN_COVER of the edge.  Speed is happy to average any
+    stretch it can measure, but a 25 m scrap of the 2.3 km Williamsburg
+    Bridge path is not a crossing of it, and without the coverage rule every
+    such scrap scored as one.
     """
     counts: dict[tuple[int, int], int] = {}
     for s, i, j in _merge_resumed(passes, along):
@@ -399,7 +413,10 @@ def _count_traversals(
             continue
         if 3.6 * dist / dt > config.SPEED_MAX_KMH:
             continue
-        if dist < min(config.SPEED_MIN_PASS_M, 0.5 * slot_len[s]):
+        length = slot_len[s]
+        if dist < min(config.SPEED_MIN_PASS_M, 0.5 * length):
+            continue
+        if dist < config.TRAVERSAL_MIN_COVER * length:
             continue
         key = slot_keys[s]
         counts[key] = counts.get(key, 0) + 1
