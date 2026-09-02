@@ -48,7 +48,8 @@ run as `python -m bike_routes.ingest.<mod>`; it fills `rides/` and is not
 imported by any pipeline stage. `tools/` holds standalone analysis that is not
 part of the pipeline at all (`hmm_matcher_eval.py`, `weather_correlation.py`,
 `traversal_audit.py`),
-run from the repo root.
+run from the repo root; `findings/` holds the write-ups of what that analysis
+found (moved out of the README to keep it about running the pipeline).
 
 The package `__init__` deliberately exports nothing -- import the stage you
 need (`from bike_routes import edge_speed`). It used to re-export ~150 names

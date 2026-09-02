@@ -15,7 +15,7 @@ The pipeline exports a compressed GeoJSON that powers an interactive
 
 - Coloring by ride frequency
 - Biggest direction splits: the corridors where riding one way is much
-  faster than the other (see below)
+  faster than the other ([how it works](findings/direction-split-speed.md))
 - Hover for ride count, click for the full list of ride dates
 - Date-range slider with time-lapse playback (watch the network grow)
 - Collapsible stats panel with total rides, edges covered, and street
@@ -30,53 +30,6 @@ To view locally:
 python -m bike_routes         # generates docs/rides.geojson.gz
 python -m http.server 8000 --directory docs
 ```
-
-## Direction-Split Speed
-
-Every ride CSV carries a per-fix timestamp, so the same traces that produce
-the frequency map also say how fast each stretch was ridden — and, because
-the trace is time-ordered, which way you were going. The stats panel ranks
-the corridors where that gap is largest, over all rides back to 2021; no new
-data source is involved.
-
-Direction matters more than it sounds. Averaging a street's speed without it
-blends the climb into the descent and produces a plausible number that means
-nothing. Split by direction, the Manhattan Bridge bike path reconstructs its
-own elevation profile from timestamps alone:
-
-```
-                          southbound   northbound
-Brooklyn approach              16.3         7.9 mph
-                               16.0         8.1
-mid-span                       10.7         9.2
-                                9.4        10.9   <- crest
-                                7.8        14.2
-Manhattan approach              8.6        15.5
-```
-
-The gap swings from -8.5 mph to +6.8 mph across the span, while the
-*whole-span* average shows nothing at all (10.6 vs 10.8 mph). Nothing in the
-pipeline knows about elevation, or that this edge is a bridge: the split
-point was found purely from where the sign of the timing asymmetry changed.
-
-**Why a list and not a map layer.** Colouring the network by this was tried
-and dropped. Only 6.5% of features are ridden often enough in *both*
-directions to compare them, so the map was 94% grey, and the half that was
-coloured differed by under 2 mph — invisible on any ramp. The signal is
-real (adjacent stretches agree on sign 82% of the time, and 100% once the
-gap exceeds 2 mph), but it is concentrated on about eight places, which is a
-list rather than a map. The ranking costs ~0.5 KB of payload; the layer cost
-88 KB.
-
-Implementation notes: speeds are `distance / time` accumulated per direction
-(never a mean of per-point speeds), so stops are handled correctly. Long ways
-are measured in ~150 m chunks — the bridge is a single 2163 m OSM edge, and
-measured whole it averages its own climb against its descent. A corridor is
-split wherever the faster direction flips, so a bridge is listed as its two
-descents; ranked stretches need 250 m and three passes each way.
-
-This is backfilled outside the map-matching config hash, so it can be
-recomputed (bump `SPEED_VERSION`) without reprocessing any rides.
 
 ## How It Works
 
@@ -99,6 +52,7 @@ bike_routes/        the pipeline, one stage per module
   ingest/           Garmin download and GPX -> CSV (the front of the pipeline)
 docs/               the published Leaflet map + its rides.geojson.gz
 tools/              standalone analysis run by hand, not part of the pipeline
+findings/           write-ups of what that analysis found
 tests/              pytest suite (synthetic grids) + Playwright e2e for docs/
 rides/              ride CSVs (gitignored -- personal GPS traces)
 cache/              everything the pipeline generates (gitignored)
@@ -267,19 +221,6 @@ JSON itself.
 Rides are saved as `garmin_<activityId>.gpx`, so the activity id is the dedup
 key and re-runs only fetch what's missing. Indoor and virtual rides are
 skipped — they carry no usable GPS track.
-
-## Weather Correlation
-
-`tools/weather_correlation.py` joins the exported ride index against
-[Open-Meteo](https://open-meteo.com/) historical daily weather (keyless)
-and reports how temperature and precipitation affect ride probability and
-distance:
-
-```bash
-python tools/weather_correlation.py
-```
-
-![Weather correlation](sample_output/weather_correlation.png)
 
 ## Cache Files
 
