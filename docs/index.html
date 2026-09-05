@@ -77,11 +77,19 @@
   }
   #stats-sections > div { display: none; }
   #stats-sections > div.open { display: block; }
-  #stats-sections::-webkit-scrollbar { width: 6px; }
-  #stats-sections::-webkit-scrollbar-track { background: transparent; }
-  #stats-sections::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
-  #stats-sections::-webkit-scrollbar-thumb:hover { background: #555; }
-  #stats-sections { scrollbar-width: thin; scrollbar-color: #333 transparent; }
+  /* The page's one scroll bar: a thin dark thumb over no track, so a
+     scrollable box reads as part of the panel rather than as a browser widget
+     bolted onto it. Every scrollable box shares it -- add new ones here. */
+  #stats-sections::-webkit-scrollbar,
+  .dock-popup::-webkit-scrollbar { width: 6px; }
+  #stats-sections::-webkit-scrollbar-track,
+  .dock-popup::-webkit-scrollbar-track { background: transparent; }
+  #stats-sections::-webkit-scrollbar-thumb,
+  .dock-popup::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+  #stats-sections::-webkit-scrollbar-thumb:hover,
+  .dock-popup::-webkit-scrollbar-thumb:hover { background: #555; }
+  #stats-sections,
+  .dock-popup { scrollbar-width: thin; scrollbar-color: #333 transparent; }
 
   #stat-years { line-height: 1.5; }
   /* One grid template shared by the header and every row, so the columns line
@@ -191,7 +199,7 @@
   #cb-range { color: #555; font-size: 9px; }
   /* Two lines a row means half as many partners in view, so the scroll box
      grows to roughly hold what it held before. */
-  .dock-popup { max-height: 260px; overflow-y: auto; }
+  .dock-popup { max-height: 260px; overflow-y: auto; padding-right: 4px; }
   .dock-head { color: #a8d8e8; font-weight: 600; }
   .dock-sub { color: #666; font-size: 10px; line-height: 1.5; margin-bottom: 4px; }
   .dock-count { color: #666; }
