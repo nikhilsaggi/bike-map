@@ -107,10 +107,29 @@ Requires Python 3.9+.
 
    That script stops at a **one-year** cutoff, so an ordinary pull is a
    window rather than a history. The ingest **merges** into the cache on
-   Lyft's own ride id and reports how many trips were new, which makes a
-   default pull a safe top-up; `--replace` discards what is cached instead,
-   and is only right when the cached records are themselves wrong. Either
-   way, check the trip count and date span it prints.
+   Lyft's own ride id, which makes a default pull a safe top-up rather than
+   a truncation — re-run it as often as you like. Three lines it prints are
+   worth reading, each catching a different failure:
+
+   - the **span of the merged result** should still start where your history
+     does. Starting a year ago means the merge did not happen and you are
+     looking at a truncated cache.
+   - **`N already known` should be large.** A top-up mostly restates trips
+     you have. Zero means the export did not overlap the cache at all, so
+     there is a gap between them: pull a wider window.
+   - **the docks `placed by GBFS`** should hold roughly steady. A sharp drop
+     is the feed's naming changing rather than docks vanishing; the ingest
+     names every dock it could not place.
+
+   `--replace` discards the cached trips instead of merging, and is only
+   right when the cached records are themselves wrong. It is also the way out
+   of a cache too damaged to read, which the ingest otherwise refuses to
+   overwrite.
+
+   **The cache accumulates what no single export can rebuild.** It is
+   gitignored and an ordinary pull reaches back only a year, so anything
+   older lives in `cache/citibike_trips.json` and in the full export you
+   first ingested — keep that file.
 
 5. Outputs:
    - `docs/rides.geojson.gz` — interactive map data

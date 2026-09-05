@@ -317,7 +317,12 @@ times one ride crossed one edge, in the stored vertex order of
   from empty. A cache written before the merge carries no `id`, so `_merge`
   also matches such a record by start time, and only when that start names
   exactly one of them. Check the printed date span before trusting a
-  re-ingest.
+  re-ingest, and read `already known` as the overlap check: zero of it means
+  the export and the cache do not meet, so a top-up has left a gap.
+- **`cache/citibike_trips.json` accumulates what no one export holds.** An
+  ordinary pull covers a year, so every year before that survives only in
+  that (gitignored) cache and in the original full export -- the same
+  only-copy situation as `rides/*.csv`.
 - **Check a fresh Citibike export for silent truncation before trusting it.**
   The fetch is cursor-paginated in tens and stops at a one-year cutoff, so an
   export can look like a plausible complete history that merely starts a year
