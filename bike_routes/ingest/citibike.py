@@ -6,11 +6,13 @@ GPS whatsoever. So this does not write to ``rides/`` and nothing here reaches
 the matcher -- it produces a cache file that ``bike_routes.citibike``
 summarises at export time, the way ``weather.py`` summarises Open-Meteo.
 
-Dock names are resolved to coordinates against Citi Bike's public GBFS feed,
-whose ``name`` field is the same string the export uses. A name the feed no
-longer lists (a renamed or removed dock) is dropped from the geography and
-counted; the trip itself is kept, because its duration, cost and date are
-unaffected by not knowing where one end of it was.
+Offline by design. An earlier version resolved dock names to coordinates
+against Citi Bike's public GBFS feed (which matched 214 of 216 names exactly)
+in order to place markers on the map. That layer was dropped -- a dock's
+position says nothing on its own, and a line between two docks is not a
+route -- and it was the coordinates' only consumer, so the fetch, its cache
+and its fallback went with it rather than sit here producing data nobody
+reads. The dock name is the identity the stats need, and the export has it.
 
 The export is a manual browser download from account.lyft.com/privacy/data,
 so this runs by hand rather than from update.py. Once the cache exists every
@@ -25,77 +27,14 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-import urllib.request
 from pathlib import Path
 from typing import Any
 
 from bike_routes import config
 
-GBFS_URL = "https://gbfs.citibikenyc.com/gbfs/en/station_information.json"
-
 # Bump when the trips file's layout changes, so citibike.py can reject a
 # stale one rather than half-read it.
 TRIPS_FORMAT = 1
-
-# Every key a station entry must carry for the summary to use it. Fails
-# closed the same way weather's cache guard does.
-STATION_KEYS = ("lat", "lon")
-
-
-def _fetch_stations() -> dict[str, tuple[float, float]]:
-    with urllib.request.urlopen(GBFS_URL, timeout=30) as resp:
-        payload = json.load(resp)
-    out: dict[str, tuple[float, float]] = {}
-    for s in payload["data"]["stations"]:
-        name, lat, lon = s.get("name"), s.get("lat"), s.get("lon")
-        if name and lat is not None and lon is not None:
-            out[name] = (lat, lon)
-    return out
-
-
-def _cache_well_formed(cached: object) -> bool:
-    """Fail closed: a cache whose entries lack a coordinate is unusable."""
-    if not isinstance(cached, dict) or not cached:
-        return False
-    return all(isinstance(v, dict) and all(k in v for k in STATION_KEYS) for v in cached.values())
-
-
-def _load_cached_stations() -> dict[str, tuple[float, float]] | None:
-    if not config.CITIBIKE_STATIONS_PATH.exists():
-        return None
-    try:
-        with config.CITIBIKE_STATIONS_PATH.open() as f:
-            cached = json.load(f)
-    except Exception:
-        return None
-    if not _cache_well_formed(cached):
-        print("  Cached station list has an unexpected shape; ignoring it")
-        return None
-    return {name: (v["lat"], v["lon"]) for name, v in cached.items()}
-
-
-def _save_station_cache(stations: dict[str, tuple[float, float]]) -> None:
-    config.CITIBIKE_STATIONS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    payload = {name: {"lat": lat, "lon": lon} for name, (lat, lon) in stations.items()}
-    with config.CITIBIKE_STATIONS_PATH.open("w") as f:
-        json.dump(payload, f, separators=(",", ":"))
-
-
-def _get_stations() -> dict[str, tuple[float, float]] | None:
-    try:
-        stations = _fetch_stations()
-        _save_station_cache(stations)
-    except Exception as exc:
-        print(f"  GBFS unavailable ({exc}); trying cache...")
-        cached = _load_cached_stations()
-        if cached:
-            print(f"  Using cached station list ({len(cached)} stations)")
-        else:
-            print("  No station cache available; cannot resolve dock coordinates")
-        return cached
-    else:
-        print(f"  Fetched {len(stations)} stations from GBFS")
-        return stations
 
 
 def _money(formatted: object) -> float:
@@ -138,13 +77,7 @@ def _normalise(records: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int
 
     trips = []
     for r in sorted(seen.values(), key=lambda r: int(r["startTimeMs"])):
-        line_items = r.get("lineItems", [])
-        gross = sum(
-            a for a in (_money(li.get("amount", {}).get("formatted")) for li in line_items) if a > 0
-        )
-        credit = -sum(
-            a for a in (_money(li.get("amount", {}).get("formatted")) for li in line_items) if a < 0
-        )
+        amounts = [_money(li.get("amount", {}).get("formatted")) for li in r.get("lineItems", [])]
         trips.append(
             {
                 "t": int(r["startTimeMs"]),
@@ -153,8 +86,8 @@ def _normalise(records: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int
                 "b": r["endAddress"],
                 "bike": r.get("rideableName", ""),
                 "paid": round(_money(r.get("price", {}).get("formatted")), 2),
-                "gross": round(gross, 2),
-                "credit": round(credit, 2),
+                "gross": round(sum(a for a in amounts if a > 0), 2),
+                "credit": round(-sum(a for a in amounts if a < 0), 2),
                 "ebike": _is_ebike(r),
             }
         )
@@ -162,7 +95,7 @@ def _normalise(records: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int
 
 
 def ingest(export_path: Path) -> dict[str, Any]:
-    """Read a Lyft export, resolve dock coordinates, write the trips cache."""
+    """Read a Lyft export and write the normalised trips cache."""
     with export_path.open() as f:
         records = json.load(f)
     if not isinstance(records, list):
@@ -170,29 +103,14 @@ def ingest(export_path: Path) -> dict[str, Any]:
         raise TypeError(msg)
 
     trips, duplicates = _normalise(records)
+    docks = {name for t in trips for name in (t["a"], t["b"])}
     print(f"  {len(trips)} trips ({duplicates} duplicate records dropped)")
-
-    stations = _get_stations()
-    if stations is None:
-        stations = {}
-
-    used = {name for t in trips for name in (t["a"], t["b"])}
-    resolved = {
-        name: [round(stations[name][1], 5), round(stations[name][0], 5)]
-        for name in sorted(used)
-        if name in stations
-    }
-    unmatched = sorted(used - set(resolved))
-    print(f"  {len(resolved)} of {len(used)} dock names resolved to coordinates")
-    for name in unmatched:
-        print(f"    unresolved: {name}")
+    print(f"  {len(docks)} distinct docks")
 
     payload = {
         "format": TRIPS_FORMAT,
         "source": export_path.name,
         "trips": trips,
-        "stations": resolved,
-        "unmatched": unmatched,
     }
     config.CITIBIKE_TRIPS_PATH.parent.mkdir(parents=True, exist_ok=True)
     with config.CITIBIKE_TRIPS_PATH.open("w") as f:

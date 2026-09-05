@@ -1,4 +1,4 @@
-"""Tests for the Citi Bike trip ingest and stats block (no network)."""
+"""Tests for the Citi Bike trip ingest and stats block (no network at all)."""
 
 from __future__ import annotations
 
@@ -7,21 +7,7 @@ import json
 import pytest
 
 from bike_routes.citibike import _citibike_summary
-from bike_routes.ingest.citibike import (
-    _cache_well_formed,
-    _is_ebike,
-    _load_cached_stations,
-    _money,
-    _normalise,
-    _save_station_cache,
-    ingest,
-)
-
-# Two docks a hand-checkable distance apart, plus one GBFS has never heard of.
-STATIONS = {
-    "A St & 1 Ave": (40.70, -73.94),
-    "B St & 2 Ave": (40.75, -73.98),
-}
+from bike_routes.ingest.citibike import _is_ebike, _money, _normalise, ingest
 
 
 def _record(ride_id, start_ms, a, b, *, dur=600_000, bike="100-0001", items=None):
@@ -41,14 +27,11 @@ def _record(ride_id, start_ms, a, b, *, dur=600_000, bike="100-0001", items=None
 
 
 @pytest.fixture
-def paths(tmp_path, monkeypatch):
-    """Point both cache paths at tmp_path and stub the GBFS fetch."""
-    trips = tmp_path / "citibike_trips.json"
-    stations = tmp_path / "citibike_stations.json"
-    monkeypatch.setattr("bike_routes.config.CITIBIKE_TRIPS_PATH", trips)
-    monkeypatch.setattr("bike_routes.config.CITIBIKE_STATIONS_PATH", stations)
-    monkeypatch.setattr("bike_routes.ingest.citibike._fetch_stations", lambda: STATIONS)
-    return trips, stations
+def trips_path(tmp_path, monkeypatch):
+    """Point the trips cache at tmp_path."""
+    path = tmp_path / "citibike_trips.json"
+    monkeypatch.setattr("bike_routes.config.CITIBIKE_TRIPS_PATH", path)
+    return path
 
 
 def _write_export(tmp_path, records):
@@ -107,47 +90,19 @@ def test_normalise_splits_gross_from_credits():
     assert trips[0]["ebike"] is True
 
 
-def test_ingest_keeps_a_trip_whose_dock_is_unlisted(paths, tmp_path):
-    """A renamed dock loses its coordinates, not the whole trip.
-
-    Duration, cost and date are unaffected by not knowing where one end was,
-    so dropping the record would understate the totals to fix the geography.
-    """
-    trips_path, _ = paths
-    records = [
-        _record("r1", 1_000, "A St & 1 Ave", "B St & 2 Ave"),
-        _record("r2", 2_000, "A St & 1 Ave", "Gone St & Nowhere Ave"),
-    ]
-    payload = ingest(_write_export(tmp_path, records))
-
-    assert len(payload["trips"]) == 2
-    assert payload["unmatched"] == ["Gone St & Nowhere Ave"]
-    assert set(payload["stations"]) == set(STATIONS)
-    assert trips_path.exists()
-
-    summary = _citibike_summary({})
-    assert summary["trips"] == 2
-    assert summary["unmatched"] == 1
-    # r2's start is still a resolvable dock, so it counts; only its end is lost.
-    a = next(s for s in summary["stations"] if s["name"] == "A St & 1 Ave")
-    assert (a["out"], a["in"]) == (2, 0)
-    assert len(summary["pairs"]) == 1  # only r1 has both ends
-
-
-@pytest.mark.usefixtures("paths")
+@pytest.mark.usefixtures("trips_path")
 def test_summary_is_none_without_a_cache():
     """Every checkout but the owner's hits this path."""
     assert _citibike_summary({}) is None
 
 
-def test_summary_rejects_a_future_format(paths):
-    trips_path, _ = paths
-    trips_path.write_text(json.dumps({"format": 99, "trips": [{"t": 1}], "stations": {}}))
+def test_summary_rejects_a_future_format(trips_path):
+    trips_path.write_text(json.dumps({"format": 99, "trips": [{"t": 1}]}))
     assert _citibike_summary({}) is None
 
 
-@pytest.mark.usefixtures("paths")
-def test_summary_counts_flow_pairs_and_oddities(tmp_path):
+@pytest.mark.usefixtures("trips_path")
+def test_summary_counts_docks_and_oddities(tmp_path):
     a, b = "A St & 1 Ave", "B St & 2 Ave"
     day = 1_700_000_000_000  # a Tuesday afternoon in NYC
     hour = 3_600_000
@@ -168,19 +123,42 @@ def test_summary_counts_flow_pairs_and_oddities(tmp_path):
     assert s["aborted"] == 1
     assert s["bikes"] == 5
     assert s["repeat_bikes"] == 1
-    # 4 A->B and 1 B->A. The same-dock trip is not a pair at all.
-    assert s["pairs"] == [[0, 1, 4], [1, 0, 1]]
-    st = {x["name"]: x for x in s["stations"]}
+    assert s["docks"] == 2
+    assert s["once_only"] == 0
     # A: four departures to B plus the aborted unlock that also started there,
     # against r4's arrival and the aborted unlock's own return. B is the mirror.
-    assert (st[a]["out"], st[a]["in"]) == (5, 2)
-    assert (st[b]["out"], st[b]["in"]) == (1, 4)
-    # Stations are busiest-first so the page can slice off the top unsorted.
-    assert s["stations"][0]["name"] == a
-    assert s["once_only"] == 0
+    flow = {f["name"]: (f["out"], f["in"]) for f in s["flow"]}
+    assert flow == {a: (5, 2), b: (1, 4)}
 
 
-@pytest.mark.usefixtures("paths")
+@pytest.mark.usefixtures("trips_path")
+def test_flow_lists_both_ends_without_repeating_a_dock(tmp_path):
+    """The top-3 and bottom-2 slices overlap on a short list.
+
+    Listing one dock twice would read as two different docks that happen to
+    share a name, so the tail drops anything already in the head.
+    """
+    day = 1_700_000_000_000
+    # Six docks, each with a distinct net: D5 is +5 down to D0 at 0.
+    records = []
+    n = 0
+    for i in range(6):
+        for _ in range(i):
+            n += 1
+            records.append(_record(f"r{n}", day + n * 60_000, f"D{i}", "Sink St"))
+    ingest(_write_export(tmp_path, records))
+    s = _citibike_summary({})
+
+    names = [f["name"] for f in s["flow"]]
+    assert len(names) == len(set(names))
+    # Three most departed-from, then the two most arrived-at. D1 is the only
+    # other dock with any use, so it takes the second tail slot.
+    assert names == ["D5", "D4", "D3", "D1", "Sink St"]
+    assert s["flow"][-1] == {"name": "Sink St", "out": 0, "in": 15}
+    assert s["once_only"] == 1  # D1, used once
+
+
+@pytest.mark.usefixtures("trips_path")
 def test_summary_same_day_matches_ride_filenames(tmp_path):
     # 2023-11-14 12:13 EST and 2023-11-15 12:13 EST.
     day1, day2 = 1_699_982_000_000, 1_700_068_400_000
@@ -201,33 +179,23 @@ def test_summary_same_day_matches_ride_filenames(tmp_path):
     assert s["to"] == "2023-11-15"
 
 
-def test_station_cache_round_trip_and_shape_guard(paths):
-    _, stations_path = paths
-    _save_station_cache(STATIONS)
-    assert _load_cached_stations() == STATIONS
+@pytest.mark.usefixtures("trips_path")
+def test_ingest_ships_no_coordinates(tmp_path):
+    """Nothing draws a dock, so nothing should be carrying its position.
 
-    assert _cache_well_formed({"A": {"lat": 1.0, "lon": 2.0}})
-    assert not _cache_well_formed({"A": {"lat": 1.0}})  # no lon
-    assert not _cache_well_formed({"A": "somewhere"})
-    assert not _cache_well_formed({})
-    assert not _cache_well_formed([])
-
-    stations_path.write_text('{"A": {"lat": 1.0}}')
-    assert _load_cached_stations() is None
-
-
-@pytest.mark.usefixtures("paths")
-def test_ingest_falls_back_to_the_station_cache(tmp_path, monkeypatch):
-    """A GBFS outage must not lose the docks resolved on the last run."""
-    _save_station_cache(STATIONS)
-
-    def boom():
-        msg = "gbfs down"
-        raise OSError(msg)
-
-    monkeypatch.setattr("bike_routes.ingest.citibike._fetch_stations", boom)
+    The GBFS lookup that produced coordinates went out with the map layer;
+    a payload that grew them back would be dead weight in every download.
+    """
     payload = ingest(
         _write_export(tmp_path, [_record("r1", 1_000, "A St & 1 Ave", "B St & 2 Ave")])
     )
-    assert set(payload["stations"]) == set(STATIONS)
-    assert payload["unmatched"] == []
+    assert set(payload) == {"format", "source", "trips"}
+    assert all(
+        set(t) == {"t", "dur", "a", "b", "bike", "paid", "gross", "credit", "ebike"}
+        for t in payload["trips"]
+    )
+
+    s = _citibike_summary({})
+    assert "stations" not in s
+    assert "pairs" not in s
+    assert all(set(f) == {"name", "out", "in"} for f in s["flow"])

@@ -112,13 +112,14 @@ reads everything from `rides.geojson.gz` top-level `properties`.
 - **Citi Bike trips are dock-to-dock with no GPS trace**, so they never enter
   `edge_counts`, `edge_traversals`, `edge_rides`, `coverage`, or `features[]`
   -- those all mean "a trace was matched here". They live only in
-  `properties.citibike`, and the page draws them as dock markers and straight
-  desire lines, never as routes. Shortest-path routing between docks was
-  built and measured (117 km of streets the GPS map never covered) and
-  **rejected**: it makes a guess look like a trace
-  ([why](findings/citibike-trips.md)). No speed is derived either -- the
-  export's durations are whole minutes and its end times are the start plus
-  that duration.
+  `properties.citibike` and **draw nothing on the map**: two layers were built
+  and taken back out (shortest-path routes between docks, then dock markers
+  and desire lines), because a route between docks is a guess and a marker
+  says nothing the numbers do not
+  ([why](findings/citibike-trips.md)). The block therefore ships no
+  coordinates at all, and `ingest.citibike` needs no network. No speed is
+  derived either -- the export's durations are whole minutes and its end
+  times are the start plus that duration.
 
 ### Edge passes (`edge_speed.py`)
 

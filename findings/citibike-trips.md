@@ -41,27 +41,26 @@ panel as `edge_speed`'s direction-split corridors, which are measured from
 1 Hz GPS fixes on known geometry. They would read as the same kind of number
 and are not, and there is no honest label short enough to fix that.
 
-## Why dock names, not coordinates
+## Why there are no coordinates
 
-The export has no coordinates, but Citi Bike's public GBFS feed
+The export has no coordinates, and the shipped block has none either. That is
+the end state of two attempts at a map layer, both described below. Since
+nothing draws a dock, nothing needs to know where it is, and `ingest.citibike`
+makes no network call at all.
+
+It is worth recording what the lookup found, because it is the thing anyone
+reconsidering a map layer would want first. Citi Bike's public GBFS feed
 (`https://gbfs.citibikenyc.com/gbfs/en/station_information.json`, keyless,
-2,506 stations) publishes a `name` field that is the same string Lyft writes
+~2,506 stations) publishes a `name` field that is the same string Lyft writes
 into `startAddress`. The match is exact, not fuzzy:
 
 - **214 of 216 distinct dock names**, 702 of 704 endpoint mentions.
 - The two misses are `Melrose St & Broadway` and `9 Ave & W 39 St`, one trip
   each — renamed or removed docks the live feed no longer lists.
 
-No geocoder, no string normalisation, no nearest-neighbour fallback. If the
-match rate ever drops, that is a real signal about the feed rather than
-something to paper over, which is why `unmatched` is carried into the payload
-and shown rather than logged and forgotten.
-
-**An unresolvable dock loses its coordinates, not its trip.** The trip's
-duration, cost and date are unaffected by not knowing where one end was, and
-dropping the record would understate the totals in order to tidy the
-geography. So the station columns skip that one endpoint and keep the other:
-the two affected trips still contribute their resolvable end.
+No geocoder, no string normalisation, no nearest-neighbour fallback needed.
+With the lookup gone the dock name is the identity, straight from the export,
+so all 216 docks count and the two the feed had dropped are no longer special.
 
 ## Why none of it reaches the drawn edges
 
@@ -80,14 +79,15 @@ python -c "import gzip,json; p=json.load(gzip.open('docs/rides.geojson.gz'))['pr
 
 which must still print `1380 1429.8 5.1`.
 
-## Routed corridors: evaluated, not shipped
+## Two map layers, both built and taken out
 
-The tempting version of this feature is to route each dock pair over the OSM
-bike network and draw the result. It was built and measured before being
-turned down, so it does not need rebuilding to be reconsidered.
+This is a stats block with no map layer. It got there by building two and
+removing both, so neither needs rebuilding to be reconsidered.
 
-All 214 docks snapped to the cached graph and all 253 OD pairs routed by
-shortest path in **2.3 seconds**. The result:
+**Routed corridors.** The tempting version is to route each dock pair over
+the OSM bike network and draw the result. All 214 resolvable docks snapped to
+the cached graph and all 253 OD pairs routed by shortest path in **2.3
+seconds**:
 
 | | |
 |---|---|
@@ -98,18 +98,32 @@ shortest path in **2.3 seconds**. The result:
 | edges never ridden on the own bike | 1,413 (39.6%), 117.3 km |
 
 117 km of streets the GPS map has never covered is a genuinely interesting
-number — about +12% on the 978 km ridden. It was rejected because the
-shortest path is weakest exactly where the number is most interesting: a
-street that appears only in the Citi Bike layer appears there because an
-algorithm chose it, not because anyone rode it. Drawing it in the same style
-as a measured edge makes a guess look like a trace, and drawing it in a
-different style still puts 117 km of invented geometry on a map whose whole
-claim is that every line was ridden.
+number — about +12% on the 978 km ridden. Rejected because the shortest path
+is weakest exactly where the number is most interesting: a street that appears
+only in that layer appears because an algorithm chose it, not because anyone
+rode it. Drawing it in the same style as a measured edge makes a guess look
+like a trace; drawing it in a different style still puts 117 km of invented
+geometry on a map whose whole claim is that every line was ridden.
 
-What shipped instead is dock markers and straight dock-to-dock desire lines.
-A straight line across Brooklyn is self-evidently not a route, which is the
-point: it shows the origin-destination fact the data actually contains and
-visibly declines to claim the rest.
+**Dock markers and desire lines.** The honest alternative: markers at each
+dock, sized by use and coloured on a diverging ramp by the share of that use
+running one way, plus straight dock-to-dock lines. Everything drawn was
+measured, and a straight line across Brooklyn is self-evidently not a route.
+
+Also removed, and this one is a judgement about whether the picture earns its
+place rather than about honesty. It does not. The lines connect docks without
+saying anything a reader can act on — they are not routes, and their density
+tracks trip volume, which the numbers already give. The markers carry one
+variable (one-way share) that takes a legend to decode and that the five-row
+list states outright, in words, ranked. Two channels of encoding to say what
+five lines of text say better is a worse version of the same finding, and it
+costs the reader a colour ramp competing with the plasma one that means
+something else entirely.
+
+Removing it took the coordinates with it: the GBFS fetch, its cache, its
+fallback and its shape guard existed only to place those markers. Leaving them
+in to produce data nothing reads is exactly the drift this repo tries to
+avoid. The block went from 4.5 KB gzipped to 0.31 KB.
 
 ## What the numbers say
 

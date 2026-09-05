@@ -260,8 +260,6 @@ def test_citibike_block_leaves_the_drawn_edges_alone(tmp_path, monkeypatch):
                         "ebike": False,
                     }
                 ],
-                "stations": {"A St": [-73.9, 40.7], "B St": [-73.95, 40.75]},
-                "unmatched": [],
             }
         )
     )
@@ -280,7 +278,7 @@ def test_citibike_block_leaves_the_drawn_edges_alone(tmp_path, monkeypatch):
     props = data["properties"]
 
     assert props["citibike"]["trips"] == 1
-    assert len(props["citibike"]["stations"]) == 2
+    assert props["citibike"]["docks"] == 2
     # The measured side is untouched: one own-bike ride, one drawn edge, and
     # the features carry ride indices and nothing else.
     assert props["total_rides"] == 1
