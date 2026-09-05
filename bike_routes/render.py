@@ -15,6 +15,8 @@ from matplotlib.lines import Line2D
 from . import config
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     import networkx as nx
 
 # (edge_geom, edge_hw, edge_name), each keyed by canonical node pair.
@@ -23,6 +25,9 @@ RenderData = tuple[
     dict[tuple[int, int], str],
     dict[tuple[int, int], str],
 ]
+
+# (west, south, east, north) in lon/lat: a crop of the drawn map.
+Bbox = tuple[float, float, float, float]
 
 
 def _classify_hw(hw: str | list[str]) -> str:
@@ -127,65 +132,74 @@ def _get_render_data(
 
 def _make_fig(
     skeleton_lines: list[list[tuple[float, float]]],
+    bbox: Bbox | None = None,
 ) -> tuple[plt.Figure, plt.Axes]:
-    """Create figure with OSM skeleton background."""
+    """Create figure with OSM skeleton background, framed to bbox if given."""
     fig, ax = plt.subplots(figsize=config.FIG_SIZE, facecolor="#0d0d0d")
     ax.set_facecolor("#0d0d0d")
     ax.set_aspect("equal")
     ax.axis("off")
     lc = LineCollection(skeleton_lines, colors="#2a2a2a", linewidths=0.3, zorder=1)
     ax.add_collection(lc)
-    ax.autoscale_view()
+    if bbox is None:
+        ax.autoscale_view()
+    else:
+        west, south, east, north = bbox
+        ax.set_xlim(west, east)
+        ax.set_ylim(south, north)
     return fig, ax
 
 
-def _save_fig(fig: plt.Figure, path: str) -> None:
-    """Save figure to disk and close it."""
-    fig.subplots_adjust(bottom=0.10)
-    fig.savefig(path, dpi=180, bbox_inches="tight", facecolor=fig.get_facecolor())
+def _save_fig(fig: plt.Figure, path: str, *, chrome: bool = True, dpi: int = 180) -> None:
+    """Save figure to disk and close it.
+
+    The colorbar sits below the axes in figure coordinates, so the space for
+    it is only worth reserving when there is one.
+    """
+    if chrome:
+        fig.subplots_adjust(bottom=0.10)
+    fig.savefig(path, dpi=dpi, bbox_inches="tight", facecolor=fig.get_facecolor())
     print(f"  Saved -> {path}")
     plt.close(fig)
 
 
-def _render(
+def _render_coverage(
     edge_geom: dict[tuple[int, int], list[tuple[float, float]]],
-    state: dict[str, Any],
-    *,
-    counts: dict[tuple[int, int], int] | None = None,
-    skip_png: bool = config.SKIP_PNG_RENDER,
+    edge_counts: dict[tuple[int, int], int],
+    path: str,
 ) -> None:
-    """Render both coverage and frequency maps.
-
-    counts weights the frequency map; the caller passes traversals (see
-    edge_speed.traversal_counts), falling back to state's per-ride counts.
-    The coverage map only asks which edges appear, so both agree there.
-    """
-    if skip_png:
-        print("Skipping PNG render")
-        return
-
-    edge_counts = state["edge_counts"] if counts is None else counts
-
-    if not edge_counts:
-        print("No edges to render")
-        return
-
-    skeleton = list(edge_geom.values())
-    cmap = plt.colormaps[config.COLORMAP]
-
-    # -- Coverage map --
+    """Draw every ridden edge in one colour over the street skeleton."""
     print("Rendering coverage map...")
-    fig, ax = _make_fig(skeleton)
+    cmap = plt.colormaps[config.COLORMAP]
+    fig, ax = _make_fig(list(edge_geom.values()))
 
     lines = [edge_geom[k] for k in edge_counts if k in edge_geom]
     lc = LineCollection(
         lines, colors=[cmap(1.0)], linewidths=config.LINE_WIDTH_MIN * 2, alpha=0.85, zorder=2
     )
     ax.add_collection(lc)
-    _save_fig(fig, config.OUTPUT_PATH_UNWEIGHTED)
+    _save_fig(fig, path)
 
-    # -- Frequency map --
+
+def _render_frequency(
+    edge_geom: dict[tuple[int, int], list[tuple[float, float]]],
+    edge_counts: dict[tuple[int, int], int],
+    path: str,
+    *,
+    bbox: Bbox | None = None,
+    chrome: bool = True,
+    dpi: int = 180,
+) -> None:
+    """Draw ridden edges coloured by pass count.
+
+    bbox crops the view (the whole graph when None); the colour scale stays
+    anchored to the global maximum either way, so a crop means the same
+    thing as the full map.  chrome=False drops the colorbar and legend, for
+    a figure whose caption carries the scale instead (the README's image),
+    and dpi trades that figure's detail against the bytes a page must load.
+    """
     print("Rendering frequency map...")
+    cmap = plt.colormaps[config.COLORMAP]
     counts_arr = np.array(list(edge_counts.values()))
     max_count = counts_arr.max()
     print(f"  Max edge count: {max_count}")
@@ -193,7 +207,7 @@ def _render(
     def scale(c: float) -> np.floating:
         return np.sqrt(c) / np.sqrt(max_count)
 
-    fig, ax = _make_fig(skeleton)
+    fig, ax = _make_fig(list(edge_geom.values()), bbox)
 
     # Pass 1: faint underlay
     lines_u, colors_u = [], []
@@ -222,7 +236,19 @@ def _render(
         LineCollection(lines_o, colors=colors_o, linewidths=config.LINE_WIDTH_MIN * 2, zorder=3)
     )
 
-    # Colorbar
+    if chrome:
+        _add_scale_chrome(fig, ax, cmap, scale, max_count)
+    _save_fig(fig, path, chrome=chrome, dpi=dpi)
+
+
+def _add_scale_chrome(
+    fig: plt.Figure,
+    ax: plt.Axes,
+    cmap: mcolors.Colormap,
+    scale: Callable[[float], np.floating],
+    max_count: int,
+) -> None:
+    """Add the colorbar and the sampled-colour legend for the pass scale."""
     sm = ScalarMappable(cmap=cmap, norm=mcolors.PowerNorm(gamma=0.5, vmin=0, vmax=max_count))
     sm.set_array([])
     cbar_ax = fig.add_axes([0.15, 0.06, 0.70, 0.015])
@@ -263,4 +289,29 @@ def _render(
     )
     legend.get_title().set_color("white")
 
-    _save_fig(fig, config.OUTPUT_PATH_WEIGHTED)
+
+def _render(
+    edge_geom: dict[tuple[int, int], list[tuple[float, float]]],
+    state: dict[str, Any],
+    *,
+    counts: dict[tuple[int, int], int] | None = None,
+    skip_png: bool = config.SKIP_PNG_RENDER,
+) -> None:
+    """Render both coverage and frequency maps.
+
+    counts weights the frequency map; the caller passes traversals (see
+    edge_speed.traversal_counts), falling back to state's per-ride counts.
+    The coverage map only asks which edges appear, so both agree there.
+    """
+    if skip_png:
+        print("Skipping PNG render")
+        return
+
+    edge_counts = state["edge_counts"] if counts is None else counts
+
+    if not edge_counts:
+        print("No edges to render")
+        return
+
+    _render_coverage(edge_geom, edge_counts, config.OUTPUT_PATH_UNWEIGHTED)
+    _render_frequency(edge_geom, edge_counts, config.OUTPUT_PATH_WEIGHTED)

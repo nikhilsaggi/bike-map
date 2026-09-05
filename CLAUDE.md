@@ -65,9 +65,10 @@ interactive Leaflet map (`docs/`, served via GitHub Pages) plus static PNGs.
 traces and must never land in `rides/`) and is not imported by any pipeline
 stage. `tools/` holds standalone analysis that is not
 part of the pipeline at all (`hmm_matcher_eval.py`, `weather_correlation.py`,
-`traversal_audit.py`), run from the repo root; `findings/` holds the write-ups
-of what that analysis found (moved out of the README to keep it about running
-the pipeline).
+`traversal_audit.py`), plus `render_readme_map.py`, which crops the README's
+image out of the same caches; all are run from the repo root. `findings/`
+holds the write-ups of what that analysis found (moved out of the README to
+keep it about running the pipeline).
 
 The package `__init__` deliberately exports nothing -- import the stage you
 need (`from bike_routes import edge_speed`). It used to re-export ~150 names
@@ -345,6 +346,11 @@ the instructions.
 - **The map counts passes, not rides** (see Edge passes above). Any README or
   UI wording that says "ride count" or "ride frequency" for a drawn feature
   is wrong -- an out-and-back is two passes on one ride.
+- **The README's image is `sample_output/pass_frequency.png`**: the frequency
+  render cropped to Manhattan/north Brooklyn with the colorbar and legend
+  dropped, written by `tools/render_readme_map.py` and captioned instead. The
+  full-graph PNGs a run writes are no longer committed -- rides now reach
+  Westchester and eastern Long Island, so that frame is mostly empty black.
 - Each README section should be answerable in one place: don't describe the
   matcher in "How It Works" *and* "Map-Matching" with different words, which
   is how the README ended up claiming the default matcher was heading-aware

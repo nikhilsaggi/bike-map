@@ -6,7 +6,11 @@ zoomable map and static heatmaps.
 
 **[View the live map](https://nikhilsaggi.github.io/bike-map/)**
 
-![Pass frequency map](sample_output/bike_routes_frequency.png)
+![Pass frequency across Manhattan and north Brooklyn](sample_output/pass_frequency.png)
+
+*Brighter is more passes over the same street. Cropped to the core of the
+network; a pipeline run renders everything ridden, most of which is a long
+way outside this frame, as `bike_routes_frequency.png`.*
 
 ## Interactive Map
 
@@ -251,6 +255,8 @@ part of it; `findings/` holds what they found:
 
 `tools/hmm_matcher_eval.py` compares the two matchers on real rides, and
 `tools/traversal_audit.py` checks pass counting against the raw traces.
+`tools/render_readme_map.py` re-renders the image at the top of this file
+from the caches, when it should catch up with the rides.
 
 ## Repository Layout
 
@@ -263,7 +269,7 @@ findings/           write-ups of what that analysis found
 tests/              pytest suite (synthetic grids) + Playwright e2e for docs/
 rides/              ride CSVs (gitignored -- personal GPS traces)
 cache/              everything the pipeline generates (gitignored)
-sample_output/      committed sample renders (the README's map image)
+sample_output/      the cropped map image at the top of this README
 update.py           fetch -> convert -> reprocess -> commit, in one command
 ```
 
