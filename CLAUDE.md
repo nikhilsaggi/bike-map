@@ -131,7 +131,11 @@ reads everything from `rides.geojson.gz` top-level `properties`.
   rejected routed layer: the dock-to-dock line stays straight, and what is
   drawn over it was measured. While a pair's route is up, that pair's straight
   line is the **only** link drawn (`dockTraceTo`): a dock reaching 141 others
-  buries the route under its own starburst otherwise. Ride view draws the
+  buries the route under its own starburst otherwise. One cycle at a time
+  lives in `dockTrace`, out of the row that started it, because the row's
+  chip, the up/down arrows and the ride-view bar's `route 4/31` all address
+  it; the arrows wrap rather than exiting, and are captured before Leaflet's
+  own listener so a step does not also pan the map. Ride view draws the
   **whole** recording, and 23% of recorded trips sit inside one that holds
   several, so the row says
   when it covers others -- clipping the trace to a trip's clock window would

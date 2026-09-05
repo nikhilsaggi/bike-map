@@ -283,6 +283,9 @@
     backdrop-filter: blur(6px); align-items: center; gap: 10px;
   }
   #ride-view-bar strong { color: #00e5ff; }
+  /* The cycle position is navigation, not part of the ride's identity, so it
+     sits back from the date the way the source tag does. */
+  .rv-step { color: #888; font-size: 11px; cursor: default; }
   #ride-view-exit {
     background: none; border: none; color: #888; font-size: 15px;
     line-height: 1; cursor: pointer; padding: 0 2px;
@@ -719,7 +722,11 @@ let dockMarkers = [];      // index-aligned with cbData.docks
 let dockTrips = [];        // dock index -> indices into cbData.trips
 let dockSelected = null;   // dock index whose trips are drawn, if any
 let dockTraceLabels = [];  // relabel callbacks for the open popup's route links
-let dockTraceTo = null;    // partner whose recorded route is being shown, if any
+// The pair of docks whose recordings are being stepped through, if any:
+// { to: partner dock index, rides: [ride id, ...] newest first, at: which one
+// is drawn }. It lives out here rather than in the row that started it so the
+// keyboard and the ride-view bar can address the same cycle.
+let dockTrace = null;
 let dockSqrtMax = 1;
 
 // The two sources share dates but not days: 32 of the Citibike days have no
@@ -789,7 +796,7 @@ function showDockLinks(di) {
   // pair's route is up that pair is the only line: the trip, and the ride
   // that was made on it.
   for (const p of dockPartners(di, lo, hi)) {
-    if (dockTraceTo !== null && p.idx !== dockTraceTo) continue;
+    if (dockTrace && p.idx !== dockTrace.to) continue;
     const to = cbData.docks[p.idx];
     if (!to.at) continue;
     L.polyline([[from.at[1], from.at[0]], [to.at[1], to.at[0]]], {
@@ -811,6 +818,24 @@ function focusDock(di) {
   if (m && dockLayer.hasLayer(m)) m.openPopup();  // auto-pans if off screen
 }
 
+// Show one of a pair's recordings and make it the cycle. `at` wraps, so the
+// arrow keys can run off either end without falling out of the pair.
+function startDockTrace(to, rides, at) {
+  const i = ((at % rides.length) + rides.length) % rides.length;
+  dockTrace = { to, rides, at: i };
+  viewRide(rides[i], true);       // keep the popup: its rows are the point
+  // ... and narrow the links to this pair, so the route is not lost in the
+  // starburst of a dock that reaches a hundred others.
+  if (dockSelected !== null) showDockLinks(dockSelected);
+}
+
+// Step the cycle. The arrow keys wrap rather than exiting: leaving ride view
+// is what Escape and the bar's own button are for, and a keypress that
+// silently ended the detour would be easy to hit by accident.
+function stepDockTrace(delta) {
+  if (dockTrace) startDockTrace(dockTrace.to, dockTrace.rides, dockTrace.at + delta);
+}
+
 // A dock pair the export found a GPS recording for can put that recording on
 // the map: the cyan single-ride view, over the straight line that stands in
 // for the trip. This is not the rejected routed-corridor layer -- that drew a
@@ -826,28 +851,26 @@ function addTraceControl(row, p) {
   note.className = 'dock-trace-note';
   const n = p.rides.length;
   const dateOf = ri => dateList[rideDateIdx[ri]] ?? '';
-  // Which recording the next click shows; n means "put the map back", so a
-  // row always ends where it started rather than trapping the reader in a
-  // ride view they have to leave by another control.
-  let next = 0;
+  // Where this row sits in the cycle on screen, or -1 when the cycle belongs
+  // to another row, or to nothing. Read rather than remembered: ride view is
+  // left from Escape, the exit bar and the date filter too.
+  const at = () => (dockTrace && dockTrace.to === p.idx && rideView !== null ? dockTrace.at : -1);
 
   function relabel() {
-    const shown = rideView !== null && p.rides.includes(rideView) ? rideView : null;
-    // Nothing of this row's on the map -- from Escape, the exit bar, or
-    // another row taking it over -- so the cycle starts over, which is what
-    // the label with no position on it says it will do.
-    if (shown === null) next = 0;
+    const i = at();
+    const shown = i < 0 ? null : p.rides[i];
     if (shown !== null && n > 1) {
-      trace.textContent = `\u25b8 route ${p.rides.indexOf(shown) + 1}/${n}`;
+      trace.textContent = `\u25b8 route ${i + 1}/${n}`;
     } else {
       trace.textContent = n > 1 ? `\u25b8 ${n} routes` : '\u25b8 route';
     }
     if (shown !== null) {
       trace.title = `Showing ${dateOf(shown)} \u00b7 ` +
-        (n > 1 ? 'click for the next recording' : 'click to put the map back');
+        (n > 1 ? 'click or press \u2193 for the next recording' : 'click to put the map back');
     } else {
       trace.title = n > 1
-        ? `${n} rides recorded over these trips; click to show each in turn`
+        ? `${n} rides recorded over these trips; click or use \u2191\u2193 ` +
+          'to show each in turn'
         : `Show the ride recorded over this trip (${dateOf(p.rides[0])})`;
     }
     // Ride view draws the whole recording, and a recording can hold several
@@ -867,16 +890,12 @@ function addTraceControl(row, p) {
     // The row's own click hops to the other dock, which is the thing the
     // layer is for; this only adds to it.
     ev.stopPropagation();
-    if (next >= n) {
-      next = 0;
-      // Ride view can also be left by Escape or the exit bar, in which case
-      // there is nothing to clear and the click should show the first one.
-      if (rideView !== null) { exitRideView(); relabel(); return; }
-    }
-    dockTraceTo = p.idx;
-    viewRide(p.rides[next], true);  // keep the popup: its rows are the point
-    showDockLinks(dockSelected);    // ... and this pair's line, on its own
-    next++;
+    const i = at();
+    // Clicking walks the cycle and then off the end of it, so the row that
+    // started a detour can end it. The arrow keys wrap instead.
+    if (i < 0) startDockTrace(p.idx, p.rides, 0);
+    else if (i + 1 < n) stepDockTrace(1);
+    else exitRideView();
     relabel();
   });
 
@@ -1206,12 +1225,18 @@ map.on('popupopen', e => {
 // popup's own row does.
 function viewRide(ri, keepPopup = false) {
   rideView = ri;
-  if (!keepPopup) { map.closePopup(); dockTraceTo = null; }
+  if (!keepPopup) { map.closePopup(); dockTrace = null; }
   const d = dateList[rideDateIdx[ri]] ?? '';
   const t = rideList[ri]?.[1] || '';
   const label = document.getElementById('ride-view-label');
+  // Stepping a dock pair's recordings is the one ride view you can be several
+  // clicks into, so the bar carries the position the way the row does.
+  const step = dockTrace && dockTrace.rides.length > 1
+    ? ` &middot; <span class="rv-step" title="Up/down arrows step through this ` +
+      `pair's recordings">\u2191\u2193 route ${dockTrace.at + 1}/${dockTrace.rides.length}</span>`
+    : '';
   label.innerHTML = `${t ? `${d} ${t}` : d}` +
-    `${sourceTag(ri) ? ` &middot; ${sourceTag(ri)}` : ''}`;
+    `${sourceTag(ri) ? ` &middot; ${sourceTag(ri)}` : ''}${step}`;
   document.getElementById('ride-view-bar').style.display = 'flex';
   const on = [];
   geoLayer.eachLayer(layer => {
@@ -1237,7 +1262,7 @@ function exitRideView() {
   rideView = null;
   // applyFilter redraws the open dock's links through applyDockFilter, so
   // clearing this first is what brings the other partners back.
-  dockTraceTo = null;
+  dockTrace = null;
   document.getElementById('ride-view-bar').style.display = 'none';
   syncYearLinks();
   applyFilter();
@@ -1263,9 +1288,18 @@ function syncYearLinks() {
   }
 }
 
+// Captured, not bubbled: Leaflet pans the map on the arrow keys from its own
+// listener on the map container, which would otherwise run first and slide
+// the city sideways under every step of the cycle.
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') exitRideView();
-});
+  if (e.key === 'Escape') { exitRideView(); return; }
+  if (!dockTrace || (e.key !== 'ArrowDown' && e.key !== 'ArrowUp')) return;
+  e.preventDefault();
+  e.stopPropagation();
+  // Down goes on through the list, which runs newest first, so down is
+  // backwards in time -- the direction the rows themselves read in.
+  stepDockTrace(e.key === 'ArrowDown' ? 1 : -1);
+}, true);
 document.getElementById('ride-view-exit').addEventListener('click', exitRideView);
 
 // -- Per-year table --------------------------------------------------------

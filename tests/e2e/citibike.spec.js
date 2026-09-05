@@ -210,6 +210,86 @@ test.describe('Citibike dock layer', () => {
     expect(await page.evaluate(() => dockLinks.getLayers().length)).toBe(2);
   });
 
+  test('the arrow keys step the cycle, and the bar says where it is', async ({ page }) => {
+    await gotoMap(page);
+    await showDocks(page);
+    await page.evaluate(() => dockMarkers[0].openPopup());
+    const trace = page.locator('.leaflet-popup-content .ride-row', { hasText: 'Park Dock' })
+      .locator('.dock-trace');
+    const bar = page.locator('#ride-view-label .rv-step');
+
+    // Home reaches Park on two recordings, newest first: rides 3 then 1.
+    await trace.click();
+    expect(await page.evaluate(() => rideView)).toBe(3);
+    await expect(bar).toHaveText('\u2191\u2193 route 1/2');
+
+    // Down goes on through the list, which runs newest first.
+    await page.keyboard.press('ArrowDown');
+    await expect.poll(() => page.evaluate(() => rideView)).toBe(1);
+    await expect(bar).toHaveText('\u2191\u2193 route 2/2');
+    // The row it came from follows the keyboard, since both read one cycle.
+    await expect(trace).toHaveText('\u25b8 route 2/2');
+
+    // Off either end it wraps rather than dropping out of ride view: leaving
+    // is what Escape and the bar's button are for.
+    await page.keyboard.press('ArrowDown');
+    await expect.poll(() => page.evaluate(() => rideView)).toBe(3);
+    await page.keyboard.press('ArrowUp');
+    await expect.poll(() => page.evaluate(() => rideView)).toBe(1);
+  });
+
+  test('the arrows belong to the cycle, not to the map under it', async ({ page }) => {
+    await gotoMap(page);
+    await showDocks(page);
+    const center = () => page.evaluate(() => {
+      const c = map.getCenter();
+      return [c.lat.toFixed(4), c.lng.toFixed(4)];
+    });
+    const before = await center();
+
+    // Leaflet pans on the arrow keys from its own listener on the map
+    // container, so with a cycle running the page has to get there first.
+    await page.evaluate(() => dockMarkers[0].openPopup());
+    await page.locator('.leaflet-popup-content .ride-row', { hasText: 'Park Dock' })
+      .locator('.dock-trace').click();
+    await page.evaluate(() => map.getContainer().focus());
+    await page.keyboard.press('ArrowDown');
+    await expect.poll(() => page.evaluate(() => rideView)).toBe(1);
+    expect(await center()).toEqual(before);
+
+    // With no cycle running the map keeps its own keys.
+    await page.evaluate(() => exitRideView());
+    await page.keyboard.press('ArrowDown');
+    await expect.poll(center).not.toEqual(before);
+  });
+
+  test('a pair with one recording gets no position in the bar', async ({ page }) => {
+    await gotoMap(page);
+    await showDocks(page);
+    // Terminal -> Ghost has a single recording, so there is no cycle to
+    // report and the bar stays about the ride.
+    await page.evaluate(() => dockMarkers[2].openPopup());
+    await page.locator('.leaflet-popup-content .dock-row-flat .dock-trace').click();
+    await expect(page.locator('#ride-view-bar')).toBeVisible();
+    await expect(page.locator('#ride-view-label .rv-step')).toHaveCount(0);
+  });
+
+  test('a ride shown from anywhere else takes no arrow keys with it', async ({ page }) => {
+    await gotoMap(page);
+    await showDocks(page);
+    await page.evaluate(() => dockMarkers[0].openPopup());
+    await page.locator('.leaflet-popup-content .ride-row', { hasText: 'Park Dock' })
+      .locator('.dock-trace').click();
+
+    // viewRide from a street popup or a year link is not a dock pair's cycle,
+    // so the keys go back to the map with it.
+    await page.evaluate(() => viewRide(2));
+    expect(await page.evaluate(() => dockTrace)).toBe(null);
+    await expect(page.locator('#ride-view-label .rv-step')).toHaveCount(0);
+    await page.keyboard.press('ArrowDown');
+    await expect.poll(() => page.evaluate(() => rideView)).toBe(2);
+  });
+
   test('a recording is offered even where the far dock cannot be placed', async ({ page }) => {
     await gotoMap(page);
     await showDocks(page);
