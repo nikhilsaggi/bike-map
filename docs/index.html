@@ -189,10 +189,18 @@
      the slider's range has no docks in it at all. Saying so here is the
      difference between "nothing to show" and "this is broken". */
   #cb-range { color: #555; font-size: 9px; }
-  .dock-popup { max-height: 200px; overflow-y: auto; }
+  /* Two lines a row means half as many partners in view, so the scroll box
+     grows to roughly hold what it held before. */
+  .dock-popup { max-height: 260px; overflow-y: auto; }
   .dock-head { color: #a8d8e8; font-weight: 600; }
   .dock-sub { color: #666; font-size: 10px; margin-bottom: 3px; }
   .dock-count { color: #666; }
+  /* Second line of a dock row: the counts, and the route link when there is
+     one. Indented under the name it belongs to, and set back from it. */
+  .dock-meta { margin-left: 10px; font-size: 11px; line-height: 1.4; }
+  /* Rows are two lines each now, so they need air between them to stay
+     readable as rows. Scoped: the street popup's own .ride-row is one line. */
+  .dock-popup .ride-row, .dock-popup .dock-row-flat { margin-bottom: 3px; }
   /* A dock with no coordinates cannot be jumped to, so it gets none of the
      link affordance -- looking clickable and doing nothing is worse than
      plainly not being a link. */
@@ -202,11 +210,10 @@
      dock to dock is what the rows are for -- so it takes the ride view's own
      cyan rather than the row's link blue. */
   .dock-trace {
-    color: #00e5ff; margin-left: 6px; font-size: 11px;
-    white-space: nowrap; cursor: pointer;
+    color: #00e5ff; margin-left: 8px; white-space: nowrap; cursor: pointer;
   }
   .dock-trace:hover { color: #fff; }
-  .dock-trace-note { color: #777; font-size: 9px; line-height: 1.3; margin: -1px 0 3px 4px; }
+  .dock-trace-note { color: #777; font-size: 9px; line-height: 1.3; margin: -2px 0 4px 10px; }
   #stat-citibike { line-height: 1.5; }
   /* One grid for the header and every row, so the two columns line up
      instead of each row right-justifying its own text. */
@@ -842,9 +849,10 @@ function stepDockTrace(delta) {
 // path an algorithm chose between two docks; this draws a trace that was
 // recorded, and only for the pair a reader asked about.
 //
-// Returns the note element to place under the row, which says when the
-// recording being drawn holds more than the clicked hop.
-function addTraceControl(row, p) {
+// Hangs the control on the row's meta line and returns the note element to
+// place under the row, which says when the recording being drawn holds more
+// than the clicked hop.
+function addTraceControl(meta, p) {
   const trace = document.createElement('span');
   trace.className = 'dock-trace';
   const note = document.createElement('div');
@@ -901,7 +909,7 @@ function addTraceControl(row, p) {
 
   relabel();
   dockTraceLabels.push(relabel);
-  row.appendChild(trace);
+  meta.appendChild(trace);
   return note;
 }
 
@@ -934,12 +942,27 @@ function dockPopup(di) {
     const other = cbData.docks[p.idx];
     const row = document.createElement('div');
     const name = document.createElement('span');
+    name.className = 'dock-name';
     name.textContent = other.name;
     const counts = document.createElement('span');
     counts.className = 'dock-count';
-    counts.textContent =
-      (p.out ? ` \u2192${p.out}` : '') + (p.into ? ` \u2190${p.into}` : '');
-    row.append(name, counts);
+    // Down-right for a trip out to this dock, up-right for one back: the pair
+    // reads as one loop away and home rather than two opposed directions on a
+    // line, which is what a dock's traffic actually is.
+    counts.textContent = [
+      p.out ? `\u2198${p.out}` : '',
+      p.into ? `\u2197${p.into}` : '',
+    ].filter(Boolean).join(' ');
+    counts.title =
+      `${p.out} trip${p.out !== 1 ? 's' : ''} out to here, ` +
+      `${p.into} back`;
+    // The counts and the route link go under the name rather than beside it:
+    // a dock name is long, and three things on one line made the popup as
+    // wide as the panel it sits next to.
+    const meta = document.createElement('div');
+    meta.className = 'dock-meta';
+    meta.appendChild(counts);
+    row.append(name, meta);
     // Only a dock that can be drawn is worth offering as a link -- one GBFS
     // could not place has nowhere to jump to, so it must not look clickable.
     if (other.at) {
@@ -952,7 +975,7 @@ function dockPopup(di) {
     }
     // Independent of the dock's coordinates: a recording is on the map
     // whether or not the far end of the trip can be placed on it.
-    const note = p.rides.length ? addTraceControl(row, p) : null;
+    const note = p.rides.length ? addTraceControl(meta, p) : null;
     box.appendChild(row);
     if (note) box.appendChild(note);
   }

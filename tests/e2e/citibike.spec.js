@@ -91,7 +91,7 @@ test.describe('Citibike dock layer', () => {
 
     // The rows carry the page's link styling, so they have to actually go
     // somewhere -- looking clickable and doing nothing is the bug this covers.
-    await popup.locator('.ride-row', { hasText: 'Terminal Dock' }).click();
+    await popup.locator('.ride-row', { hasText: 'Terminal Dock' }).locator('.dock-name').click();
     // Leaflet holds the outgoing popup in the DOM through its fade, so wait
     // for it to go before reading "the" heading.
     await expect
@@ -103,6 +103,20 @@ test.describe('Citibike dock layer', () => {
     // Terminal's own trips now, not the ones it was reached by: it reaches
     // Home, and Ghost Dock which cannot be drawn.
     expect(await page.evaluate(() => dockLinks.getLayers().length)).toBe(1);
+  });
+
+  test('a row reads name first, counts and route under it', async ({ page }) => {
+    await gotoMap(page);
+    await showDocks(page);
+    await page.evaluate(() => dockMarkers[0].openPopup());
+    const park = page.locator('.leaflet-popup-content .ride-row', { hasText: 'Park Dock' });
+
+    // Home sent two trips to Park and got one back. Down-right out, up-right
+    // home, on their own line under the name: three things on one line made
+    // the popup as wide as the stats panel beside it.
+    await expect(park.locator('.dock-name')).toHaveText('Park Dock & 5 Ave');
+    await expect(park.locator('.dock-meta .dock-count')).toHaveText('\u21982 \u21971');
+    await expect(park.locator('.dock-meta .dock-trace')).toHaveText('\u25b8 2 routes');
   });
 
   test('a row offers the recording of the trip, and only where there is one', async ({ page }) => {
@@ -178,7 +192,9 @@ test.describe('Citibike dock layer', () => {
     // The dock is a dock again: every partner it reaches, drawn once more.
     expect(await page.evaluate(() => dockLinks.getLayers().length)).toBe(2);
     // ... and the row still hops docks afterwards, which is what it is for.
-    await popup.locator('.ride-row', { hasText: 'Park Dock' }).click();
+    // The name, not the row's centre: that now lands on the meta line, where
+    // the route chip deliberately keeps its clicks to itself.
+    await popup.locator('.ride-row', { hasText: 'Park Dock' }).locator('.dock-name').click();
     await expect
       .poll(() => page.locator('.leaflet-popup-content .dock-head').count())
       .toBe(1);
