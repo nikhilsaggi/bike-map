@@ -46,6 +46,8 @@ def test_export_geojson(tmp_path, monkeypatch):
     assert props["rides_per_year"] == {"2024": 1, "2025": 1}
     assert abs(props["total_km"] - 0.6) < 0.05
     assert props["updated"] >= "2026-01-01"
+    # No Citi Bike cache in this tree: the block is absent, not half-built.
+    assert props["citibike"] is None
 
     features = sorted(data["features"], key=lambda f: len(f["properties"]["rides"]))
     # Feature rides are indices into the global ride list; ride_count is dropped
@@ -228,3 +230,60 @@ def test_export_ignores_unnamed_corridors(tmp_path, monkeypatch):
     with gzip.open(tmp_path / "docs" / "rides.geojson.gz") as f:
         data = json.load(f)
     assert data["properties"]["speed"] is None
+
+
+def test_citibike_block_leaves_the_drawn_edges_alone(tmp_path, monkeypatch):
+    """Dock trips ride along in properties and touch nothing that is measured.
+
+    They have no GPS trace, so a route between two docks is a guess. The
+    export may report them beside the map; it may never let them into the
+    edges, their pass counts, or the coverage the page draws conclusions from.
+    """
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(config, "GEOJSON_OUTPUT_PATH", tmp_path / "docs" / "rides.geojson.gz")
+    trips = tmp_path / "citibike_trips.json"
+    monkeypatch.setattr(config, "CITIBIKE_TRIPS_PATH", trips)
+    trips.write_text(
+        json.dumps(
+            {
+                "format": 1,
+                "trips": [
+                    {
+                        "t": 1_700_000_000_000,
+                        "dur": 600_000,
+                        "a": "A St",
+                        "b": "B St",
+                        "bike": "1",
+                        "paid": 0.0,
+                        "gross": 0.0,
+                        "credit": 0.0,
+                        "ebike": False,
+                    }
+                ],
+                "stations": {"A St": [-73.9, 40.7], "B St": [-73.95, 40.75]},
+                "unmatched": [],
+            }
+        )
+    )
+
+    edge_geom = {(1, 2): [lonlat(0.0, 0.0), lonlat(300.0, 0.0)]}
+    state = {
+        "processed_files": {R1},
+        "edge_counts": {(1, 2): 1},
+        "edge_rides": {(1, 2): [R1]},
+        "ride_stats": {R1: {"dist_m": 1000.0, "duration_s": 600, "start": None}},
+    }
+    export._export_geojson(edge_geom, state)
+
+    with gzip.open(tmp_path / "docs" / "rides.geojson.gz") as f:
+        data = json.load(f)
+    props = data["properties"]
+
+    assert props["citibike"]["trips"] == 1
+    assert len(props["citibike"]["stations"]) == 2
+    # The measured side is untouched: one own-bike ride, one drawn edge, and
+    # the features carry ride indices and nothing else.
+    assert props["total_rides"] == 1
+    assert props["total_edges"] == 1
+    assert props["rides"] == [[0, "08:00", 1.0]]
+    assert [set(f["properties"]) for f in data["features"]] == [{"rides"}]

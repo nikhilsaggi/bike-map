@@ -86,7 +86,7 @@ test.describe('stats panel', () => {
   test('names every section on a chip', async ({ page }) => {
     await gotoMap(page);
     expect(await page.locator('#stat-chips .chip:not(.hidden)').allTextContents())
-      .toEqual(['Years', 'Riding', 'Weather', 'Streets']);
+      .toEqual(['Years', 'Riding', 'Weather', 'Streets', 'Citi Bike']);
   });
 
   test('opens one section at a time', async ({ page }) => {

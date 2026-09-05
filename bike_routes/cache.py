@@ -90,6 +90,8 @@ def _migrate_legacy_caches() -> None:
         config.ROUTE_CACHE_PATH,
         config.CACHE_VERSIONS_PATH,
         config.WEATHER_CACHE_PATH,
+        config.CITIBIKE_TRIPS_PATH,
+        config.CITIBIKE_STATIONS_PATH,
     ):
         legacy = Path(dest.name)
         if not legacy.exists() or legacy.resolve() == dest.resolve():

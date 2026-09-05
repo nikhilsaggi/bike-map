@@ -245,7 +245,7 @@ test.describe('streets', () => {
     await page.setViewportSize({ width: 1280, height: 560 });
     await gotoMap(page);
 
-    for (const section of ['stat-years', 'stat-riding', 'stat-weather', STREETS]) {
+    for (const section of ['stat-years', 'stat-riding', 'stat-weather', STREETS, 'stat-citibike']) {
       await openSection(page, section);
       const fits = await page.evaluate(() => {
         const s = document.getElementById('stats').getBoundingClientRect();

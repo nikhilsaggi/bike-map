@@ -55,10 +55,15 @@ interactive Leaflet map (`docs/`, served via GitHub Pages) plus static PNGs.
    Not a stage of its own: `export.py` calls it on the built features, so it
    runs *after* the speed/pass backfill and sees its counts
 8. `weather.py` -- Open-Meteo ride-weather stats embedded in the GeoJSON
+9. `citibike.py` -- Citi Bike dock-trip stats, same shape as `weather.py`:
+   a top-level `properties` block computed inline in `export.py`, no stage,
+   no state key, `None` when its cache is absent
 
-`bike_routes/ingest/` is the front of the pipeline (`garmin_sync`, `gpx_to_csv`),
-run as `python -m bike_routes.ingest.<mod>`; it fills `rides/` and is not
-imported by any pipeline stage. `tools/` holds standalone analysis that is not
+`bike_routes/ingest/` is the front of the pipeline (`garmin_sync`, `gpx_to_csv`,
+`citibike`), run as `python -m bike_routes.ingest.<mod>`; it fills `rides/`
+(and, for `citibike`, `cache/citibike_trips.json` -- dock trips are not GPS
+traces and must never land in `rides/`) and is not imported by any pipeline
+stage. `tools/` holds standalone analysis that is not
 part of the pipeline at all (`hmm_matcher_eval.py`, `weather_correlation.py`,
 `traversal_audit.py`), run from the repo root; `findings/` holds the write-ups
 of what that analysis found (moved out of the README to keep it about running
@@ -104,6 +109,16 @@ reads everything from `rides.geojson.gz` top-level `properties`.
 - Caches are mtime/version-invalidated: cache/hmm_map_cache.pkl must be newer
   than cache/osm_graph_cache.pkl; graph cache is bound to osmnx/networkx
   versions.
+- **Citi Bike trips are dock-to-dock with no GPS trace**, so they never enter
+  `edge_counts`, `edge_traversals`, `edge_rides`, `coverage`, or `features[]`
+  -- those all mean "a trace was matched here". They live only in
+  `properties.citibike`, and the page draws them as dock markers and straight
+  desire lines, never as routes. Shortest-path routing between docks was
+  built and measured (117 km of streets the GPS map never covered) and
+  **rejected**: it makes a guess look like a trace
+  ([why](findings/citibike-trips.md)). No speed is derived either -- the
+  export's durations are whole minutes and its end times are the start plus
+  that duration.
 
 ### Edge passes (`edge_speed.py`)
 
@@ -236,6 +251,10 @@ times one ride crossed one edge, in the stored vertex order of
   the history irrecoverably.
 - Personal data (`rides/*.csv` and everything in `cache/`) is gitignored --
   never commit ride files or force-add ignored paths.
+- Citi Bike trips come from a manual Lyft download
+  (`account.lyft.com/privacy/data` -> `python -m bike_routes.ingest.citibike
+  <file>`), not from `update.py`: there is no API to automate. The ingest is
+  by hand; the summary is automatic on every later run.
 
 ## Documentation
 

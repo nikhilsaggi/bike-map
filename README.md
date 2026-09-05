@@ -24,6 +24,11 @@ The pipeline exports a compressed GeoJSON that powers an interactive
 - Riding stats: distance/time totals, average speed, longest ride,
   miles and new-street miles per year, rides-by-hour and weekday
   histograms (data is stored metric; the UI displays miles)
+- Optional Citi Bike layer: dock markers coloured by net flow, plus straight
+  dock-to-dock lines. Drawn straight on purpose — these trips carry no GPS
+  trace, so the route between two docks is unknown and nothing here counts
+  toward the passes or the coverage figure
+  ([why](findings/citibike-trips.md))
 
 To view locally:
 
@@ -67,7 +72,19 @@ Requires Python 3.9+.
    --workers N              worker processes for map matching (1 = sequential)
    ```
 
-4. Outputs:
+4. Optional — add Citi Bike trips. Download the account export from
+   `account.lyft.com/privacy/data`, then:
+
+   ```bash
+   python -m bike_routes.ingest.citibike ~/citibikenyc_history_YYYY-MM-DD.json
+   ```
+
+   These are dock-to-dock records with no GPS trace, so they never join the
+   drawn edges or the coverage figure — they become a separate stats section
+   and an optional dock layer. Once the cache exists, every later
+   `python -m bike_routes` picks it up with no flag.
+
+5. Outputs:
    - `docs/rides.geojson.gz` — interactive map data
    - `bike_routes_coverage.png` and `bike_routes_frequency.png` — static images
 
@@ -204,6 +221,9 @@ part of it; `findings/` holds what they found:
   and how to unstick it
 - [Traversal counting](findings/traversal-counting.md) — how a pass is
   detected from raw fixes, and why a corridor's members combine the way they do
+- [Citi Bike trips](findings/citibike-trips.md) — a second source with no
+  trace: why it has no speed, why its routes are not drawn, and what the
+  dock counts show
 
 `tools/hmm_matcher_eval.py` compares the two matchers on real rides, and
 `tools/traversal_audit.py` checks pass counting against the raw traces.
@@ -212,7 +232,7 @@ part of it; `findings/` holds what they found:
 
 ```
 bike_routes/        the pipeline, one stage per module
-  ingest/           Garmin download and GPX -> CSV (the front of the pipeline)
+  ingest/           Garmin download, GPX -> CSV, Citi Bike export (the front)
 docs/               the published Leaflet map + its rides.geojson.gz
 tools/              standalone analysis run by hand, not part of the pipeline
 findings/           write-ups of what that analysis found
@@ -238,6 +258,10 @@ gitignored):
 - `cache/route_cache.pkl` — shortest-path results between node pairs
 - `cache/cache_versions.json` — osmnx/networkx versions that wrote the graph
 - `cache/weather_cache.json` — Open-Meteo daily weather, so a failed API call
+  falls back to the last good copy
+- `cache/citibike_trips.json` — the normalised Citi Bike account export
+  (written by `ingest.citibike`, absent until you run it)
+- `cache/citibike_stations.json` — GBFS dock coordinates, so a failed fetch
   falls back to the last good copy
 
 Delete any cache file — or the whole directory — to force a rebuild.

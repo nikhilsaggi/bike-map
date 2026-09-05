@@ -41,6 +41,42 @@ export const SPEED_BLOCK = {
   min_m: 250.0,
 };
 
+// Citi Bike dock trips: station-to-station, no trace, so this block carries
+// counts and coordinates and never a route. Arithmetic is closed by hand --
+// every trip has one departure and one arrival, so both columns sum to 11:
+//   out 6 + 1 + 4 = 11, in 6 + 5 + 0 = 11.
+// One-way share spans the full diverging ramp: Terminal is 4/0 (share +1.0,
+// only ever left from), Park is 1/5 (share -0.67, mostly arrived at), Home is
+// 6/6 (share 0, balanced). All three clear the 4-use floor for colouring.
+export const CITIBIKE_BLOCK = {
+  trips: 11,
+  hours: 2.0,
+  days: 6,
+  from: '2023-04-01',
+  to: '2024-07-04',
+  same_day: 4,
+  unmatched: 0,
+  median_min: 9.0,
+  longest_min: 30,
+  ebike_min: 3,
+  paid: 5.0,
+  charged: 12.0,
+  credits: 7.0,
+  aborted: 1,
+  bikes: 8,
+  repeat_bikes: 2,
+  once_only: 0,
+  // Busiest first (out + in = 12, 6, 4), as the export emits it.
+  stations: [
+    { name: 'Home Dock & Main St', at: [-73.95, 40.7325], out: 6, in: 6 },
+    { name: 'Park Dock & 5 Ave', at: [-73.97, 40.7375], out: 1, in: 5 },
+    { name: 'Terminal Dock & 42 St', at: [-73.955, 40.7425], out: 4, in: 0 },
+  ],
+  // [fromIdx, toIdx, count], busiest first. The aborted unlock started and
+  // ended at Home, so it is in the station columns but is not a pair.
+  pairs: [[0, 1, 5], [2, 0, 4], [1, 0, 1]],
+};
+
 const line = (lat) => ({
   type: 'LineString',
   coordinates: [
@@ -106,6 +142,7 @@ export function buildFixture(propertyOverrides = {}) {
       // is checkable against a known centre.
       top_segment: { name: 'Center Street', at: [-73.96, 40.745] },
       speed: SPEED_BLOCK,
+      citibike: CITIBIKE_BLOCK,
       ...propertyOverrides,
     },
     // Sorted by ride count ascending, like the exporter.

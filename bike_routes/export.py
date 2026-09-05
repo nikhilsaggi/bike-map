@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from . import config
+from .citibike import _citibike_summary
 from .edge_speed import _speed_summary, ride_pass_dirs
 from .merge import _audit_merge, _geom_len_m, _merge_parallel_features
 from .ride_stats import _riding_summary
@@ -167,6 +168,7 @@ def _export_geojson(
             "riding": _riding_summary(state.get("ride_stats", {})),
             "coverage": _coverage_summary(edge_geom, edge_hw or {}, state),
             "weather": _weather_summary(state.get("ride_stats", {})),
+            "citibike": _citibike_summary(state.get("ride_stats", {})),
             "speed": _speed_summary(state.get("edge_speed", {}), edge_geom, edge_name or {}),
             "dates": all_dates,
             "rides": rides_meta,

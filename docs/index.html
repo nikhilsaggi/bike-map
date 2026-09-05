@@ -158,6 +158,31 @@
   .sp-detail { color: #666; font-size: 10px; padding: 0 0 4px 0; font-variant-numeric: tabular-nums; }
   #speed-lead { color: #777; font-size: 9px; line-height: 1.4; margin-bottom: 5px; }
 
+  /* -- Citi Bike ------------------------------------------------------------
+     Diverging pair over the share of a dock's use that runs one way: cool =
+     arrivals, warm = departures, muted grey where the two balance.  Lightness
+     and chroma both climb away from the middle, so on the dark basemap the
+     one-way docks catch the eye and an even one recedes.  Poles clear 7:1 on
+     the surface, the midpoint 3.2:1; worst pair CVD dE 16.1 (protan). */
+  #stat-citibike { line-height: 1.5; }
+  #stat-citibike .r-row { margin: 1px 0; }
+  .cb-flow-row { display: flex; align-items: baseline; gap: 6px; padding: 1px 0; }
+  .cb-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .cb-flow-name {
+    flex: 1; color: #ccc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .cb-flow-val { flex: none; color: #fff; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .cb-flow-sub { flex: none; color: #666; font-size: 9px; font-variant-numeric: tabular-nums; }
+  .cb-note { color: #777; font-size: 9px; line-height: 1.4; margin-top: 5px; }
+  .cb-note strong { color: #ccc; font-weight: 600; }
+  #cb-toggle {
+    display: block; margin-top: 8px; padding-top: 8px; border-top: 1px solid #333;
+    color: #888; font-size: 11px; cursor: pointer; user-select: none;
+  }
+  #cb-toggle.hidden { display: none; }
+  #cb-toggle:hover { color: #ccc; }
+  #cb-check { vertical-align: -1px; margin-right: 3px; accent-color: #7fb3f2; }
+
   @media (max-width: 640px) {
     #stats-sections.open { max-height: min(240px, calc(100vh - 300px)); }
   }
@@ -257,6 +282,7 @@
       <button class="chip hidden" data-section="stat-riding" aria-expanded="false" aria-controls="stat-riding">Riding</button>
       <button class="chip hidden" data-section="stat-weather" aria-expanded="false" aria-controls="stat-weather">Weather</button>
       <button class="chip hidden" data-section="stat-streets" aria-expanded="false" aria-controls="stat-streets">Streets</button>
+      <button class="chip hidden" data-section="stat-citibike" aria-expanded="false" aria-controls="stat-citibike">Citi Bike</button>
     </div>
     <div id="stats-sections">
       <div id="stat-years"></div>
@@ -269,6 +295,7 @@
           <div id="speed-list"></div>
         </div>
       </div>
+      <div id="stat-citibike"></div>
     </div>
   </div>
 </div>
@@ -287,6 +314,12 @@
     </div>
   </div>
   <div id="filter-dates"><span id="date-lo"></span><span id="date-hi"></span></div>
+  <!-- Revealed only when the payload carries a citibike block. Off by default:
+       the docks are a different kind of fact from the drawn edges, and the map
+       should open as the map of rides it has always been. -->
+  <label id="cb-toggle" class="hidden">
+    <input type="checkbox" id="cb-check"> Citi Bike docks
+  </label>
 </div>
 
 <script>
@@ -572,6 +605,156 @@ function renderSpeedSplits(speed) {
   showChip('stat-streets');
 }
 
+// -- Citi Bike ---------------------------------------------------------------
+// A second, weaker kind of evidence, kept in its own layer on purpose.  These
+// trips are dock-to-dock with no GPS trace, so the route between two docks is
+// unknown and nothing here contributes to the drawn edges, their pass counts,
+// or the coverage percentage.  What it does know exactly is where a trip began
+// and where it ended -- which the matched-edge map cannot say at all, because
+// an edge has a direction but no origin.
+
+// Diverging over net flow (out - in).  Grey where a dock is balanced; the
+// arms brighten as it becomes one-way.  See the palette note in the stylesheet.
+// Hue is the *share* of a dock's use that runs one way, (out - in) / (out +
+// in), not the raw difference -- the difference is scale-dependent, and it
+// painted the home dock (96 out, 93 in, net +3) the same as one that is 10
+// out and 0 in.  Radius already carries volume, so the two channels say
+// different things.  Bounds are exclusive and mirrored about zero.
+const CB_FLOW = [
+  [-0.5, '#7fb3f2'],  // overwhelmingly arrived at
+  [-0.15, '#3f77bd'],
+  [0.15, '#6b6b66'],  // balanced
+  [0.5, '#c2564f'],
+  [Infinity, '#f08a80'],  // overwhelmingly departed from
+];
+
+// Under this many uses the share is one or two trips of noise, and a dock
+// visited once would otherwise read as maximally one-way.
+const CB_FLOW_MIN_USES = 4;
+
+function cbFlowColor(out, inn) {
+  const total = out + inn;
+  if (total < CB_FLOW_MIN_USES) return '#6b6b66';
+  const share = (out - inn) / total;
+  for (const [ceil, hex] of CB_FLOW) if (share < ceil) return hex;
+  return CB_FLOW[CB_FLOW.length - 1][1];
+}
+
+let citibikeLayer = null;
+
+// Built once and toggled by add/removeLayer, matching how the ride filter
+// already moves layers on and off rather than restyling them.
+function buildCitibikeLayer(cb) {
+  const layer = L.layerGroup();
+  // Desire lines first so the dock markers sit above them.  Straight
+  // dock-to-dock, deliberately: a straight line cannot be mistaken for a
+  // claim about which streets the trip actually used.
+  for (const [from, to, n] of cb.pairs || []) {
+    const a = cb.stations[from], b = cb.stations[to];
+    if (!a || !b) continue;
+    L.polyline([[a.at[1], a.at[0]], [b.at[1], b.at[0]]], {
+      color: '#c8c8be', weight: Math.min(3, 0.5 + n * 0.35),
+      opacity: Math.min(0.5, 0.12 + n * 0.03), interactive: false,
+    }).addTo(layer);
+  }
+  for (const s of cb.stations || []) {
+    const total = s.out + s.in;
+    L.circleMarker([s.at[1], s.at[0]], {
+      radius: Math.min(14, 2.5 + Math.sqrt(total) * 1.6),
+      fillColor: cbFlowColor(s.out, s.in), fillOpacity: 0.85,
+      // A ring in the basemap's own dark keeps a dock legible where it lands
+      // on top of a bright plasma segment.
+      color: '#0d0d0d', weight: 2,
+    }).bindTooltip(
+      `${s.name}<br>${s.out} out / ${s.in} in`, { sticky: true }
+    ).addTo(layer);
+  }
+  return layer;
+}
+
+function initCitibikeLayer(cb) {
+  if (!cb || !cb.stations || !cb.stations.length) return;
+  citibikeLayer = buildCitibikeLayer(cb);
+  const toggle = document.getElementById('cb-toggle');
+  const check = document.getElementById('cb-check');
+  toggle.classList.remove('hidden');
+  check.addEventListener('change', () => {
+    if (check.checked) citibikeLayer.addTo(map);
+    else map.removeLayer(citibikeLayer);
+  });
+}
+
+function renderCitibike(cb) {
+  if (!cb || !cb.trips) return;
+  const stations = cb.stations || [];
+  const byNet = [...stations].sort((a, b) => (b.out - b.in) - (a.out - a.in));
+  const flowRow = (s) => {
+    const net = s.out - s.in;
+    const row = document.createElement('div');
+    row.className = 'cb-flow-row';
+    const dot = document.createElement('span');
+    dot.className = 'cb-dot';
+    dot.style.background = cbFlowColor(s.out, s.in);
+    const name = document.createElement('span');
+    name.className = 'cb-flow-name';
+    name.title = s.name;
+    name.textContent = s.name;  // textContent, not innerHTML: this is Lyft data
+    const val = document.createElement('span');
+    val.className = 'cb-flow-val';
+    val.textContent = `${net > 0 ? '+' : ''}${net}`;
+    const sub = document.createElement('span');
+    sub.className = 'cb-flow-sub';
+    sub.textContent = `${s.out}/${s.in}`;
+    row.append(dot, name, val, sub);
+    return row;
+  };
+
+  const el = document.getElementById('stat-citibike');
+  el.innerHTML =
+    [['Trips', cb.trips.toLocaleString()],
+     ['Time', `${Math.round(cb.hours).toLocaleString()} h`],
+     ['Days out', cb.days.toLocaleString()],
+     ['Typical trip', `${cb.median_min} min`]]
+      .map(([k, v]) => `<div class="r-row"><span class="label">${k}</span><strong>${v}</strong></div>`)
+      .join('') +
+    `<div class="sub-title">One-way docks</div>`;
+
+  // The headline: a dock you only ever leave from is a fact about trips that
+  // the edge map has no way to express.  Both ends of the range, so the
+  // reader sees it is a balance and not a leaderboard.
+  const flows = document.createElement('div');
+  const head = byNet.slice(0, 3);
+  // With few docks the two ends of the range overlap, and listing one twice
+  // would read as two different docks that happen to share a name.
+  const tail = byNet.slice(-2).filter(s => !head.includes(s));
+  for (const s of [...head, ...tail]) flows.appendChild(flowRow(s));
+  el.appendChild(flows);
+
+  const note = document.createElement('div');
+  note.className = 'cb-note';
+  note.innerHTML =
+    `Ranked by net departures minus arrivals, with out/in beside it. ` +
+    `On the map a dock is coloured by the share of its use running one ` +
+    `way, so a busy balanced dock stays neutral. ` +
+    `<strong>${cb.same_day} of ${cb.days}</strong> Citi Bike days were days ` +
+    `with an own-bike ride too, so these are the one-way legs rather than a ` +
+    `substitute. ${cb.once_only} of ${stations.length} docks were used once. ` +
+    `No trace is recorded between docks, so none of this is drawn as a route ` +
+    `or counted toward coverage.`;
+  el.appendChild(note);
+
+  const odd = document.createElement('div');
+  odd.className = 'cb-note';
+  const bits = [`${cb.aborted} unlocks re-docked within 2 min`,
+    `${cb.repeat_bikes} of ${cb.bikes} bikes ridden more than once`,
+    `at least ${cb.ebike_min} ebike trips`,
+    `$${cb.paid.toFixed(2)} paid of $${cb.charged.toFixed(2)} charged`];
+  odd.textContent = bits.join(' · ');
+  el.appendChild(odd);
+
+  showChip('stat-citibike');
+}
+
 function styleFor(count) {
   const t = Math.sqrt(count) / sqrtMax;
   return {
@@ -815,6 +998,11 @@ function restackLayers() {
   geoLayer.eachLayer(l => { if (l._filteredCount > 0) visible.push(l); });
   visible.sort((a, b) => a._filteredCount - b._filteredCount);
   for (const l of visible) l.bringToFront();
+  // The edges above draw into the same canvas as the dock markers, so a
+  // filter change would otherwise bury the Citi Bike layer under them.
+  if (citibikeLayer && map.hasLayer(citibikeLayer)) {
+    citibikeLayer.eachLayer(l => l.bringToFront());
+  }
 }
 
 // -- Date-range slider + time-lapse playback --------------------------------
@@ -1037,6 +1225,8 @@ fetch('rides.geojson.gz')
 
     renderStreets(data.properties ?? {});
     renderSpeedSplits(data.properties.speed);
+    renderCitibike(data.properties?.citibike);
+    initCitibikeLayer(data.properties?.citibike);
     restoreSection();
 
     sqrtMax = Math.sqrt(maxCount);
