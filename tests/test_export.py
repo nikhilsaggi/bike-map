@@ -289,3 +289,71 @@ def test_citibike_block_leaves_the_drawn_edges_alone(tmp_path, monkeypatch):
     # trip and stays unknown rather than being called an own-bike ride.
     assert props["rides"] == [[0, "08:00", 1.0, -1]]
     assert [set(f["properties"]) for f in data["features"]] == [{"rides"}]
+
+
+def test_citibike_trips_cite_the_ride_recorded_over_them(tmp_path, monkeypatch):
+    """A trip names the recording beside it, by index into the same ride list.
+
+    Both directions of the match ship: the ride says how many trips it covers
+    and the trip says which ride covered it, and the page needs them to agree.
+    """
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(config, "GEOJSON_OUTPUT_PATH", tmp_path / "docs" / "rides.geojson.gz")
+    trips = tmp_path / "citibike_trips.json"
+    monkeypatch.setattr(config, "CITIBIKE_TRIPS_PATH", trips)
+    # R2 starts at 2025-06-01 12:00 -0400 and runs an hour; the first trip is
+    # the first ten minutes of it, the second a day later with nothing
+    # recording over it.
+    start_ms = 1_748_793_600_000
+    trips.write_text(
+        json.dumps(
+            {
+                "format": 2,
+                "trips": [
+                    {
+                        "t": t,
+                        "dur": 600_000,
+                        "a": "A St",
+                        "b": "B St",
+                        "bike": "1",
+                        "paid": 0.0,
+                        "gross": 0.0,
+                        "credit": 0.0,
+                        "ebike": False,
+                    }
+                    for t in (start_ms, start_ms + 86_400_000)
+                ],
+                "docks": {"A St": [-73.9, 40.7], "B St": [-73.95, 40.75]},
+            }
+        )
+    )
+
+    edge_geom = {(1, 2): [lonlat(0.0, 0.0), lonlat(300.0, 0.0)]}
+    state = {
+        "processed_files": {R1, R2},
+        "edge_counts": {(1, 2): 1},
+        "edge_rides": {(1, 2): [R1]},
+        "ride_stats": {
+            R1: {"dist_m": 1000.0, "duration_s": 600, "start": None},
+            R2: {
+                "dist_m": 9000.0,
+                "duration_s": 3600,
+                "start": "2025-06-01T12:00:00-04:00",
+            },
+        },
+    }
+    export._export_geojson(edge_geom, state)
+
+    with gzip.open(tmp_path / "docs" / "rides.geojson.gz") as f:
+        data = json.load(f)
+    props = data["properties"]
+
+    # R1 sorts first, so R2 -- the recording -- is ride 1.
+    assert props["rides"][1][:2] == [1, "12:00"]
+    assert props["rides"][1][3] == 1  # one Citibike trip under this ride
+    cb_trips = props["citibike"]["trips"]
+    assert [row[3] for row in cb_trips] == [1, -1]
+    # Still a dock-to-dock record: naming the ride adds nothing to the drawn
+    # edges or their passes.
+    assert props["total_edges"] == 1
+    assert [f["properties"]["rides"] for f in data["features"]] == [[0]]

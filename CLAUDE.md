@@ -118,6 +118,17 @@ reads everything from `rides.geojson.gz` top-level `properties`.
   ([why](findings/citibike-trips.md)). No speed is derived either -- the
   export's durations are whole minutes and its end times are the start plus
   that duration.
+- **The one route a dock row can draw is a recorded one.** `trip_rides` names
+  the GPS ride running over each trip and ships it as the 4th element of each
+  `properties.citibike.trips` row (`-1` where none), so a popup row can put
+  that ride on the map in the page's own single-ride view. It is not the
+  rejected routed layer: the dock-to-dock line stays straight, and what is
+  drawn over it was measured. Ride view draws the **whole** recording, and
+  23% of recorded trips sit inside one that holds several, so the row says
+  when it covers others -- clipping the trace to a trip's clock window would
+  need a per-(edge, ride) timestamp nothing in `state` carries. Tracing a
+  pair deliberately leaves the popup open (`viewRide(ri, keepPopup)`): the
+  rows are how a reader walks the network.
 - **A GPS ride is matched to Citibike trips by clock overlap**
   (`citibike.ride_sources`), shipped as the 4th element of each row in the
   export's `rides` array: `-1` unknown, `0` own bike, `n>=1` the number of

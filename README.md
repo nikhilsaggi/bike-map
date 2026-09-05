@@ -32,6 +32,10 @@ The pipeline exports a compressed GeoJSON that powers an interactive
   trips carry no GPS trace, so no route between docks is ever drawn and none
   of it counts toward the passes or the coverage figure
   ([why](findings/citibike-trips.md))
+- Where a GPS ride was recording during one of those trips, the row for that
+  pair offers it: the recorded route in cyan over the straight line, which
+  stays a placeholder. A recording can hold several trips, and the row says
+  when the one on screen does
 - Ride source: each GPS ride is matched to Citibike trips by clock overlap and
   labelled where it appears, and the legend can filter the whole network to
   Citibike or own-bike rides. Rides outside the Citibike history are left

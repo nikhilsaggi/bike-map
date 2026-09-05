@@ -197,6 +197,16 @@
      link affordance -- looking clickable and doing nothing is worse than
      plainly not being a link. */
   .dock-row-flat { color: #888; font-size: 12px; }
+  /* A dock pair a GPS recording covers can put that recording on the map.
+     It sits inside the row instead of replacing its click -- hopping from
+     dock to dock is what the rows are for -- so it takes the ride view's own
+     cyan rather than the row's link blue. */
+  .dock-trace {
+    color: #00e5ff; margin-left: 6px; font-size: 11px;
+    white-space: nowrap; cursor: pointer;
+  }
+  .dock-trace:hover { color: #fff; }
+  .dock-trace-note { color: #777; font-size: 9px; line-height: 1.3; margin: -1px 0 3px 4px; }
   #stat-citibike { line-height: 1.5; }
   /* One grid for the header and every row, so the two columns line up
      instead of each row right-justifying its own text. */
@@ -708,6 +718,7 @@ let dockLinks = null;      // the selected dock's trips, drawn on demand
 let dockMarkers = [];      // index-aligned with cbData.docks
 let dockTrips = [];        // dock index -> indices into cbData.trips
 let dockSelected = null;   // dock index whose trips are drawn, if any
+let dockTraceLabels = [];  // relabel callbacks for the open popup's route links
 let dockSqrtMax = 1;
 
 // The two sources share dates but not days: 32 of the Citibike days have no
@@ -736,16 +747,22 @@ function dockUseInRange(di, lo, hi) {
 function dockPartners(di, lo, hi) {
   const seen = new Map();
   for (const ti of dockTrips[di]) {
-    const [a, b, d] = cbData.trips[ti];
+    const [a, b, d, ri] = cbData.trips[ti];
     if (cbData.days[d] < lo || cbData.days[d] > hi) continue;
     const other = a === di ? b : a;
     if (other === di) continue;  // an unlock re-docked where it started
-    const rec = seen.get(other) || { out: 0, into: 0 };
+    const rec = seen.get(other) || { out: 0, into: 0, rides: [] };
     if (a === di) rec.out++; else rec.into++;
+    // The recording running over this trip, where the export found one. A
+    // payload from before that existed has no fourth element, and undefined
+    // fails the test, so an older file simply offers no routes.
+    if (Number.isInteger(ri) && ri >= 0 && !rec.rides.includes(ri)) rec.rides.push(ri);
     seen.set(other, rec);
   }
   return [...seen.entries()]
-    .map(([idx, r]) => ({ idx, ...r, n: r.out + r.into }))
+    // Recordings newest first: ride ids run in date order, so this is the
+    // sort without a lookup, and the first click lands on the recent one.
+    .map(([idx, r]) => ({ idx, ...r, rides: r.rides.sort((x, y) => y - x), n: r.out + r.into }))
     .sort((x, y) => y.n - x.n);
 }
 
@@ -788,11 +805,86 @@ function focusDock(di) {
   if (m && dockLayer.hasLayer(m)) m.openPopup();  // auto-pans if off screen
 }
 
+// A dock pair the export found a GPS recording for can put that recording on
+// the map: the cyan single-ride view, over the straight line that stands in
+// for the trip. This is not the rejected routed-corridor layer -- that drew a
+// path an algorithm chose between two docks; this draws a trace that was
+// recorded, and only for the pair a reader asked about.
+//
+// Returns the note element to place under the row, which says when the
+// recording being drawn holds more than the clicked hop.
+function addTraceControl(row, p) {
+  const trace = document.createElement('span');
+  trace.className = 'dock-trace';
+  const note = document.createElement('div');
+  note.className = 'dock-trace-note';
+  const n = p.rides.length;
+  const dateOf = ri => dateList[rideDateIdx[ri]] ?? '';
+  // Which recording the next click shows; n means "put the map back", so a
+  // row always ends where it started rather than trapping the reader in a
+  // ride view they have to leave by another control.
+  let next = 0;
+
+  function relabel() {
+    const shown = rideView !== null && p.rides.includes(rideView) ? rideView : null;
+    // Nothing of this row's on the map -- from Escape, the exit bar, or
+    // another row taking it over -- so the cycle starts over, which is what
+    // the label with no position on it says it will do.
+    if (shown === null) next = 0;
+    if (shown !== null && n > 1) {
+      trace.textContent = `\u25b8 route ${p.rides.indexOf(shown) + 1}/${n}`;
+    } else {
+      trace.textContent = n > 1 ? `\u25b8 ${n} routes` : '\u25b8 route';
+    }
+    if (shown !== null) {
+      trace.title = `Showing ${dateOf(shown)} \u00b7 ` +
+        (n > 1 ? 'click for the next recording' : 'click to put the map back');
+    } else {
+      trace.title = n > 1
+        ? `${n} rides recorded over these trips; click to show each in turn`
+        : `Show the ride recorded over this trip (${dateOf(p.rides[0])})`;
+    }
+    // Ride view draws the whole recording, and a recording can hold several
+    // Citibike trips -- so say that the extra legs on screen are not part of
+    // the hop that was clicked. Clipping the trace to the trip's own clock
+    // window is the only real fix, and nothing in the export carries a time
+    // per edge to do it with.
+    const extra = shown === null ? 0 : (rideSrc[shown] || 0) - 1;
+    note.textContent = extra > 0
+      ? `whole recording \u2014 it also covers ${extra} other Citibike ` +
+        `trip${extra !== 1 ? 's' : ''}`
+      : '';
+    note.hidden = !note.textContent;
+  }
+
+  trace.addEventListener('click', ev => {
+    // The row's own click hops to the other dock, which is the thing the
+    // layer is for; this only adds to it.
+    ev.stopPropagation();
+    if (next >= n) {
+      next = 0;
+      // Ride view can also be left by Escape or the exit bar, in which case
+      // there is nothing to clear and the click should show the first one.
+      if (rideView !== null) { exitRideView(); relabel(); return; }
+    }
+    viewRide(p.rides[next], true);  // keep the popup: its rows are the point
+    next++;
+    relabel();
+  });
+
+  relabel();
+  dockTraceLabels.push(relabel);
+  row.appendChild(trace);
+  return note;
+}
+
 // Built as DOM, not an HTML string: dock names are Lyft data and half of
 // them contain an ampersand, which has no business being interpolated into
 // markup. It also lets the rows carry real listeners instead of inline
 // handlers.
 function dockPopup(di) {
+  // Rebuilt on every open, so the previous popup's route links go with it.
+  dockTraceLabels = [];
   const [lo, hi] = dockDateBounds();
   const d = cbData.docks[di];
   const [out, into] = dockUseInRange(di, lo, hi);
@@ -831,7 +923,11 @@ function dockPopup(di) {
       row.className = 'dock-row-flat';
       row.title = 'No coordinates for this dock';
     }
+    // Independent of the dock's coordinates: a recording is on the map
+    // whether or not the far end of the trip can be placed on it.
+    const note = p.rides.length ? addTraceControl(row, p) : null;
     box.appendChild(row);
+    if (note) box.appendChild(note);
   }
   return box;
 }
@@ -1067,9 +1163,12 @@ map.on('popupopen', e => {
 
 // -- Single-ride view --------------------------------------------------------
 
-function viewRide(ri) {
+// keepPopup is for the dock rows: the popup they live in is how a reader
+// walks the network, so tracing one pair must not close it the way a street
+// popup's own row does.
+function viewRide(ri, keepPopup = false) {
   rideView = ri;
-  map.closePopup();
+  if (!keepPopup) map.closePopup();
   const d = dateList[rideDateIdx[ri]] ?? '';
   const t = rideList[ri]?.[1] || '';
   const label = document.getElementById('ride-view-label');
@@ -1111,8 +1210,11 @@ function toggleRide(ri) {
 }
 
 // Ride view is also left by Escape, the exit button and the date filter, so
-// the link's selected state is synced from rideView rather than set on click.
+// a link's selected state is synced from rideView rather than set on click.
+// The dock popup's route links are the same case: one row can show a ride
+// another row put on the map, so they read their state from here too.
 function syncYearLinks() {
+  for (const relabel of dockTraceLabels) relabel();
   for (const link of document.querySelectorAll('#stat-years .yd-link')) {
     const on = rideView !== null && +link.dataset.ride === rideView;
     link.classList.toggle('on', on);
