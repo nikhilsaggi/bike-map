@@ -79,8 +79,10 @@ Requires Python 3.9+.
    --workers N              worker processes for map matching (1 = sequential)
    ```
 
-4. Optional — add Citibike trips. Download the account export from
-   `account.lyft.com/privacy/data`, then:
+4. Optional — add Citibike trips. Export them from
+   `account.citibikenyc.com` with the
+   [baywheels console script](https://github.com/fhoffa/code_snippets/blob/master/baywheels/readme.md),
+   then:
 
    ```bash
    python -m bike_routes.ingest.citibike ~/citibikenyc_history_YYYY-MM-DD.json
@@ -90,6 +92,10 @@ Requires Python 3.9+.
    drawn edges or the coverage figure — they become their own toggleable dock
    layer plus a stats section. Once the cache exists, every later
    `python -m bike_routes` picks it up with no flag.
+
+   Two things to know: that script stops at a **one-year** cutoff, and the
+   ingest **replaces** the cache rather than merging it — so a default pull
+   will discard anything older. Check the trip count and date span it prints.
 
 5. Outputs:
    - `docs/rides.geojson.gz` — interactive map data

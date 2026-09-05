@@ -19,10 +19,18 @@ of 10, and **the last page was full** — a fetch that has run out of history
 stops on a short page, so this one had stopped early. The complete export
 ends on a page of 4.
 
-Two supporting signs, worth recognising again: the span was a rolling ~1 year
-ending exactly on the export date, and the oldest month held 2 rides against
-29 and 47 in the months after it — a boundary slicing through a month rather
-than a beginning.
+The cause turned out to be in the fetch script rather than the API: the
+[baywheels console script](https://github.com/fhoffa/code_snippets/blob/master/baywheels/readme.md)
+pages backwards from today and **stops at a one-year cutoff**. So the two
+supporting signs were exactly what that produces — a rolling ~1 year ending
+on the export date, and an oldest month holding 2 rides against 29 and 47 in
+the months after it, a boundary slicing through a month rather than a
+beginning.
+
+Because `ingest.citibike` replaces the cache rather than merging it, a
+default one-year pull would silently discard the five years already there.
+Making it merge on `rideId` is the first item in
+[issue #23](https://github.com/nikhilsaggi/bike-map/issues/23).
 
 ## What is actually in the export
 

@@ -276,14 +276,22 @@ times one ride crossed one edge, in the stored vertex order of
   the history irrecoverably.
 - Personal data (`rides/*.csv` and everything in `cache/`) is gitignored --
   never commit ride files or force-add ignored paths.
-- Citibike trips come from a manual Lyft download
-  (`account.lyft.com/privacy/data` -> `python -m bike_routes.ingest.citibike
-  <file>`), not from `update.py`: there is no API to automate. The ingest is
-  by hand; the summary is automatic on every later run.
+- Citibike trips come from a manual export (a JavaScript payload pasted into
+  the browser console on `account.citibikenyc.com`, per
+  [fhoffa/code_snippets](https://github.com/fhoffa/code_snippets/blob/master/baywheels/readme.md)),
+  then `python -m bike_routes.ingest.citibike <file>`. Not from `update.py`.
+  There *is* an API behind it -- a GraphQL endpoint authenticated by the
+  browser session cookie -- but nothing automates it today
+  ([issue #23](https://github.com/nikhilsaggi/bike-map/issues/23)). The
+  ingest is by hand; the summary is automatic on every later run.
+- **`ingest.citibike` replaces the trips cache, it does not merge**, and the
+  export script defaults to a **one-year** window. Running it on a default
+  pull discards everything older without a word -- that is what truncated
+  the first export. Check the printed date span before trusting a re-ingest.
 - **Check a fresh Citibike export for silent truncation before trusting it.**
-  The fetch is cursor-paginated in tens, and one export stopped early on a
-  *full* page, giving a plausible-looking 372-day history that was really the
-  most recent year of five. A complete export ends on a short page
+  The fetch is cursor-paginated in tens and stops at a one-year cutoff, so an
+  export can look like a plausible complete history that merely starts a year
+  ago. A pull that ran to exhaustion ends on a short page
   ([details](findings/citibike-trips.md)).
 
 ## Documentation
