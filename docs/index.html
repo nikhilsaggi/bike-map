@@ -158,7 +158,7 @@
   .sp-detail { color: #666; font-size: 10px; padding: 0 0 4px 0; font-variant-numeric: tabular-nums; }
   #speed-lead { color: #777; font-size: 9px; line-height: 1.4; margin-bottom: 5px; }
 
-  /* -- Citi Bike ----------------------------------------------------------
+  /* -- Citibike ----------------------------------------------------------
      A stats section with no map layer: the only things a dock trip could draw
      are a marker (which says nothing on its own) and a line to another dock
      (which is not a route), so it says its piece in text. */
@@ -173,8 +173,14 @@
      the slider's range has no docks in it at all. Saying so here is the
      difference between "nothing to show" and "this is broken". */
   #cb-range { color: #555; font-size: 9px; }
+  .dock-popup { max-height: 200px; overflow-y: auto; }
   .dock-head { color: #a8d8e8; font-weight: 600; }
   .dock-sub { color: #666; font-size: 10px; margin-bottom: 3px; }
+  .dock-count { color: #666; }
+  /* A dock with no coordinates cannot be jumped to, so it gets none of the
+     link affordance -- looking clickable and doing nothing is worse than
+     plainly not being a link. */
+  .dock-row-flat { color: #888; font-size: 12px; }
   #stat-citibike { line-height: 1.5; }
   #stat-citibike .r-row { margin: 1px 0; }
   .cb-flow-row { display: flex; align-items: baseline; gap: 6px; padding: 1px 0; }
@@ -285,7 +291,7 @@
       <button class="chip hidden" data-section="stat-riding" aria-expanded="false" aria-controls="stat-riding">Riding</button>
       <button class="chip hidden" data-section="stat-weather" aria-expanded="false" aria-controls="stat-weather">Weather</button>
       <button class="chip hidden" data-section="stat-streets" aria-expanded="false" aria-controls="stat-streets">Streets</button>
-      <button class="chip hidden" data-section="stat-citibike" aria-expanded="false" aria-controls="stat-citibike">Citi Bike</button>
+      <button class="chip hidden" data-section="stat-citibike" aria-expanded="false" aria-controls="stat-citibike">Citibike</button>
     </div>
     <div id="stats-sections">
       <div id="stat-years"></div>
@@ -320,7 +326,7 @@
   <!-- Revealed only when the payload carries a citibike block. Off by
        default: the map opens as the map of rides it has always been. -->
   <label id="cb-toggle" class="hidden">
-    <input type="checkbox" id="cb-check"> Citi Bike docks
+    <input type="checkbox" id="cb-check"> Citibike docks
     <span id="cb-range"></span>
   </label>
 </div>
@@ -608,7 +614,7 @@ function renderSpeedSplits(speed) {
   showChip('stat-streets');
 }
 
-// -- Citi Bike ---------------------------------------------------------------
+// -- Citibike ---------------------------------------------------------------
 // A second, weaker kind of evidence, drawn as its own layer and never as
 // routes.  These trips are dock-to-dock with no GPS trace, so what happened
 // between two docks is unknown and nothing here contributes to the drawn
@@ -634,7 +640,7 @@ let dockTrips = [];        // dock index -> indices into cbData.trips
 let dockSelected = null;   // dock index whose trips are drawn, if any
 let dockSqrtMax = 1;
 
-// The two sources share dates but not days: 32 of the Citi Bike days have no
+// The two sources share dates but not days: 32 of the Citibike days have no
 // own-bike ride, so there is no joint index to slide over.  Joining on the
 // ISO date string itself is exact and needs nothing precomputed.
 function dockDateBounds() {
@@ -704,22 +710,60 @@ function showDockLinks(di) {
   if (m) { m.setStyle({ fillColor: DOCK_SELECTED }); m.bringToFront(); }
 }
 
+// Hop from one dock to the next through the trips that connect them: a
+// popup's rows are the map's own links, so a reader can follow a route
+// through their own history rather than hunting for the next marker.
+function focusDock(di) {
+  const m = dockMarkers[di];
+  if (m && dockLayer.hasLayer(m)) m.openPopup();  // auto-pans if off screen
+}
+
+// Built as DOM, not an HTML string: dock names are Lyft data and half of
+// them contain an ampersand, which has no business being interpolated into
+// markup. It also lets the rows carry real listeners instead of inline
+// handlers.
 function dockPopup(di) {
   const [lo, hi] = dockDateBounds();
   const d = cbData.docks[di];
   const [out, into] = dockUseInRange(di, lo, hi);
   const partners = dockPartners(di, lo, hi);
-  const rows = partners.map(p => {
-    const name = cbData.docks[p.idx].name;
-    const bits = [];
-    if (p.out) bits.push(`&rarr;&nbsp;${p.out}`);
-    if (p.into) bits.push(`&larr;&nbsp;${p.into}`);
-    return `<div class="ride-row" title="${name}">${name} <span style="color:#666">${bits.join(' ')}</span></div>`;
-  });
-  const head = `<div class="dock-head">${d.name}</div>` +
-    `<div class="dock-sub">${out + into} trip${out + into !== 1 ? 's' : ''} &middot; ` +
-    `${out} out / ${into} in${partners.length ? ` &middot; ${partners.length} dock${partners.length !== 1 ? 's' : ''} reached` : ''}</div>`;
-  return `<div style="max-height:200px;overflow-y:auto">${head}${rows.join('')}</div>`;
+
+  const box = document.createElement('div');
+  box.className = 'dock-popup';
+
+  const head = document.createElement('div');
+  head.className = 'dock-head';
+  head.textContent = d.name;
+  const sub = document.createElement('div');
+  sub.className = 'dock-sub';
+  sub.textContent =
+    `${out + into} trip${out + into !== 1 ? 's' : ''} \u00b7 ${out} out / ${into} in` +
+    (partners.length ? ` \u00b7 ${partners.length} dock${partners.length !== 1 ? 's' : ''} reached` : '');
+  box.append(head, sub);
+
+  for (const p of partners) {
+    const other = cbData.docks[p.idx];
+    const row = document.createElement('div');
+    const name = document.createElement('span');
+    name.textContent = other.name;
+    const counts = document.createElement('span');
+    counts.className = 'dock-count';
+    counts.textContent =
+      (p.out ? ` \u2192${p.out}` : '') + (p.into ? ` \u2190${p.into}` : '');
+    row.append(name, counts);
+    // Only a dock that can be drawn is worth offering as a link -- one GBFS
+    // could not place has nowhere to jump to, so it must not look clickable.
+    if (other.at) {
+      row.className = 'ride-row';
+      row.title = `Show ${other.name}`;
+      row.addEventListener('click', () => focusDock(p.idx));
+    } else {
+      row.className = 'dock-row-flat';
+      row.title = 'No coordinates for this dock';
+    }
+    box.appendChild(row);
+  }
+  return box;
 }
 
 // Mirrors applyFilter's own renormalise/freeze: the slider rescales to what
@@ -843,9 +887,9 @@ function renderCitibike(cb) {
   note.className = 'cb-note';
   note.innerHTML =
     `Net departures minus arrivals, with out/in beside it. ` +
-    `<strong>${cb.same_day} of ${cb.days.length}</strong> Citi Bike days were ` +
+    `<strong>${cb.same_day} of ${cb.days.length}</strong> Citibike days were ` +
     `days with an own-bike ride too. ${cb.once_only} of ${cb.docks.length} docks ` +
-    `were used once. Turn on <em>Citi Bike docks</em> in the legend to put them ` +
+    `were used once. Turn on <em>Citibike docks</em> in the legend to put them ` +
     `on the map; no trace is recorded between docks, so nothing here is drawn ` +
     `as a route or counted toward coverage.`;
   el.appendChild(note);

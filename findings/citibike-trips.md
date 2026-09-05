@@ -1,6 +1,6 @@
-# Citi Bike trips: a second data source that is not a trace
+# Citibike trips: a second data source that is not a trace
 
-The map is built from GPS traces of one bike. A Lyft/Citi Bike account export
+The map is built from GPS traces of one bike. A Lyft/Citibike account export
 adds a year of riding the map could not see, but it is a different kind of
 evidence and most of this write-up is about keeping it from pretending
 otherwise.
@@ -43,7 +43,7 @@ and are not, and there is no honest label short enough to fix that.
 
 ## Where the dock coordinates come from
 
-The export has no coordinates. Citi Bike's public GBFS feed
+The export has no coordinates. Citibike's public GBFS feed
 (`https://gbfs.citibikenyc.com/gbfs/en/station_information.json`, keyless,
 ~2,506 stations) publishes a `name` field that is the same string Lyft writes
 into `startAddress`. The match is exact, not fuzzy:
@@ -64,7 +64,7 @@ and the totals in order to tidy the map.
 
 `edge_counts`, `edge_traversals`, `edge_rides` and `coverage.pct` all mean
 "a GPS trace was matched here". A dock-to-dock trip cannot honour that. So
-the Citi Bike data lives entirely in a top-level `properties.citibike` block:
+the Citibike data lives entirely in a top-level `properties.citibike` block:
 no state key, no key in `cache._processing_config()`, nothing in `features[]`,
 and no pipeline stage. It is the same shape `weather.py` already uses.
 
@@ -126,7 +126,7 @@ repeat.
 
 This map exists to be explored. A list states one finding its author already
 picked; a layer that filters with the slider and expands on click lets a
-reader find things nobody ranked — that Citi Bike trips cluster where the
+reader find things nobody ranked — that Citibike trips cluster where the
 ride heatmap is thin, that the docks only appear in the last year of the
 time-lapse, that one dock reaches 87 others. Efficiency of communication is
 the criterion for a report. It is the wrong criterion here.
@@ -141,7 +141,7 @@ routes between docks, nothing in `edge_counts` or `coverage`, and no speed.
   in. This is the finding that justified the feature: a matched edge has a
   direction but no origin, so the ride map has no way to express "a place I
   only ever leave from".
-- **It is a supplement, not a substitute.** 140 of 172 Citi Bike days were
+- **It is a supplement, not a substitute.** 140 of 172 Citibike days were
   days with an own-bike ride too. These are the one-way legs of days that
   otherwise went on the owner's own bike.
 - 118 of 216 docks were used exactly once, against `Montrose Ave & Bushwick
@@ -157,7 +157,7 @@ routes between docks, nothing in `edge_counts` or `coverage`, and no speed.
 
 **Hour and weekday profiles.** Both were computed against the own-bike
 equivalents in `properties.riding` and both are near-identical: peak hour 18
-in each (15.1% of own-bike rides, 14.5% of Citi Bike trips), weekend-heavy in
+in each (15.1% of own-bike rides, 14.5% of Citibike trips), weekend-heavy in
 each (Saturday highest in both). There is no contrast to draw, and a chart
 whose message is "these are the same" costs a reader more than it tells them.
 The geography is where the two sources differ; the clock is not.

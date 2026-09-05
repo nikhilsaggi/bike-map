@@ -1,4 +1,4 @@
-"""Citi Bike trip stats and dock layer for the interactive map.
+"""Citibike trip stats and dock layer for the interactive map.
 
 Reads the cache ``ingest.citibike`` writes and aggregates it into the
 ``properties.citibike`` block. Pure aggregation: no network, no state, no
@@ -63,7 +63,7 @@ def _load_trips() -> dict[str, Any] | None:
     if not isinstance(payload, dict) or not payload.get("trips"):
         return None
     if payload.get("format") != 2:
-        print("  Citi Bike cache predates the dock layer; re-run ingest.citibike")
+        print("  Citibike cache predates the dock layer; re-run ingest.citibike")
         return None
     return payload
 
@@ -94,7 +94,7 @@ def _flow_extremes(
 def _citibike_summary(
     ride_stats: dict[str, dict[str, Any] | None],
 ) -> dict[str, Any] | None:
-    """Aggregate the Citi Bike trip cache into the export's stats block."""
+    """Aggregate the Citibike trip cache into the export's stats block."""
     payload = _load_trips()
     if payload is None:
         return None
@@ -141,7 +141,7 @@ def _citibike_summary(
         "hours": round(sum(minutes) / 60, 1),
         "from": days[0],
         "to": days[-1],
-        # Citi Bike days that were also own-bike days: the number that says
+        # Citibike days that were also own-bike days: the number that says
         # this is a supplement to the GPS map, not a substitute for it.
         "same_day": len(set(days) & own_days),
         "median_min": round(_median(minutes), 1),

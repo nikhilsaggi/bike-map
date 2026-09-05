@@ -46,7 +46,7 @@ def test_export_geojson(tmp_path, monkeypatch):
     assert props["rides_per_year"] == {"2024": 1, "2025": 1}
     assert abs(props["total_km"] - 0.6) < 0.05
     assert props["updated"] >= "2026-01-01"
-    # No Citi Bike cache in this tree: the block is absent, not half-built.
+    # No Citibike cache in this tree: the block is absent, not half-built.
     assert props["citibike"] is None
 
     features = sorted(data["features"], key=lambda f: len(f["properties"]["rides"]))

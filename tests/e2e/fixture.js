@@ -41,7 +41,7 @@ export const SPEED_BLOCK = {
   min_m: 250.0,
 };
 
-// Citi Bike dock trips: dock-to-dock, no trace, so this block carries the
+// Citibike dock trips: dock-to-dock, no trace, so this block carries the
 // trips themselves and never a route -- the page filters the dock markers by
 // the same slider that filters the edges, and draws a dock's own trips only
 // on click. Arithmetic is closed by hand: every trip has one departure and

@@ -55,7 +55,7 @@ interactive Leaflet map (`docs/`, served via GitHub Pages) plus static PNGs.
    Not a stage of its own: `export.py` calls it on the built features, so it
    runs *after* the speed/pass backfill and sees its counts
 8. `weather.py` -- Open-Meteo ride-weather stats embedded in the GeoJSON
-9. `citibike.py` -- Citi Bike dock-trip stats, same shape as `weather.py`:
+9. `citibike.py` -- Citibike dock-trip stats, same shape as `weather.py`:
    a top-level `properties` block computed inline in `export.py`, no stage,
    no state key, `None` when its cache is absent
 
@@ -109,7 +109,7 @@ reads everything from `rides.geojson.gz` top-level `properties`.
 - Caches are mtime/version-invalidated: cache/hmm_map_cache.pkl must be newer
   than cache/osm_graph_cache.pkl; graph cache is bound to osmnx/networkx
   versions.
-- **Citi Bike trips are dock-to-dock with no GPS trace**, so they never enter
+- **Citibike trips are dock-to-dock with no GPS trace**, so they never enter
   `edge_counts`, `edge_traversals`, `edge_rides`, `coverage`, or `features[]`
   -- those all mean "a trace was matched here". They live only in
   `properties.citibike`. The dock layer draws **markers, and lines only for
@@ -259,7 +259,7 @@ times one ride crossed one edge, in the stored vertex order of
   the history irrecoverably.
 - Personal data (`rides/*.csv` and everything in `cache/`) is gitignored --
   never commit ride files or force-add ignored paths.
-- Citi Bike trips come from a manual Lyft download
+- Citibike trips come from a manual Lyft download
   (`account.lyft.com/privacy/data` -> `python -m bike_routes.ingest.citibike
   <file>`), not from `update.py`: there is no API to automate. The ingest is
   by hand; the summary is automatic on every later run.

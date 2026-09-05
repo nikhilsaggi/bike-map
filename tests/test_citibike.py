@@ -1,4 +1,4 @@
-"""Tests for the Citi Bike trip ingest and stats block (no network at all)."""
+"""Tests for the Citibike trip ingest and stats block (no network at all)."""
 
 from __future__ import annotations
 

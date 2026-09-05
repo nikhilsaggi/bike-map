@@ -1,4 +1,4 @@
-"""Normalise a Citi Bike (Lyft) account export into cache/citibike_trips.json.
+"""Normalise a Citibike (Lyft) account export into cache/citibike_trips.json.
 
 Lyft's data download is station-to-station: each record carries the dock
 names, a start time, a whole-minute duration and the fare line items, and no
@@ -6,7 +6,7 @@ GPS whatsoever. So this does not write to ``rides/`` and nothing here reaches
 the matcher -- it produces a cache file that ``bike_routes.citibike``
 summarises at export time, the way ``weather.py`` summarises Open-Meteo.
 
-Dock names are resolved to coordinates against Citi Bike's public GBFS feed,
+Dock names are resolved to coordinates against Citibike's public GBFS feed,
 whose ``name`` field is the same string the export uses, so the map can place
 a marker per dock. A name the feed no longer lists (a renamed or removed dock)
 keeps its trips and its counts and simply gets no coordinate: it drops out of
@@ -198,7 +198,7 @@ def ingest(export_path: Path) -> dict[str, Any]:
 def main() -> int:
     """Ingest the export named on the command line."""
     parser = argparse.ArgumentParser(
-        description="Normalise a Citi Bike account export into the pipeline cache."
+        description="Normalise a Citibike account export into the pipeline cache."
     )
     parser.add_argument("export", type=Path, help="citibikenyc_history_*.json from Lyft")
     args = parser.parse_args()

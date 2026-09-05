@@ -24,7 +24,7 @@ The pipeline exports a compressed GeoJSON that powers an interactive
 - Riding stats: distance/time totals, average speed, longest ride,
   miles and new-street miles per year, rides-by-hour and weekday
   histograms (data is stored metric; the UI displays miles)
-- Optional Citi Bike dock layer: markers sized by how much a dock was used in
+- Optional Citibike dock layer: markers sized by how much a dock was used in
   the date range on screen, so the slider and the time-lapse move them the way
   they move the streets. Click one to see where its trips actually went. The
   trips carry no GPS trace, so no route between docks is ever drawn and none
@@ -73,7 +73,7 @@ Requires Python 3.9+.
    --workers N              worker processes for map matching (1 = sequential)
    ```
 
-4. Optional — add Citi Bike trips. Download the account export from
+4. Optional — add Citibike trips. Download the account export from
    `account.lyft.com/privacy/data`, then:
 
    ```bash
@@ -222,7 +222,7 @@ part of it; `findings/` holds what they found:
   and how to unstick it
 - [Traversal counting](findings/traversal-counting.md) — how a pass is
   detected from raw fixes, and why a corridor's members combine the way they do
-- [Citi Bike trips](findings/citibike-trips.md) — a second source with no
+- [Citibike trips](findings/citibike-trips.md) — a second source with no
   trace: why it has no speed, why its routes are never drawn, and what two
   discarded layers taught about the difference
 
@@ -233,7 +233,7 @@ part of it; `findings/` holds what they found:
 
 ```
 bike_routes/        the pipeline, one stage per module
-  ingest/           Garmin download, GPX -> CSV, Citi Bike export (the front)
+  ingest/           Garmin download, GPX -> CSV, Citibike export (the front)
 docs/               the published Leaflet map + its rides.geojson.gz
 tools/              standalone analysis run by hand, not part of the pipeline
 findings/           write-ups of what that analysis found
@@ -260,7 +260,7 @@ gitignored):
 - `cache/cache_versions.json` — osmnx/networkx versions that wrote the graph
 - `cache/weather_cache.json` — Open-Meteo daily weather, so a failed API call
   falls back to the last good copy
-- `cache/citibike_trips.json` — the normalised Citi Bike account export
+- `cache/citibike_trips.json` — the normalised Citibike account export
   (written by `ingest.citibike`, absent until you run it)
 - `cache/citibike_stations.json` — GBFS dock coordinates, so a failed fetch
   falls back to the last good copy

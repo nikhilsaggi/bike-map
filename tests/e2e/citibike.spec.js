@@ -11,7 +11,7 @@ async function showDocks(page) {
 
 const visibleDocks = (page) => page.evaluate(() => dockLayer.getLayers().length);
 
-test.describe('Citi Bike dock layer', () => {
+test.describe('Citibike dock layer', () => {
   test('is off until asked for, then draws one marker per placed dock', async ({ page }) => {
     await gotoMap(page);
     await expect(page.locator('#cb-check')).not.toBeChecked();
@@ -80,6 +80,41 @@ test.describe('Citi Bike dock layer', () => {
     await page.evaluate(() => map.closePopup());
     await expect.poll(() => page.evaluate(() => dockLinks)).toBe(null);
     expect(await page.evaluate(() => dockSelected)).toBe(null);
+  });
+
+  test('a popup row jumps to that dock, so the network is walkable', async ({ page }) => {
+    await gotoMap(page);
+    await showDocks(page);
+    await page.evaluate(() => dockMarkers[0].openPopup());
+    const popup = page.locator('.leaflet-popup-content');
+    await expect(popup.locator('.dock-head')).toHaveText('Home Dock & Main St');
+
+    // The rows carry the page's link styling, so they have to actually go
+    // somewhere -- looking clickable and doing nothing is the bug this covers.
+    await popup.locator('.ride-row', { hasText: 'Terminal Dock' }).click();
+    // Leaflet holds the outgoing popup in the DOM through its fade, so wait
+    // for it to go before reading "the" heading.
+    await expect
+      .poll(() => page.locator('.leaflet-popup-content .dock-head').count())
+      .toBe(1);
+    await expect(page.locator('.leaflet-popup-content .dock-head'))
+      .toHaveText('Terminal Dock & 42 St');
+    expect(await page.evaluate(() => dockSelected)).toBe(2);
+    // Terminal's own trips now, not the ones it was reached by: it reaches
+    // Home, and Ghost Dock which cannot be drawn.
+    expect(await page.evaluate(() => dockLinks.getLayers().length)).toBe(1);
+  });
+
+  test('a dock with no coordinates is listed but not offered as a link', async ({ page }) => {
+    await gotoMap(page);
+    await showDocks(page);
+    // Terminal reaches Home (placed, so a link) and Ghost Dock (not placed).
+    await page.evaluate(() => dockMarkers[2].openPopup());
+    const popup = page.locator('.leaflet-popup-content');
+    await expect(popup.locator('.dock-row-flat')).toHaveCount(1);
+    await expect(popup.locator('.dock-row-flat')).toContainText('Ghost Dock & Gone St');
+    await expect(popup.locator('.ride-row')).toHaveCount(1);
+    await expect(popup.locator('.ride-row')).toContainText('Home Dock & Main St');
   });
 
   test('a selected dock redraws when the date range changes under it', async ({ page }) => {
