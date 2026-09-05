@@ -16,6 +16,13 @@ The export is a manual browser download from account.lyft.com/privacy/data,
 so this runs by hand rather than from update.py. Once the cache exists every
 ``python -m bike_routes`` picks it up without a flag.
 
+**The trips cache is merged, not replaced.** The console script that produces
+the export stops at a one-year cutoff, so the ordinary download is a window
+rather than a history; overwriting the cache with one would discard every
+year before it without a word. Each ingest folds its file into what is
+already cached, keyed by Lyft's own ``rideId``, and reports how much of it
+was new. That makes a default one-year pull a safe top-up.
+
 Usage:
     python -m bike_routes.ingest.citibike ~/citibikenyc_history_2026-09-04.json
 """
@@ -27,6 +34,7 @@ import json
 import re
 import sys
 import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -34,8 +42,10 @@ from bike_routes import config
 
 GBFS_URL = "https://gbfs.citibikenyc.com/gbfs/en/station_information.json"
 
-# Bump when the trips file's layout changes, so citibike.py can reject a
-# stale one rather than half-read it.
+# Bump when a reader would half-read the file -- when a key it needs changes
+# meaning or goes away -- so citibike.py can reject a stale cache instead.
+# Adding a key no reader requires (``id``, below) is not that: a format-2
+# cache stays readable, and merges forward into a format-2 file.
 TRIPS_FORMAT = 2
 
 # Every key a station entry must carry for the summary to use it. Fails
@@ -156,10 +166,13 @@ def _normalise(records: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int
         seen[ride_id] = r
 
     trips = []
-    for r in sorted(seen.values(), key=lambda r: int(r["startTimeMs"])):
+    for ride_id, r in sorted(seen.items(), key=lambda kv: int(kv[1]["startTimeMs"])):
         amounts = [_money(li.get("amount", {}).get("formatted")) for li in r.get("lineItems", [])]
         trips.append(
             {
+                # Lyft's own identity for the ride, kept so a later export can
+                # be folded into this cache instead of replacing it.
+                "id": ride_id,
                 "t": int(r["startTimeMs"]),
                 "dur": int(r["duration"]),
                 "a": r["startAddress"],
@@ -174,17 +187,142 @@ def _normalise(records: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int
     return trips, duplicates
 
 
-def ingest(export_path: Path) -> dict[str, Any]:
-    """Read a Lyft export and write the normalised trips cache."""
+class CacheUnreadableError(RuntimeError):
+    """The trips cache exists but cannot be folded into.
+
+    Raised rather than starting from empty: a cache that reads as nothing is
+    a cache about to be overwritten by a one-year window, which is the exact
+    loss this merge exists to prevent.
+    """
+
+
+def _trip_key(trip: dict[str, Any]) -> str:
+    """Identity of a cached trip: Lyft's rideId, or a stand-in for a pre-id one.
+
+    Caches written before the merge existed carry no ``id``. Their start time
+    in milliseconds stands in: one account does not begin two rides in the
+    same millisecond, and ``_merge`` trusts the stand-in only where that
+    holds for the record in hand.
+    """
+    return str(trip.get("id") or f"t{trip['t']}")
+
+
+def _load_existing() -> tuple[list[dict[str, Any]], dict[str, Any], list[str]]:
+    """Read the trips, docks and export names already cached. Fails closed and loud."""
+    path = config.CITIBIKE_TRIPS_PATH
+    if not path.exists():
+        return [], {}, []
+    try:
+        with path.open() as f:
+            payload = json.load(f)
+        trips = payload["trips"]
+        docks = payload.get("docks") or {}
+        sources = payload.get("sources") or ([payload["source"]] if payload.get("source") else [])
+        well_formed = (
+            isinstance(trips, list)
+            and isinstance(docks, dict)
+            and all(isinstance(t, dict) and "t" in t and "dur" in t for t in trips)
+        )
+    except Exception as exc:
+        msg = f"{path} cannot be read ({exc})"
+        raise CacheUnreadableError(msg) from exc
+    if not well_formed:
+        msg = f"{path} does not hold the trip records this ingest writes"
+        raise CacheUnreadableError(msg)
+    return trips, docks, list(sources)
+
+
+def _merge(
+    existing: list[dict[str, Any]], new: list[dict[str, Any]]
+) -> tuple[list[dict[str, Any]], int]:
+    """Fold a fresh export's trips into the cached ones. Returns (trips, added).
+
+    A ride already cached is replaced by the fresh record -- same ride, newer
+    reading of it -- and is not counted as added: what the count answers is
+    whether this file carried anything the cache did not already have.
+    """
+    kept: dict[str, dict[str, Any]] = {_trip_key(t): t for t in existing}
+
+    # A cache written before ids existed files the same ride under its start
+    # time, and the merge has to recognise it there or it doubles every trip
+    # the two files share. Only an id-less record is looked up this way, and
+    # only when its start names exactly one of them: an ambiguous start adds
+    # a duplicate, which is recoverable, rather than deleting a ride, which
+    # is not.
+    at_start: dict[int, list[str]] = {}
+    for t in existing:
+        if not t.get("id"):
+            at_start.setdefault(t["t"], []).append(_trip_key(t))
+    unique_start = {ms: keys[0] for ms, keys in at_start.items() if len(keys) == 1}
+
+    added = 0
+    for t in new:
+        key = _trip_key(t)
+        prior = None if key in kept else unique_start.pop(t["t"], None)
+        if prior is not None:
+            del kept[prior]
+        elif key not in kept:
+            added += 1
+        kept[key] = t
+
+    return sorted(kept.values(), key=lambda t: t["t"]), added
+
+
+def _span(trips: list[dict[str, Any]]) -> str:
+    """Describe the dates a trip list covers.
+
+    A one-year export looks exactly like a complete history that happens to
+    start a year ago, and the span is what tells them apart, so every run
+    prints it. Dates are the machine's own -- this is a line for the person
+    at the keyboard, not a value anything stores.
+    """
+    if not trips:
+        return "no trips"
+    fmt = "%Y-%m-%d"
+    first = datetime.fromtimestamp(trips[0]["t"] / 1000, tz=timezone.utc).astimezone()
+    last = datetime.fromtimestamp(trips[-1]["t"] / 1000, tz=timezone.utc).astimezone()
+    return f"{first.strftime(fmt)} to {last.strftime(fmt)}"
+
+
+def ingest(export_path: Path, *, replace: bool = False) -> dict[str, Any]:
+    """Read a Lyft export and fold it into the normalised trips cache.
+
+    The cache is merged by default. ``replace`` discards whatever is already
+    there, which is only ever right when the cached records are themselves
+    wrong -- the ordinary export covers one year, and overwriting with it
+    loses every year before that.
+    """
     with export_path.open() as f:
         records = json.load(f)
     if not isinstance(records, list):
         msg = f"{export_path} is not a list of ride records"
         raise TypeError(msg)
 
-    trips, duplicates = _normalise(records)
+    fresh, duplicates = _normalise(records)
+    print(f"  {len(fresh)} trips in the export ({duplicates} duplicate records dropped)")
+    print(f"    spanning {_span(fresh)}")
+
+    try:
+        cached, prev_docks, sources = _load_existing()
+    except CacheUnreadableError:
+        # --replace is the way out of a cache that cannot be read, so it must
+        # not be the one thing a broken cache blocks.
+        if not replace:
+            raise
+        cached, prev_docks, sources = [], {}, []
+    if replace and cached:
+        print(f"  --replace: discarding the {len(cached)} trips already cached ({_span(cached)})")
+        cached, sources = [], []
+    trips, added = _merge(cached, fresh)
+    if cached:
+        print(
+            f"  Merged into {len(cached)} cached trips: "
+            f"{added} new, {len(fresh) - added} already known"
+        )
+    if export_path.name not in sources:
+        sources = [*sources, export_path.name]
+
     used = sorted({name for t in trips for name in (t["a"], t["b"])})
-    print(f"  {len(trips)} trips ({duplicates} duplicate records dropped)")
 
     stations = _get_stations() or {}
     by_norm = {_norm_name(n): ll for n, ll in stations.items()}
@@ -195,7 +333,10 @@ def ingest(export_path: Path) -> dict[str, Any]:
     docks: dict[str, list[float] | None] = {}
     for name in used:
         ll = by_norm.get(_norm_name(name))
-        docks[name] = [round(ll[1], 5), round(ll[0], 5)] if ll else None
+        # A dock GBFS cannot place now keeps the coordinate the last run
+        # found for it: docks do not move, and un-drawing a marker because a
+        # feed dropped a name loses more than it tidies.
+        docks[name] = [round(ll[1], 5), round(ll[0], 5)] if ll else prev_docks.get(name)
     placed = sum(1 for v in docks.values() if v)
     print(f"  {len(used)} distinct docks, {placed} placed by GBFS")
     for name, at in docks.items():
@@ -204,7 +345,10 @@ def ingest(export_path: Path) -> dict[str, Any]:
 
     payload = {
         "format": TRIPS_FORMAT,
+        # The export this run read, and every export the cache was built from,
+        # since no one file accounts for a merged history any more.
         "source": export_path.name,
+        "sources": sources,
         "trips": trips,
         "docks": docks,
     }
@@ -220,6 +364,12 @@ def main() -> int:
         description="Normalise a Citibike account export into the pipeline cache."
     )
     parser.add_argument("export", type=Path, help="citibikenyc_history_*.json from Lyft")
+    parser.add_argument(
+        "--replace",
+        action="store_true",
+        help="discard the cached trips instead of merging into them (destructive: "
+        "the usual export covers only the last year)",
+    )
     args = parser.parse_args()
 
     if not args.export.exists():
@@ -227,8 +377,14 @@ def main() -> int:
         return 1
 
     print(f"Reading {args.export}...")
-    payload = ingest(args.export)
+    try:
+        payload = ingest(args.export, replace=args.replace)
+    except CacheUnreadableError as exc:
+        print(f"Refusing to overwrite the trips cache: {exc}")
+        print("Move it aside if you mean to start a fresh one.")
+        return 1
     print(f"Done: wrote {config.CITIBIKE_TRIPS_PATH} ({len(payload['trips'])} trips)")
+    print(f"      spanning {_span(payload['trips'])}")
     return 0
 
 

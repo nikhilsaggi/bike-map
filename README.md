@@ -101,9 +101,12 @@ Requires Python 3.9+.
    layer plus a stats section. Once the cache exists, every later
    `python -m bike_routes` picks it up with no flag.
 
-   Two things to know: that script stops at a **one-year** cutoff, and the
-   ingest **replaces** the cache rather than merging it — so a default pull
-   will discard anything older. Check the trip count and date span it prints.
+   That script stops at a **one-year** cutoff, so an ordinary pull is a
+   window rather than a history. The ingest **merges** into the cache on
+   Lyft's own ride id and reports how many trips were new, which makes a
+   default pull a safe top-up; `--replace` discards what is cached instead,
+   and is only right when the cached records are themselves wrong. Either
+   way, check the trip count and date span it prints.
 
 5. Outputs:
    - `docs/rides.geojson.gz` — interactive map data

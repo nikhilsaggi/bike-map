@@ -27,10 +27,17 @@ on the export date, and an oldest month holding 2 rides against 29 and 47 in
 the months after it, a boundary slicing through a month rather than a
 beginning.
 
-Because `ingest.citibike` replaces the cache rather than merging it, a
-default one-year pull would silently discard the five years already there.
-Making it merge on `rideId` is the first item in
-[issue #23](https://github.com/nikhilsaggi/bike-map/issues/23).
+Because `ingest.citibike` replaced the cache rather than merging it, a
+default one-year pull would have silently discarded the five years already
+there. It now merges on `rideId` and prints what each file added, so a
+one-year pull is a top-up (the first item in
+[issue #23](https://github.com/nikhilsaggi/bike-map/issues/23); the rest of
+that issue is about automating the pull itself).
+
+The cache that already existed predates the id, so its 2,524 trips carry
+none. `_merge` matches those by start time instead — no two of them share
+one — and folding a re-derived one-year window back into that cache adds 0
+trips and loses 0, which is the check that mattered before shipping it.
 
 ## What is actually in the export
 

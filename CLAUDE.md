@@ -308,10 +308,15 @@ times one ride crossed one edge, in the stored vertex order of
   browser session cookie -- but nothing automates it today
   ([issue #23](https://github.com/nikhilsaggi/bike-map/issues/23)). The
   ingest is by hand; the summary is automatic on every later run.
-- **`ingest.citibike` replaces the trips cache, it does not merge**, and the
-  export script defaults to a **one-year** window. Running it on a default
-  pull discards everything older without a word -- that is what truncated
-  the first export. Check the printed date span before trusting a re-ingest.
+- **`ingest.citibike` merges into the trips cache** on Lyft's `rideId`,
+  because the export script defaults to a **one-year** window and replacing
+  the cache with one silently discarded everything older -- that is what
+  truncated the first export. `--replace` still exists for a cache that is
+  itself wrong, and an unreadable cache raises rather than being overwritten
+  from empty. A cache written before the merge carries no `id`, so `_merge`
+  also matches such a record by start time, and only when that start names
+  exactly one of them. Check the printed date span before trusting a
+  re-ingest.
 - **Check a fresh Citibike export for silent truncation before trusting it.**
   The fetch is cursor-paginated in tens and stops at a one-year cutoff, so an
   export can look like a plausible complete history that merely starts a year

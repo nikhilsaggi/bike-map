@@ -16,6 +16,7 @@ from bike_routes.citibike import (
     trip_rides,
 )
 from bike_routes.ingest.citibike import (
+    CacheUnreadableError,
     _cache_well_formed,
     _is_ebike,
     _load_cached_stations,
@@ -30,6 +31,8 @@ STATIONS = {
     "A St & 1 Ave": (40.70, -73.94),
     "B St & 2 Ave": (40.75, -73.98),
 }
+# The same two docks as the cache stores them: [lon, lat].
+STATIONS_LONLAT = {name: [lon, lat] for name, (lat, lon) in STATIONS.items()}
 
 
 def _record(ride_id, start_ms, a, b, *, dur=600_000, bike="100-0001", items=None):
@@ -273,6 +276,130 @@ def test_ingest_falls_back_to_the_station_cache(tmp_path, monkeypatch):
         _write_export(tmp_path, [_record("r1", 1_000, "A St & 1 Ave", "B St & 2 Ave")])
     )
     assert all(at is not None for at in payload["docks"].values())
+
+
+# -- Merging one export into another ------------------------------------------
+
+# A year in milliseconds, roughly: enough to put two exports in different eras.
+YEAR_MS = 365 * 24 * 3_600_000
+
+
+@pytest.fixture
+def two_exports(tmp_path):
+    """An old export and a newer one that overlaps it by a single ride.
+
+    The shape of the real problem: the console script pages back one year, so
+    a second pull re-sends what it can still see and nothing older.
+    """
+    a, b = "A St & 1 Ave", "B St & 2 Ave"
+    paths = []
+    for name, records in (
+        (
+            "history_old.json",
+            [_record("r1", 1_000_000, a, b), _record("r2", 1_000_000 + YEAR_MS, b, a)],
+        ),
+        # r2 again, exactly as the first export had it, plus a year's riding.
+        (
+            "history_new.json",
+            [
+                _record("r2", 1_000_000 + YEAR_MS, b, a),
+                _record("r3", 1_000_000 + 2 * YEAR_MS, a, b),
+            ],
+        ),
+    ):
+        path = tmp_path / name
+        path.write_text(json.dumps(records))
+        paths.append(path)
+    return paths
+
+
+@pytest.mark.usefixtures("trips_path")
+def test_ingest_merges_rather_than_replacing(two_exports):
+    """The export covers one year; the cache covers everything ever ingested.
+
+    Overwriting is what truncated the first history, so a later, shorter pull
+    has to be a top-up.
+    """
+    first, second = two_exports
+    ingest(first)
+    payload = ingest(second)
+
+    assert [t["id"] for t in payload["trips"]] == ["r1", "r2", "r3"]
+    assert payload["sources"] == [first.name, second.name]
+
+
+@pytest.mark.usefixtures("trips_path")
+def test_merge_keys_on_ride_id_not_position(two_exports):
+    """A ride in both files is one trip, and it is the fresher record."""
+    first, second = two_exports
+    ingest(first)
+    payload = ingest(second)
+
+    ids = [t["id"] for t in payload["trips"]]
+    assert len(ids) == len(set(ids))
+    # The second export is authoritative for a ride both describe.
+    assert next(t for t in payload["trips"] if t["id"] == "r2")["dur"] == 600_000
+
+
+@pytest.mark.usefixtures("trips_path")
+def test_merge_recognises_a_cache_written_before_ids(trips_path, two_exports):
+    """The owner's cache predates the id, so its trips are keyed by start time.
+
+    Without this the first merge after the change would double every trip the
+    two files share -- the same loss the merge exists to prevent, in the
+    other direction.
+    """
+    first, second = two_exports
+    ingest(first)
+    stripped = json.loads(trips_path.read_text())
+    for t in stripped["trips"]:
+        del t["id"]
+    trips_path.write_text(json.dumps(stripped))
+
+    payload = ingest(second)
+    # Three rides, not four: the shared one was recognised. The pre-id record
+    # keeps no id -- there is none to invent -- so it is counted by its start.
+    assert len(payload["trips"]) == 3
+    assert [t["t"] for t in payload["trips"]] == sorted(t["t"] for t in payload["trips"])
+    assert [t.get("id") for t in payload["trips"]] == [None, "r2", "r3"]
+
+
+@pytest.mark.usefixtures("trips_path")
+def test_replace_discards_the_cache_only_when_asked(two_exports):
+    first, second = two_exports
+    ingest(first)
+    payload = ingest(second, replace=True)
+
+    assert [t["id"] for t in payload["trips"]] == ["r2", "r3"]
+    assert payload["sources"] == [second.name]
+
+
+@pytest.mark.usefixtures("trips_path")
+def test_ingest_refuses_to_overwrite_a_cache_it_cannot_read(trips_path, tmp_path):
+    """A cache that reads as empty is a cache about to be silently truncated."""
+    trips_path.write_text("{ not json")
+    export = _write_export(tmp_path, [_record("r1", 1_000, "A St & 1 Ave", "B St & 2 Ave")])
+    with pytest.raises(CacheUnreadableError):
+        ingest(export)
+    assert trips_path.read_text() == "{ not json"
+
+    # --replace is the way out of it, so a broken cache must not block that.
+    payload = ingest(export, replace=True)
+    assert [t["id"] for t in payload["trips"]] == ["r1"]
+
+
+@pytest.mark.usefixtures("trips_path")
+def test_a_dock_keeps_a_coordinate_gbfs_stops_publishing(tmp_path, monkeypatch):
+    """Docks do not move, and a merge must not un-draw one over a feed change."""
+    ingest(_write_export(tmp_path, [_record("r1", 1_000, "A St & 1 Ave", "B St & 2 Ave")]))
+    monkeypatch.setattr(
+        "bike_routes.ingest.citibike._fetch_stations",
+        lambda: {"B St & 2 Ave": STATIONS["B St & 2 Ave"]},
+    )
+    payload = ingest(
+        _write_export(tmp_path, [_record("r2", 2_000, "A St & 1 Ave", "B St & 2 Ave")])
+    )
+    assert payload["docks"]["A St & 1 Ave"] == STATIONS_LONLAT["A St & 1 Ave"]
 
 
 # -- Matching GPS rides to Citibike trips by the clock ------------------------
