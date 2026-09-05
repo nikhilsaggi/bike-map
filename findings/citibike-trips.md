@@ -134,6 +134,54 @@ the criterion for a report. It is the wrong criterion here.
 What survived from that detour is the honesty rule, which is separate: no
 routes between docks, nothing in `edge_counts` or `coverage`, and no speed.
 
+## Which GPS rides were Citibike rides
+
+The two datasets share nothing but the clock: the matcher never saw a dock and
+the export never saw a fix. That turns out to be enough, because a Garmin
+activity running while a Citibike is unlocked *is* that Citibike ride.
+
+`citibike.ride_sources` overlaps each ride's `[start, start + duration]`
+against every trip span. On the real data:
+
+| | |
+|---|---|
+| GPS rides inside the export's window | 289 of 1,380 |
+| matched to at least one Citibike trip | **225 (78%)** |
+| in the window with no trip over them | 64 |
+| rides spanning 2 trips | 21 |
+| rides spanning 3 trips | 3 |
+| Citibike trips with no GPS ride over them | 98 of 352 |
+
+**The threshold is not tuned, and that is the point.** Requiring 1s, 30s, 60s
+or 120s of overlap gives the identical 225/64 split; only at 300s does it
+break, and that is because the median trip is 8 minutes long, not because
+anything is marginal. A match covers a median 92% of the trip it hits, and
+just 2% of matches cover under half. 60s is the shipped figure — enough that a
+ride merely abutting a trip cannot claim it, and provably insensitive.
+Nothing here needs a `traversal_audit`-style calibration.
+
+Alignment is what you would expect from a person: the Citibike unlock lands a
+median 18 seconds before the watch starts recording (p10 −80s, p90 −1s). You
+unlock, then start the watch.
+
+### Unknown is a third state, not a synonym for "own bike"
+
+A ride with no matching trip means something only *inside* the window. Before
+the export begins there is no evidence either way, so those rides are
+`-1`, not `0`. With the current truncated export that is 1,091 of 1,380
+rides — and it corrects itself when a fuller export lands. The page's source
+filter hides unknown rides from both sides and says how many it is hiding,
+rather than quietly filing them under one.
+
+### What the split shows
+
+The two filtered maps are not the same map with different density. Citibike
+rides draw 5,448 edges; the 64 own-bike rides draw 8,804. Fewer rides, more
+street: the Citibike trips are short dock-to-dock hops that saturate the local
+grid, while the own-bike rides are long and reach out to Queens and across the
+bridges. Neither of those is a fact the stats panel states — it is what the
+filter is for.
+
 ## What the numbers say
 
 - **Grand Central is a one-way valve.** `E 43 St & Madison Ave` is 33

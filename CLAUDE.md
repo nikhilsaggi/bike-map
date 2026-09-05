@@ -118,6 +118,15 @@ reads everything from `rides.geojson.gz` top-level `properties`.
   ([why](findings/citibike-trips.md)). No speed is derived either -- the
   export's durations are whole minutes and its end times are the start plus
   that duration.
+- **A GPS ride is matched to Citibike trips by clock overlap**
+  (`citibike.ride_sources`), shipped as the 4th element of each row in the
+  export's `rides` array: `-1` unknown, `0` own bike, `n>=1` the number of
+  trips it overlaps. **`0` and `-1` are not the same claim** -- outside the
+  export's window there is no evidence either way, so those rides are
+  unknown, and the page's source filter hides them from both sides rather
+  than counting them as own-bike. With a truncated export that is most of
+  the history. The 60s minimum overlap is not a tuned threshold: anything
+  from 1s to 120s gives the same answer on the real rides.
 - **The dock layer is meant to be explored, not read.** Markers resize with
   the same `filterLo`/`filterHi` range that filters the edges (`applyFilter`
   calls `applyDockFilter`), so the slider and time-lapse move them too. The

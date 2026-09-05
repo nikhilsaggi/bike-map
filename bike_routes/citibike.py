@@ -39,6 +39,20 @@ ABORT_MAX_MS = 120_000
 FLOW_TOP = 3
 FLOW_BOTTOM = 2
 
+# A GPS ride and a Citibike trip are the same journey when their recorded
+# spans overlap. Requiring a minute of it, rather than an instant, keeps a
+# ride that merely abuts a trip from claiming it. The split is insensitive to
+# the exact figure -- on the real rides anything from 1s to 120s gives the
+# same 225 Citibike / 64 own-bike answer, and a match covers a median 92% of
+# the trip it hits, so these are whole journeys rather than clipped edges.
+MATCH_MIN_OVERLAP_S = 60.0
+
+# Fourth element of each row in the export's `rides` array. A positive value
+# is the number of Citibike trips the ride overlaps, so it doubles as the
+# count for a ride that spans several.
+SOURCE_UNKNOWN = -1  # outside the span the Citibike export covers
+SOURCE_OWN = 0  # inside it, and nothing overlaps: the owner's own bike
+
 try:
     from zoneinfo import ZoneInfo
 
@@ -91,6 +105,46 @@ def _flow_extremes(
     return [{"name": n, "out": out_n.get(n, 0), "in": in_n.get(n, 0)} for n in head + tail]
 
 
+def ride_sources(ride_stats: dict[str, dict[str, Any] | None]) -> dict[str, int]:
+    """Label each GPS ride by the Citibike trips it overlaps in time.
+
+    The two datasets share nothing but the clock -- the matcher never saw a
+    dock and the export never saw a fix -- so co-occurrence in time is the
+    whole of the evidence, and it is strong: a Garmin activity running while
+    a Citibike is unlocked is that Citibike ride.
+
+    **Absence of a match only means something inside the export's window.**
+    Outside it there is no evidence either way, so those rides are
+    SOURCE_UNKNOWN rather than "own bike" -- with a truncated export that is
+    most of the history, and it corrects itself when a fuller one lands.
+    """
+    payload = _load_trips()
+    if payload is None:
+        return {}
+    spans = sorted((t["t"] / 1000, (t["t"] + t["dur"]) / 1000) for t in payload["trips"])
+    if not spans:
+        return {}
+    win_start = spans[0][0]
+    win_end = max(end for _, end in spans)
+
+    sources: dict[str, int] = {}
+    for fname, rs in ride_stats.items():
+        if not rs or not rs.get("start") or rs.get("duration_s") is None:
+            continue
+        try:
+            start = datetime.fromisoformat(rs["start"]).timestamp()
+        except ValueError:
+            continue
+        if not win_start <= start <= win_end:
+            sources[fname] = SOURCE_UNKNOWN
+            continue
+        end = start + rs["duration_s"]
+        sources[fname] = sum(
+            1 for s, e in spans if min(end, e) - max(start, s) >= MATCH_MIN_OVERLAP_S
+        )
+    return sources
+
+
 def _citibike_summary(
     ride_stats: dict[str, dict[str, Any] | None],
 ) -> dict[str, Any] | None:
@@ -126,6 +180,7 @@ def _citibike_summary(
     day_index = {d: i for i, d in enumerate(days)}
     trips = [[index[t["a"]], index[t["b"]], day_index[_local_date(t["t"])]] for t in raw]
 
+    sources = ride_sources(ride_stats)
     own_days = {fname[:10] for fname in ride_stats}
     minutes = [t["dur"] / 60_000 for t in raw]
     bikes: dict[str, int] = {}
@@ -156,4 +211,10 @@ def _citibike_summary(
         "repeat_bikes": sum(1 for n in bikes.values() if n > 1),
         "once_only": sum(1 for d in docks if d["out"] + d["in"] == 1),
         "flow": _flow_extremes(out_n, in_n, names),
+        # How the GPS rides inside the window split by source. Rides outside
+        # it are not counted here at all -- they are unknown, not own-bike.
+        "gps": {
+            "citibike": sum(1 for v in sources.values() if v > 0),
+            "own": sum(1 for v in sources.values() if v == SOURCE_OWN),
+        },
     }

@@ -1,5 +1,5 @@
-import { test, expect, gotoMap, openSection, chip } from './helpers.js';
-import { buildFixture } from './fixture.js';
+import { test, expect, gotoMap, openSection, chip, clickEdge } from './helpers.js';
+import { buildFixture, EDGES } from './fixture.js';
 
 const SECTION = 'stat-citibike';
 
@@ -181,10 +181,100 @@ test.describe('Citibike dock layer', () => {
     await expect(rows.nth(2).locator('.cb-flow-val')).toHaveText('-4');
   });
 
+  test('reports how many recorded rides were Citibike', async ({ page }) => {
+    await gotoMap(page, buildFixture({
+      citibike: { ...buildFixture().properties.citibike, gps: { citibike: 9, own: 4 } },
+    }));
+    await openSection(page, SECTION);
+    await expect(page.locator(`#${SECTION}`)).toContainText('9 of the 13');
+  });
+
   test('section, chip and toggle stay hidden without a citibike block', async ({ page }) => {
     await gotoMap(page, buildFixture({ citibike: null }));
     await expect(page.locator(`#${SECTION}`)).toBeHidden();
     await expect(chip(page, SECTION)).toBeHidden();
     await expect(page.locator('#cb-toggle')).toBeHidden();
+  });
+});
+
+test.describe('ride source', () => {
+  // EDGES.center carries rides [0,1,2,3]: one of each source, and ride 3 is a
+  // two-trip Citibike ride listed twice on EDGES.south.
+  test('labels a ride wherever it is already named', async ({ page }) => {
+    await gotoMap(page);
+    await clickEdge(page, EDGES.center.lat);
+    const popup = page.locator('.ride-popup');
+    await expect(popup).toBeVisible();
+    // Ride 0 is outside the Citibike history, so it gets no label at all
+    // rather than being guessed at.
+    const rows = popup.locator('.ride-row');
+    await expect(rows.nth(0)).not.toContainText('Citibike');
+    await expect(rows.nth(0)).not.toContainText('my bike');
+    await expect(rows.nth(1).locator('.src-tag.cb')).toHaveText('Citibike');
+    await expect(rows.nth(2).locator('.src-tag.mine')).toHaveText('my bike');
+    // A ride spanning two Citibike trips says so.
+    await expect(rows.nth(3).locator('.src-tag.cb')).toHaveText('2 Citibike trips');
+  });
+
+  test('names the source in ride view too', async ({ page }) => {
+    await gotoMap(page);
+    await page.evaluate(() => viewRide(1));
+    await expect(page.locator('#ride-view-label .src-tag.cb')).toHaveText('Citibike');
+    await page.evaluate(() => viewRide(2));
+    await expect(page.locator('#ride-view-label .src-tag.mine')).toHaveText('my bike');
+  });
+
+  const drawn = (page) => page.evaluate(() => {
+    let n = 0;
+    geoLayer.eachLayer(l => { if (map.hasLayer(l)) n++; });
+    return n;
+  });
+
+  test('filters the drawn network by source', async ({ page }) => {
+    await gotoMap(page);
+    expect(await drawn(page)).toBe(3);
+
+    // Citibike rides are 1 and 3. Ride 1 is on center+north, ride 3 on
+    // center+south, so all three edges survive.
+    await page.click('.src-btn[data-src="citibike"]');
+    await expect.poll(() => drawn(page)).toBe(3);
+
+    // Own-bike is ride 2 alone, which only touches the center edge.
+    await page.click('.src-btn[data-src="mine"]');
+    await expect.poll(() => drawn(page)).toBe(1);
+
+    await page.click('.src-btn[data-src="all"]');
+    await expect.poll(() => drawn(page)).toBe(3);
+  });
+
+  test('says what a source filter is hiding', async ({ page }) => {
+    await gotoMap(page);
+    await expect(page.locator('#src-note')).toHaveText('');
+    await page.click('.src-btn[data-src="mine"]');
+    // Ride 0 has an unknown source and belongs to neither side.
+    await expect(page.locator('#src-note')).toContainText('1 rides fall outside');
+    await page.click('.src-btn[data-src="all"]');
+    await expect(page.locator('#src-note')).toHaveText('');
+  });
+
+  test('the popup lists only the rides the filter kept', async ({ page }) => {
+    await gotoMap(page);
+    await page.click('.src-btn[data-src="mine"]');
+    await clickEdge(page, EDGES.center.lat);
+    const popup = page.locator('.ride-popup');
+    await expect(popup.locator('.ride-row')).toHaveCount(1);
+    await expect(popup.locator('.src-tag.mine')).toHaveText('my bike');
+  });
+
+  test('the control is absent when no ride has a known source', async ({ page }) => {
+    await gotoMap(page, buildFixture({
+      rides: [
+        [0, '08:30', 10.0, -1],
+        [1, '18:05', 25.0, -1],
+        [2, '09:15', 12.5, -1],
+        [3, '14:45', 40.0, -1],
+      ],
+    }));
+    await expect(page.locator('#src-row')).toBeHidden();
   });
 });

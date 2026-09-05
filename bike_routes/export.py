@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from . import config
-from .citibike import _citibike_summary
+from .citibike import SOURCE_UNKNOWN, _citibike_summary, ride_sources
 from .edge_speed import _speed_summary, ride_pass_dirs
 from .merge import _audit_merge, _geom_len_m, _merge_parallel_features
 from .ride_stats import _riding_summary
@@ -131,6 +131,9 @@ def _export_geojson(
     all_dates = sorted({fname[:10] for fname in all_fnames})
     date_idx = {d: i for i, d in enumerate(all_dates)}
     ride_stats = state.get("ride_stats", {})
+    # Which rides were Citibike, by clock overlap. -1 where the export gives
+    # no evidence either way; see citibike.ride_sources.
+    sources = ride_sources(ride_stats)
     rides_meta = []
     for fname in all_fnames:
         rs = ride_stats.get(fname) or {}
@@ -140,6 +143,7 @@ def _export_geojson(
                 date_idx[fname[:10]],
                 f"{fname[11:13]}:{fname[14:16]}" if len(fname) >= 16 else "",
                 dist,
+                sources.get(fname, SOURCE_UNKNOWN),
             ]
         )
     for f in features:

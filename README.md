@@ -30,6 +30,10 @@ The pipeline exports a compressed GeoJSON that powers an interactive
   trips carry no GPS trace, so no route between docks is ever drawn and none
   of it counts toward the passes or the coverage figure
   ([why](findings/citibike-trips.md))
+- Ride source: each GPS ride is matched to Citibike trips by clock overlap and
+  labelled where it appears, and the legend can filter the whole network to
+  Citibike or own-bike rides. Rides from before the Citibike history starts
+  are left unknown rather than assumed
 
 To view locally:
 

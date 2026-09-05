@@ -40,9 +40,10 @@ def test_export_geojson(tmp_path, monkeypatch):
     assert props["total_edges"] == 2
     assert props["max_count"] == 2
     assert props["dates"] == ["2024-01-05", "2025-06-01"]
-    # Global ride index: [date_index, "HH:MM", dist_km] per ride,
-    # chronological; distance is None when ride_stats are absent
-    assert props["rides"] == [[0, "08:00", 12.3], [1, "12:00", None]]
+    # Global ride index: [date_index, "HH:MM", dist_km, source] per ride,
+    # chronological; distance is None when ride_stats are absent, and the
+    # source is -1 (unknown) with no Citibike cache to match against.
+    assert props["rides"] == [[0, "08:00", 12.3, -1], [1, "12:00", None, -1]]
     assert props["rides_per_year"] == {"2024": 1, "2025": 1}
     assert abs(props["total_km"] - 0.6) < 0.05
     assert props["updated"] >= "2026-01-01"
@@ -284,5 +285,7 @@ def test_citibike_block_leaves_the_drawn_edges_alone(tmp_path, monkeypatch):
     # the features carry ride indices and nothing else.
     assert props["total_rides"] == 1
     assert props["total_edges"] == 1
-    assert props["rides"] == [[0, "08:00", 1.0]]
+    # This ride has no start timestamp, so it cannot be placed against the
+    # trip and stays unknown rather than being called an own-bike ride.
+    assert props["rides"] == [[0, "08:00", 1.0, -1]]
     assert [set(f["properties"]) for f in data["features"]] == [{"rides"}]

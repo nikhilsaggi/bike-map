@@ -140,12 +140,15 @@ export function buildFixture(propertyOverrides = {}) {
         ],
       },
       dates: ['2023-04-01', '2023-06-15', '2024-05-01', '2024-07-04'],
-      // [date_index, "HH:MM", distance_km]
+      // [date_index, "HH:MM", distance_km, source]
+      // source: -1 outside the Citibike history, 0 own bike, n>=1 the number
+      // of Citibike trips the ride overlaps. One of each, plus a two-trip
+      // ride, so every branch of the tag and the filter has a case.
       rides: [
-        [0, '08:30', 10.0],
-        [1, '18:05', 25.0],
-        [2, '09:15', 12.5],
-        [3, '14:45', 40.0],
+        [0, '08:30', 10.0, -1],
+        [1, '18:05', 25.0, 1],
+        [2, '09:15', 12.5, 0],
+        [3, '14:45', 40.0, 2],
       ],
       updated: '2026-07-01',
       // The busiest drawn feature, named. Placed on the north edge so a click

@@ -33,7 +33,7 @@ test.describe('street tooltips and popups', () => {
     await expect(popup).toContainText('2 passes across 1 ride');
     const rows = popup.locator('.ride-row');
     await expect(rows).toHaveCount(1);
-    await expect(rows.nth(0)).toHaveText('2024-07-04 · 14:45 ×2');
+    await expect(rows.nth(0)).toHaveText('2024-07-04 · 14:45 ×2 · 2 Citibike trips');
   });
 });
 
@@ -57,7 +57,7 @@ test.describe('single-ride view', () => {
     await gotoMap(page);
     await clickEdge(page, EDGES.center.lat);
     await page.locator('.ride-popup .ride-row').last().click();
-    await expect(page.locator('#ride-view-label')).toHaveText('2024-07-04 14:45');
+    await expect(page.locator('#ride-view-label')).toHaveText('2024-07-04 14:45 · 2 Citibike trips');
 
     await page.locator('#ride-view-exit').click();
     await expect(page.locator('#ride-view-bar')).toBeHidden();

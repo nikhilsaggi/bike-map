@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 
 import pytest
 
-from bike_routes.citibike import _citibike_summary
+from bike_routes.citibike import (
+    SOURCE_OWN,
+    SOURCE_UNKNOWN,
+    _citibike_summary,
+    ride_sources,
+)
 from bike_routes.ingest.citibike import (
     _cache_well_formed,
     _is_ebike,
@@ -288,3 +294,92 @@ def test_ingest_falls_back_to_the_station_cache(tmp_path, monkeypatch):
         _write_export(tmp_path, [_record("r1", 1_000, "A St & 1 Ave", "B St & 2 Ave")])
     )
     assert all(at is not None for at in payload["docks"].values())
+
+
+# -- Matching GPS rides to Citibike trips by the clock ------------------------
+
+T0 = 1_700_000_000  # a Tuesday afternoon in NYC
+# Two ten-minute trips an hour apart, so the covered window is T0 .. T0+4200.
+TWO_TRIPS = [
+    _record("t1", T0 * 1000, "A St & 1 Ave", "B St & 2 Ave", dur=600_000),
+    _record("t2", (T0 + 3600) * 1000, "B St & 2 Ave", "A St & 1 Ave", dur=600_000),
+]
+
+
+def _stats(**rides):
+    """Build a ride_stats dict from {name: (start_epoch, duration_s)}."""
+    return {
+        f"{name}.csv": {
+            "start": dt.datetime.fromtimestamp(start, tz=dt.timezone.utc).isoformat(),
+            "duration_s": float(dur),
+            "dist_m": 1000.0,
+        }
+        for name, (start, dur) in rides.items()
+    }
+
+
+@pytest.mark.usefixtures("trips_path")
+def test_ride_sources_matches_by_overlap(tmp_path):
+    ingest(_write_export(tmp_path, TWO_TRIPS))
+    src = ride_sources(
+        _stats(
+            inside=(T0 + 60, 300),  # sits within the first trip
+            spanning=(T0, 4200),  # long enough to cover both
+            between=(T0 + 1200, 300),  # in the window, between the trips
+            grazing=(T0 + 570, 100),  # clips the first trip by 30s only
+        )
+    )
+    assert src["inside.csv"] == 1
+    assert src["spanning.csv"] == 2
+    assert src["between.csv"] == SOURCE_OWN
+    # Under MATCH_MIN_OVERLAP_S: abutting a trip is not riding it.
+    assert src["grazing.csv"] == SOURCE_OWN
+
+
+@pytest.mark.usefixtures("trips_path")
+def test_ride_sources_calls_rides_outside_the_window_unknown(tmp_path):
+    """The export's silence before it starts is not evidence of an own bike.
+
+    This is the whole reason for a third state: with a truncated export most
+    of the ride history predates any Citibike record.
+    """
+    ingest(_write_export(tmp_path, TWO_TRIPS))
+    src = ride_sources(
+        _stats(
+            before=(T0 - 10_000, 600),
+            after=(T0 + 10_000, 600),
+            during=(T0 + 60, 300),
+        )
+    )
+    assert src["before.csv"] == SOURCE_UNKNOWN
+    assert src["after.csv"] == SOURCE_UNKNOWN
+    assert src["during.csv"] == 1
+
+
+@pytest.mark.usefixtures("trips_path")
+def test_ride_sources_skips_rides_it_cannot_place_in_time(tmp_path):
+    ingest(_write_export(tmp_path, TWO_TRIPS))
+    src = ride_sources(
+        {
+            "no_stats.csv": None,
+            "no_start.csv": {"duration_s": 600.0},
+            "bad_start.csv": {"start": "not a date", "duration_s": 600.0},
+            "fine.csv": {
+                "start": dt.datetime.fromtimestamp(T0 + 60, tz=dt.timezone.utc).isoformat(),
+                "duration_s": 300.0,
+            },
+        }
+    )
+    assert set(src) == {"fine.csv"}
+
+
+@pytest.mark.usefixtures("trips_path")
+def test_ride_sources_is_empty_without_a_cache():
+    assert ride_sources(_stats(any=(T0, 600))) == {}
+
+
+@pytest.mark.usefixtures("trips_path")
+def test_summary_reports_the_gps_split(tmp_path):
+    ingest(_write_export(tmp_path, TWO_TRIPS))
+    s = _citibike_summary(_stats(one=(T0 + 60, 300), two=(T0 + 3660, 300), none=(T0 + 1200, 300)))
+    assert s["gps"] == {"citibike": 2, "own": 1}
