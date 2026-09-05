@@ -5,9 +5,24 @@ adds a year of riding the map could not see, but it is a different kind of
 evidence and most of this write-up is about keeping it from pretending
 otherwise.
 
-Source: `citibikenyc_history_2026-09-04.json`, downloaded by hand from
-`account.lyft.com/privacy/data`. 390 records, **352 unique rides**,
-2025-08-27 to 2026-09-04.
+Source: `citibikenyc_history_2026-09-05.json`, downloaded by hand.
+2,804 records, **2,524 unique rides**, 2021-09-04 to 2026-09-04.
+
+### The first export was silently truncated
+
+An earlier download covered only 2025-08-27 onward — 372 days ending on the
+export date — and looked at a glance like a complete history that simply
+started in 2025. It was not. The tell was in the duplicates: they sat at
+index 10, 20, 30 … 380, each repeating the record before it, which is a
+cursor-paginated fetch with a page size of 10 re-sending its cursor. 39 pages
+of 10, and **the last page was full** — a fetch that has run out of history
+stops on a short page, so this one had stopped early. The complete export
+ends on a page of 4.
+
+Two supporting signs, worth recognising again: the span was a rolling ~1 year
+ending exactly on the export date, and the oldest month held 2 rides against
+29 and 47 in the months after it — a boundary slicing through a month rather
+than a beginning.
 
 ## What is actually in the export
 
@@ -48,17 +63,32 @@ The export has no coordinates. Citibike's public GBFS feed
 ~2,506 stations) publishes a `name` field that is the same string Lyft writes
 into `startAddress`. The match is exact, not fuzzy:
 
-- **214 of 216 distinct dock names**, 702 of 704 endpoint mentions.
-- The two misses are `Melrose St & Broadway` and `9 Ave & W 39 St`, one trip
-  each — renamed or removed docks the live feed no longer lists.
+**552 of 591 distinct dock names** over five years. The 39 misses are docks
+that have genuinely been removed since 2021, which is what a five-year window
+should look like.
 
-No geocoder, no string normalisation, no nearest-neighbour fallback. If that
-match rate ever drops it is a real signal about the feed, not something to
-paper over, so the ingest prints every name it could not place.
+No geocoder and no fuzzy matching. There is one normalisation step, added
+only because the fuller history produced the evidence for it: Lyft's own
+strings are inconsistent in two specific ways, and five docks were being lost
+to formatting rather than to history.
+
+- Three had stray whitespace around the ampersand — a literal tab in
+  `Broadway\t& W 48 St` and `W 34 St &\tHudson Blvd E`, a double space in
+  `W 48 St &  Rockefeller Plaza`.
+- Two abbreviated the street type: `Madison Av & E 51 St`,
+  `Manhattan Av & Leonard St`.
+
+So `_norm_name` collapses whitespace and expands a standalone `Av` to `Ave`,
+and matching stays exact against the normalised key. This was checked before
+being added rather than after: across all 2,506 GBFS stations **no two names
+normalise to the same key**, so the rule cannot attach a dock to the wrong
+coordinates. The ingest still prints every name it could not place, because a
+match rate that drops is a real signal about the feed.
 
 **A dock GBFS cannot place keeps its trips and its counts.** It simply gets
 `at: null` and is not drawn. Dropping it would quietly shrink the dock count
-and the totals in order to tidy the map.
+and the totals in order to tidy the map — and over five years that would be
+39 docks' worth of history erased for the convenience of the renderer.
 
 ## Why none of it reaches the drawn edges
 

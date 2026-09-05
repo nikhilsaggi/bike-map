@@ -34,10 +34,19 @@ from . import config
 # Reported on its own rather than silently folded into the totals.
 ABORT_MAX_MS = 120_000
 
-# How many docks from each end of the net-flow range the stats section lists.
+# How many docks from each end of the one-way range the stats section lists.
 # Ranked here rather than in the browser, the way the speed corridors are.
 FLOW_TOP = 3
 FLOW_BOTTOM = 2
+# Ranked by the *share* of a dock's use running one way, not the raw
+# difference. The difference is scale-dependent and picks the busiest dock
+# rather than the most lopsided one: over five years Broadway & W 48 St is
+# +93, which sounds decisive until you see it is 363 out against 270 in, a
+# 15% lean. Madison Av & E 51 St at 28/2 is the fact worth showing.
+# The floor keeps a dock used twice from claiming a perfect score; 10 leaves
+# 77 of 591 docks eligible on the full history and still ranks sensibly on a
+# single year's worth.
+FLOW_MIN_USES = 10
 
 # A GPS ride and a Citibike trip are the same journey when their recorded
 # spans overlap. Requiring a minute of it, rather than an instant, keeps a
@@ -99,9 +108,15 @@ def _flow_extremes(
     few enough docks the two slices overlap, and listing one twice would read
     as two different docks that happen to share a name.
     """
-    by_net = sorted(names, key=lambda n: (-(out_n.get(n, 0) - in_n.get(n, 0)), n))
-    head = by_net[:FLOW_TOP]
-    tail = [n for n in by_net[-FLOW_BOTTOM:] if n not in head]
+
+    def share(name: str) -> float:
+        out, into = out_n.get(name, 0), in_n.get(name, 0)
+        return (out - into) / (out + into)
+
+    eligible = [n for n in names if out_n.get(n, 0) + in_n.get(n, 0) >= FLOW_MIN_USES]
+    ranked = sorted(eligible, key=lambda n: (-share(n), n))
+    head = ranked[:FLOW_TOP]
+    tail = [n for n in ranked[-FLOW_BOTTOM:] if n not in head]
     return [{"name": n, "out": out_n.get(n, 0), "in": in_n.get(n, 0)} for n in head + tail]
 
 

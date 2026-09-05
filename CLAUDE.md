@@ -124,9 +124,15 @@ reads everything from `rides.geojson.gz` top-level `properties`.
   trips it overlaps. **`0` and `-1` are not the same claim** -- outside the
   export's window there is no evidence either way, so those rides are
   unknown, and the page's source filter hides them from both sides rather
-  than counting them as own-bike. With a truncated export that is most of
-  the history. The 60s minimum overlap is not a tuned threshold: anything
-  from 1s to 120s gives the same answer on the real rides.
+  than counting them as own-bike. The 60s minimum overlap is not a tuned
+  threshold: anything from 1s to 120s gives the same answer on the real
+  rides.
+- **The one-way dock list ranks by share, not by the raw difference**
+  (`citibike._flow_extremes`, floor `FLOW_MIN_USES`). Difference is
+  scale-dependent and surfaces the busiest dock instead of the most lopsided
+  one -- over five years the top dock by difference is +93, which is 363 out
+  against 270 in. The dock markers' colour has the same rule for the same
+  reason; if one changes, check the other.
 - **The dock layer is meant to be explored, not read.** Markers resize with
   the same `filterLo`/`filterHi` range that filters the edges (`applyFilter`
   calls `applyDockFilter`), so the slider and time-lapse move them too. The
@@ -272,6 +278,11 @@ times one ride crossed one edge, in the stored vertex order of
   (`account.lyft.com/privacy/data` -> `python -m bike_routes.ingest.citibike
   <file>`), not from `update.py`: there is no API to automate. The ingest is
   by hand; the summary is automatic on every later run.
+- **Check a fresh Citibike export for silent truncation before trusting it.**
+  The fetch is cursor-paginated in tens, and one export stopped early on a
+  *full* page, giving a plausible-looking 372-day history that was really the
+  most recent year of five. A complete export ends on a short page
+  ([details](findings/citibike-trips.md)).
 
 ## Documentation
 

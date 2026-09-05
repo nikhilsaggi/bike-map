@@ -879,8 +879,11 @@ function initDockLayer(cb) {
   const check = document.getElementById('cb-check');
   const month = (iso) => new Date(`${iso}T12:00:00`).toLocaleDateString('en-US',
     { month: 'short', year: 'numeric' });
+  // Only worth saying when the docks start after the rides do; if they cover
+  // the whole history there is no stretch of empty slider to explain.
+  const startsLate = cb.from && dateList.length && cb.from > dateList[0];
   document.getElementById('cb-range').textContent =
-    cb.from ? `(${month(cb.from)} on)` : '';
+    startsLate ? `(${month(cb.from)} on)` : '';
   toggle.classList.remove('hidden');
   check.addEventListener('change', () => {
     if (check.checked) {
@@ -913,7 +916,6 @@ function renderCitibike(cb) {
   // the same way the speed corridors are.
   const flows = document.createElement('div');
   for (const s of cb.flow || []) {
-    const net = s.out - s.in;
     const row = document.createElement('div');
     row.className = 'cb-flow-row';
     const name = document.createElement('span');
@@ -922,7 +924,11 @@ function renderCitibike(cb) {
     name.textContent = s.name;  // textContent, not innerHTML: this is Lyft data
     const val = document.createElement('span');
     val.className = 'cb-flow-val';
-    val.textContent = `${net > 0 ? '+' : ''}${net}`;
+    // The share, not the difference: "+93" sounds decisive until you see it
+    // is 363 out against 270 in. The pipeline ranks on this too.
+    const total = s.out + s.in;
+    val.textContent = s.out === s.in ? 'even'
+      : `${Math.round(100 * Math.max(s.out, s.in) / total)}% ${s.out > s.in ? 'out' : 'in'}`;
     const sub = document.createElement('span');
     sub.className = 'cb-flow-sub';
     sub.textContent = `${s.out}/${s.in}`;
@@ -937,16 +943,21 @@ function renderCitibike(cb) {
     const gps = document.createElement('div');
     gps.className = 'cb-note';
     const total = cb.gps.citibike + cb.gps.own;
-    gps.innerHTML = `Matched by clock overlap, <strong>${cb.gps.citibike} of the ` +
-      `${total}</strong> recorded rides in that window were on a Citibike; ` +
-      `${cb.gps.own} were not. Filter the map by source in the legend.`;
+    // "the rides it covers" rather than "in that window": the phrasing has to
+    // hold whether the export spans the whole ride history or one year of it.
+    gps.innerHTML =
+      `Matched by clock overlap, <strong>${cb.gps.citibike.toLocaleString()} of the ` +
+      `${total.toLocaleString()}</strong> recorded rides the Citibike history ` +
+      `covers were on a Citibike; ${cb.gps.own.toLocaleString()} were not. ` +
+      `Filter the map by source in the legend.`;
     el.appendChild(gps);
   }
 
   const note = document.createElement('div');
   note.className = 'cb-note';
   note.innerHTML =
-    `Net departures minus arrivals, with out/in beside it. ` +
+    `The share of each dock's use running one way, with out/in beside it; ` +
+    `docks used fewer than 10 times are left out. ` +
     `<strong>${cb.same_day} of ${cb.days.length}</strong> Citibike days were ` +
     `days with an own-bike ride too. ${cb.once_only} of ${cb.docks.length} docks ` +
     `were used once. Turn on <em>Citibike docks</em> in the legend to put them ` +
@@ -1238,11 +1249,15 @@ function initSourceFilter() {
     btn.addEventListener('click', () => {
       sourceFilter = btn.dataset.src;
       for (const b of buttons) b.classList.toggle('on', b === btn);
-      // Say what is being left out. Hiding 1,091 rides silently would read as
-      // the map having lost most of itself.
-      note.textContent = sourceFilter === 'all' ? '' :
-        `${(rideList.length - known).toLocaleString()} rides fall outside the ` +
-        `Citibike history, so their source is unknown and they are hidden.`;
+      // Say what is being left out, but only when something is. Once the
+      // Citibike history covers every ride there is nothing to disclaim, and
+      // a note reading "0 rides are hidden" is worse than no note.
+      const hidden = rideList.length - known;
+      note.textContent = (sourceFilter === 'all' || !hidden) ? '' :
+        (hidden === 1
+          ? '1 ride falls outside the Citibike history, so its source is unknown and it is hidden.'
+          : `${hidden.toLocaleString()} rides fall outside the Citibike history, ` +
+            'so their source is unknown and they are hidden.');
       exitRideView();
       applyFilter();
     });

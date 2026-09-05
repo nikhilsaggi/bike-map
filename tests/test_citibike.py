@@ -152,8 +152,49 @@ def test_summary_counts_docks_and_oddities(tmp_path):
     assert s["once_only"] == 0
     # A: four departures to B plus the aborted unlock that also started there,
     # against r4's arrival and the aborted unlock's own return. B is the mirror.
-    flow = {f["name"]: (f["out"], f["in"]) for f in s["flow"]}
-    assert flow == {a: (5, 2), b: (1, 4)}
+    docks = {d["name"]: (d["out"], d["in"]) for d in s["docks"]}
+    assert docks == {a: (5, 2), b: (1, 4)}
+    # Neither dock clears FLOW_MIN_USES, so neither is called one-way.
+    assert s["flow"] == []
+
+
+def _flows(n, a, b, start=1_000):
+    """n trips from dock a to dock b, each with a distinct rideId."""
+    return [_record(f"{a}{b}{i}", start + i * 60_000, a, b, dur=300_000) for i in range(n)]
+
+
+@pytest.mark.usefixtures("trips_path")
+def test_flow_ranks_by_share_not_by_difference(tmp_path):
+    """A busy balanced dock must not outrank a lopsided quiet one.
+
+    This is what the five-year history exposed: ranked on the raw difference
+    the top "one-way" dock was 363 out against 270 in, a 15% lean that only
+    led because the dock is busy.
+    """
+    records = (
+        _flows(60, "Busy", "Sink", start=1_000)
+        + _flows(40, "Sink", "Busy", start=9_000_000)
+        + _flows(12, "Lopsided", "Sink", start=20_000_000)
+        + _flows(1, "Sink", "Lopsided", start=30_000_000)
+    )
+    ingest(_write_export(tmp_path, records))
+    flow = _citibike_summary({})["flow"]
+
+    # Busy is +20 and Lopsided only +11, but Lopsided is 92% one way.
+    assert [f["name"] for f in flow][:2] == ["Lopsided", "Busy"]
+    assert (flow[0]["out"], flow[0]["in"]) == (12, 1)
+
+
+@pytest.mark.usefixtures("trips_path")
+def test_flow_ignores_docks_below_the_use_floor(tmp_path):
+    """One trip out and none back is not a one-way dock, it is one trip."""
+    records = _flows(12, "Busy", "Sink", start=1_000) + _flows(1, "Once", "Sink", start=9_000_000)
+    ingest(_write_export(tmp_path, records))
+    names = [f["name"] for f in _citibike_summary({})["flow"]]
+
+    # "Once" is 100% one way and still has no business being ranked.
+    assert "Once" not in names
+    assert "Busy" in names
 
 
 @pytest.mark.usefixtures("trips_path")
@@ -163,24 +204,31 @@ def test_flow_lists_both_ends_without_repeating_a_dock(tmp_path):
     Listing one dock twice would read as two different docks that happen to
     share a name, so the tail drops anything already in the head.
     """
-    day = 1_700_000_000_000
-    # Six docks, each with a distinct net: D5 is +5 down to D0 at 0.
-    records = []
-    n = 0
-    for i in range(6):
-        for _ in range(i):
-            n += 1
-            records.append(_record(f"r{n}", day + n * 60_000, f"D{i}", "Sink St"))
+    # Two eligible docks: the slices overlap completely.
+    records = _flows(12, "Out", "Sink", start=1_000) + _flows(3, "Sink", "Out", start=9_000_000)
     ingest(_write_export(tmp_path, records))
-    s = _citibike_summary({})
+    names = [f["name"] for f in _citibike_summary({})["flow"]]
 
-    names = [f["name"] for f in s["flow"]]
-    assert len(names) == len(set(names))
-    # Three most departed-from, then the two most arrived-at. D1 is the only
-    # other dock with any use, so it takes the second tail slot.
-    assert names == ["D5", "D4", "D3", "D1", "Sink St"]
-    assert s["flow"][-1] == {"name": "Sink St", "out": 0, "in": 15}
-    assert s["once_only"] == 1  # D1, used once
+    assert names == sorted(set(names), key=names.index)  # no repeats
+    assert set(names) == {"Out", "Sink"}
+
+
+@pytest.mark.usefixtures("trips_path")
+def test_flow_runs_from_most_departed_to_most_arrived(tmp_path):
+    records = []
+    at = 1_000
+    for name, out, into in [("A", 18, 2), ("B", 15, 5), ("D", 8, 12), ("E", 2, 18)]:
+        records += _flows(out, name, "Sink", start=at)
+        at += 5_000_000
+        records += _flows(into, "Sink", name, start=at)
+        at += 5_000_000
+    ingest(_write_export(tmp_path, records))
+    flow = _citibike_summary({})["flow"]
+
+    shares = [(f["out"] - f["in"]) / (f["out"] + f["in"]) for f in flow]
+    assert shares == sorted(shares, reverse=True)
+    assert flow[0]["name"] == "A"
+    assert flow[-1]["name"] == "E"
 
 
 @pytest.mark.usefixtures("trips_path")

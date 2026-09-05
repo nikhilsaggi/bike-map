@@ -142,11 +142,19 @@ test.describe('Citibike dock layer', () => {
     expect(await page.evaluate(() => dockLinks)).toBe(null);
   });
 
-  test('says when the docks start, so an empty range reads as empty not broken', async ({ page }) => {
+  test('says when the docks start later than the rides do', async ({ page }) => {
+    // A stretch of slider with no docks in it would otherwise read as broken.
+    await gotoMap(page, buildFixture({
+      citibike: { ...buildFixture().properties.citibike, from: '2024-05-01' },
+    }));
+    await expect(page.locator('#cb-range')).toHaveText('(May 2024 on)');
+  });
+
+  test('and says nothing when they cover the whole ride history', async ({ page }) => {
+    // Default fixture: the first dock trip and the first ride share a date,
+    // so there is no empty stretch to explain and the hint is noise.
     await gotoMap(page);
-    // The ride history opens years before the first dock trip, so most of the
-    // slider has no docks in it at all.
-    await expect(page.locator('#cb-range')).toHaveText('(Apr 2023 on)');
+    await expect(page.locator('#cb-range')).toHaveText('');
   });
 
   test('the drawn edges are untouched by any of it', async ({ page }) => {
@@ -175,10 +183,13 @@ test.describe('Citibike dock layer', () => {
     await expect(section).toContainText('drawn as a route or counted toward coverage');
     await expect(section).toContainText('$5.00 paid of $12.00 charged');
 
+    // Share, not raw difference, and an evenly used dock says so.
     const rows = section.locator('.cb-flow-row');
     await expect(rows).toHaveCount(3);
-    await expect(rows.nth(0).locator('.cb-flow-val')).toHaveText('+4');
-    await expect(rows.nth(2).locator('.cb-flow-val')).toHaveText('-4');
+    await expect(rows.nth(0).locator('.cb-flow-val')).toHaveText('75% out');
+    await expect(rows.nth(0).locator('.cb-flow-sub')).toHaveText('3/1');
+    await expect(rows.nth(1).locator('.cb-flow-val')).toHaveText('even');
+    await expect(rows.nth(2).locator('.cb-flow-val')).toHaveText('75% in');
   });
 
   test('reports how many recorded rides were Citibike', async ({ page }) => {
@@ -252,7 +263,7 @@ test.describe('ride source', () => {
     await expect(page.locator('#src-note')).toHaveText('');
     await page.click('.src-btn[data-src="mine"]');
     // Ride 0 has an unknown source and belongs to neither side.
-    await expect(page.locator('#src-note')).toContainText('1 rides fall outside');
+    await expect(page.locator('#src-note')).toContainText('1 ride falls outside');
     await page.click('.src-btn[data-src="all"]');
     await expect(page.locator('#src-note')).toHaveText('');
   });

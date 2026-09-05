@@ -80,10 +80,12 @@ export const CITIBIKE_BLOCK = {
   bikes: 8,
   repeat_bikes: 2,
   once_only: 0,
+  // Matches the dock counts above, and covers all three ways a row renders:
+  // a share out, an even dock, a share in.
   flow: [
-    { name: 'Terminal Dock & 42 St', out: 4, in: 0 },
-    { name: 'Home Dock & Main St', out: 6, in: 6 },
-    { name: 'Park Dock & 5 Ave', out: 1, in: 5 },
+    { name: 'Home Dock & Main St', out: 3, in: 1 },
+    { name: 'Terminal Dock & 42 St', out: 1, in: 1 },
+    { name: 'Park Dock & 5 Ave', out: 1, in: 3 },
   ],
 };
 

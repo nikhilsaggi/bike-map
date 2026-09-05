@@ -32,8 +32,8 @@ The pipeline exports a compressed GeoJSON that powers an interactive
   ([why](findings/citibike-trips.md))
 - Ride source: each GPS ride is matched to Citibike trips by clock overlap and
   labelled where it appears, and the legend can filter the whole network to
-  Citibike or own-bike rides. Rides from before the Citibike history starts
-  are left unknown rather than assumed
+  Citibike or own-bike rides. Rides outside the Citibike history are left
+  unknown rather than assumed
 
 To view locally:
 
