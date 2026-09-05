@@ -151,6 +151,44 @@ Everything drawn is measured. A straight line drawn only for the dock a reader
 clicked is answering a question they asked, not asserting a shape over the
 city — which is what made the same lines wrong as a permanent all-pairs layer.
 
+**The recorded route behind a row: shipped.** A trip whose clock a GPS ride
+runs over cites that ride, and its popup row offers it -- the page's own
+single-ride view, in cyan, over the straight line that still stands in for
+the trip. This is the opposite of the rejected layer above rather than a
+softer version of it: nothing is routed, the drawn line is a trace that was
+recorded, and it appears only for the pair a reader asked about.
+
+The link was already computed and thrown away. `citibike.ride_sources` matches
+every ride to the trips it overlaps in time, and only the count survived into
+the export. `citibike.trip_rides` asks the same question from the trip's side,
+and the answer ships as the fourth element of each row in
+`properties.citibike.trips`. Measured on the 2026-09-05 export (2,524 trips,
+1,380 rides):
+
+| | |
+|---|---|
+| trips with at least one GPS ride over them | 1,435 (57%) |
+| popup rows (unordered dock pairs) | 1,312 |
+| rows with at least one recorded trip | 977 (74%) |
+| rows with more than one | 168 (max 31) |
+| GPS rides covering >1 trip | 153 of 1,265 matched |
+| recorded trips inside such a recording | 327 (23%) |
+
+Two consequences the row has to carry rather than hide. Nearly a quarter of
+recorded trips sit inside a recording that covers several of them, and ride
+view draws the whole recording -- so the row says so ("whole recording -- it
+also covers 1 other Citibike trip") instead of letting the extra legs read as
+part of the clicked hop. Clipping the trace to the trip's own clock window is
+the only real fix and it is a different project: nothing in `state` carries a
+timestamp per (edge, ride), `edge_speed` folds each chunk to
+`[dist, time, moving, n]` with no absolute clock, and `edge_rides` is a set.
+
+Where a pair has several recordings the row cycles through them, newest first,
+and one more click puts the map back. That is why showing one does not close
+the popup the way a street popup's ride row does: the rows are how a reader
+walks the network, and losing them to see a route would trade the layer's
+whole point for one answer.
+
 Colour is deliberately doing no work: docks are a cool pale tone outside the
 plasma ramp, size carries volume, and cyan is reserved for selection, the way
 the rest of the page already uses it. An earlier attempt put a diverging ramp

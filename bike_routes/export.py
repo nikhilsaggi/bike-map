@@ -172,7 +172,7 @@ def _export_geojson(
             "riding": _riding_summary(state.get("ride_stats", {})),
             "coverage": _coverage_summary(edge_geom, edge_hw or {}, state),
             "weather": _weather_summary(state.get("ride_stats", {})),
-            "citibike": _citibike_summary(state.get("ride_stats", {})),
+            "citibike": _citibike_summary(state.get("ride_stats", {}), ride_id),
             "speed": _speed_summary(state.get("edge_speed", {}), edge_geom, edge_name or {}),
             "dates": all_dates,
             "rides": rides_meta,

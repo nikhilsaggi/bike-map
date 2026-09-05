@@ -189,14 +189,31 @@
      the slider's range has no docks in it at all. Saying so here is the
      difference between "nothing to show" and "this is broken". */
   #cb-range { color: #555; font-size: 9px; }
-  .dock-popup { max-height: 200px; overflow-y: auto; }
+  /* Two lines a row means half as many partners in view, so the scroll box
+     grows to roughly hold what it held before. */
+  .dock-popup { max-height: 260px; overflow-y: auto; }
   .dock-head { color: #a8d8e8; font-weight: 600; }
-  .dock-sub { color: #666; font-size: 10px; margin-bottom: 3px; }
+  .dock-sub { color: #666; font-size: 10px; line-height: 1.5; margin-bottom: 4px; }
   .dock-count { color: #666; }
+  /* Second line of a dock row: the counts, and the route link when there is
+     one. Indented under the name it belongs to, and set back from it. */
+  .dock-meta { margin-left: 10px; font-size: 11px; line-height: 1.4; }
+  /* Rows are two lines each now, so they need air between them to stay
+     readable as rows. Scoped: the street popup's own .ride-row is one line. */
+  .dock-popup .ride-row, .dock-popup .dock-row-flat { margin-bottom: 3px; }
   /* A dock with no coordinates cannot be jumped to, so it gets none of the
      link affordance -- looking clickable and doing nothing is worse than
      plainly not being a link. */
   .dock-row-flat { color: #888; font-size: 12px; }
+  /* A dock pair a GPS recording covers can put that recording on the map.
+     It sits inside the row instead of replacing its click -- hopping from
+     dock to dock is what the rows are for -- so it takes the ride view's own
+     cyan rather than the row's link blue. */
+  .dock-trace {
+    color: #00e5ff; margin-left: 8px; white-space: nowrap; cursor: pointer;
+  }
+  .dock-trace:hover { color: #fff; }
+  .dock-trace-note { color: #777; font-size: 9px; line-height: 1.3; margin: -2px 0 4px 10px; }
   #stat-citibike { line-height: 1.5; }
   /* One grid for the header and every row, so the two columns line up
      instead of each row right-justifying its own text. */
@@ -273,6 +290,9 @@
     backdrop-filter: blur(6px); align-items: center; gap: 10px;
   }
   #ride-view-bar strong { color: #00e5ff; }
+  /* The cycle position is navigation, not part of the ride's identity, so it
+     sits back from the date the way the source tag does. */
+  .rv-step { color: #888; font-size: 11px; cursor: default; }
   #ride-view-exit {
     background: none; border: none; color: #888; font-size: 15px;
     line-height: 1; cursor: pointer; padding: 0 2px;
@@ -708,6 +728,12 @@ let dockLinks = null;      // the selected dock's trips, drawn on demand
 let dockMarkers = [];      // index-aligned with cbData.docks
 let dockTrips = [];        // dock index -> indices into cbData.trips
 let dockSelected = null;   // dock index whose trips are drawn, if any
+let dockTraceLabels = [];  // relabel callbacks for the open popup's route links
+// The pair of docks whose recordings are being stepped through, if any:
+// { to: partner dock index, rides: [ride id, ...] newest first, at: which one
+// is drawn }. It lives out here rather than in the row that started it so the
+// keyboard and the ride-view bar can address the same cycle.
+let dockTrace = null;
 let dockSqrtMax = 1;
 
 // The two sources share dates but not days: 32 of the Citibike days have no
@@ -736,16 +762,22 @@ function dockUseInRange(di, lo, hi) {
 function dockPartners(di, lo, hi) {
   const seen = new Map();
   for (const ti of dockTrips[di]) {
-    const [a, b, d] = cbData.trips[ti];
+    const [a, b, d, ri] = cbData.trips[ti];
     if (cbData.days[d] < lo || cbData.days[d] > hi) continue;
     const other = a === di ? b : a;
     if (other === di) continue;  // an unlock re-docked where it started
-    const rec = seen.get(other) || { out: 0, into: 0 };
+    const rec = seen.get(other) || { out: 0, into: 0, rides: [] };
     if (a === di) rec.out++; else rec.into++;
+    // The recording running over this trip, where the export found one. A
+    // payload from before that existed has no fourth element, and undefined
+    // fails the test, so an older file simply offers no routes.
+    if (Number.isInteger(ri) && ri >= 0 && !rec.rides.includes(ri)) rec.rides.push(ri);
     seen.set(other, rec);
   }
   return [...seen.entries()]
-    .map(([idx, r]) => ({ idx, ...r, n: r.out + r.into }))
+    // Recordings newest first: ride ids run in date order, so this is the
+    // sort without a lookup, and the first click lands on the recent one.
+    .map(([idx, r]) => ({ idx, ...r, rides: r.rides.sort((x, y) => y - x), n: r.out + r.into }))
     .sort((x, y) => y.n - x.n);
 }
 
@@ -766,7 +798,12 @@ function showDockLinks(di) {
   const from = cbData.docks[di];
   if (!from.at) return;
   dockLinks = L.layerGroup();
+  // A busy dock reaches 141 others, and the links are the same cyan as ride
+  // view. Drawing them all over a recorded route buries it, so while one
+  // pair's route is up that pair is the only line: the trip, and the ride
+  // that was made on it.
   for (const p of dockPartners(di, lo, hi)) {
+    if (dockTrace && p.idx !== dockTrace.to) continue;
     const to = cbData.docks[p.idx];
     if (!to.at) continue;
     L.polyline([[from.at[1], from.at[0]], [to.at[1], to.at[0]]], {
@@ -788,11 +825,101 @@ function focusDock(di) {
   if (m && dockLayer.hasLayer(m)) m.openPopup();  // auto-pans if off screen
 }
 
+// Show one of a pair's recordings and make it the cycle. `at` wraps, so the
+// arrow keys can run off either end without falling out of the pair.
+function startDockTrace(to, rides, at) {
+  const i = ((at % rides.length) + rides.length) % rides.length;
+  dockTrace = { to, rides, at: i };
+  viewRide(rides[i], true);       // keep the popup: its rows are the point
+  // ... and narrow the links to this pair, so the route is not lost in the
+  // starburst of a dock that reaches a hundred others.
+  if (dockSelected !== null) showDockLinks(dockSelected);
+}
+
+// Step the cycle. The arrow keys wrap rather than exiting: leaving ride view
+// is what Escape and the bar's own button are for, and a keypress that
+// silently ended the detour would be easy to hit by accident.
+function stepDockTrace(delta) {
+  if (dockTrace) startDockTrace(dockTrace.to, dockTrace.rides, dockTrace.at + delta);
+}
+
+// A dock pair the export found a GPS recording for can put that recording on
+// the map: the cyan single-ride view, over the straight line that stands in
+// for the trip. This is not the rejected routed-corridor layer -- that drew a
+// path an algorithm chose between two docks; this draws a trace that was
+// recorded, and only for the pair a reader asked about.
+//
+// Hangs the control on the row's meta line and returns the note element to
+// place under the row, which says when the recording being drawn holds more
+// than the clicked hop.
+function addTraceControl(meta, p) {
+  const trace = document.createElement('span');
+  trace.className = 'dock-trace';
+  const note = document.createElement('div');
+  note.className = 'dock-trace-note';
+  const n = p.rides.length;
+  const dateOf = ri => dateList[rideDateIdx[ri]] ?? '';
+  // Where this row sits in the cycle on screen, or -1 when the cycle belongs
+  // to another row, or to nothing. Read rather than remembered: ride view is
+  // left from Escape, the exit bar and the date filter too.
+  const at = () => (dockTrace && dockTrace.to === p.idx && rideView !== null ? dockTrace.at : -1);
+
+  function relabel() {
+    const i = at();
+    const shown = i < 0 ? null : p.rides[i];
+    if (shown !== null && n > 1) {
+      trace.textContent = `\u25b8 route ${i + 1}/${n}`;
+    } else {
+      trace.textContent = n > 1 ? `\u25b8 ${n} routes` : '\u25b8 route';
+    }
+    if (shown !== null) {
+      trace.title = `Showing ${dateOf(shown)} \u00b7 ` +
+        (n > 1 ? 'click or press \u2193 for the next recording' : 'click to put the map back');
+    } else {
+      trace.title = n > 1
+        ? `${n} rides recorded over these trips; click or use \u2191\u2193 ` +
+          'to show each in turn'
+        : `Show the ride recorded over this trip (${dateOf(p.rides[0])})`;
+    }
+    // Ride view draws the whole recording, and a recording can hold several
+    // Citibike trips -- so say that the extra legs on screen are not part of
+    // the hop that was clicked. Clipping the trace to the trip's own clock
+    // window is the only real fix, and nothing in the export carries a time
+    // per edge to do it with.
+    const extra = shown === null ? 0 : (rideSrc[shown] || 0) - 1;
+    note.textContent = extra > 0
+      ? `whole recording \u2014 it also covers ${extra} other Citibike ` +
+        `trip${extra !== 1 ? 's' : ''}`
+      : '';
+    note.hidden = !note.textContent;
+  }
+
+  trace.addEventListener('click', ev => {
+    // The row's own click hops to the other dock, which is the thing the
+    // layer is for; this only adds to it.
+    ev.stopPropagation();
+    const i = at();
+    // Clicking walks the cycle and then off the end of it, so the row that
+    // started a detour can end it. The arrow keys wrap instead.
+    if (i < 0) startDockTrace(p.idx, p.rides, 0);
+    else if (i + 1 < n) stepDockTrace(1);
+    else exitRideView();
+    relabel();
+  });
+
+  relabel();
+  dockTraceLabels.push(relabel);
+  meta.appendChild(trace);
+  return note;
+}
+
 // Built as DOM, not an HTML string: dock names are Lyft data and half of
 // them contain an ampersand, which has no business being interpolated into
 // markup. It also lets the rows carry real listeners instead of inline
 // handlers.
 function dockPopup(di) {
+  // Rebuilt on every open, so the previous popup's route links go with it.
+  dockTraceLabels = [];
   const [lo, hi] = dockDateBounds();
   const d = cbData.docks[di];
   const [out, into] = dockUseInRange(di, lo, hi);
@@ -804,23 +931,49 @@ function dockPopup(di) {
   const head = document.createElement('div');
   head.className = 'dock-head';
   head.textContent = d.name;
+  // Two facts, two lines: the dock's own traffic, then how far it reaches.
+  // On one line this was the widest thing in the popup and set the width for
+  // everything under it. "out / in" stays spelled out here because it is what
+  // teaches the arrows in the rows below.
   const sub = document.createElement('div');
   sub.className = 'dock-sub';
-  sub.textContent =
-    `${out + into} trip${out + into !== 1 ? 's' : ''} \u00b7 ${out} out / ${into} in` +
-    (partners.length ? ` \u00b7 ${partners.length} dock${partners.length !== 1 ? 's' : ''} reached` : '');
+  const traffic = document.createElement('div');
+  traffic.textContent =
+    `${out + into} trip${out + into !== 1 ? 's' : ''} \u00b7 ${out} out / ${into} in`;
+  sub.appendChild(traffic);
+  if (partners.length) {
+    const reach = document.createElement('div');
+    reach.textContent =
+      `${partners.length} dock${partners.length !== 1 ? 's' : ''} reached`;
+    sub.appendChild(reach);
+  }
   box.append(head, sub);
 
   for (const p of partners) {
     const other = cbData.docks[p.idx];
     const row = document.createElement('div');
     const name = document.createElement('span');
+    name.className = 'dock-name';
     name.textContent = other.name;
     const counts = document.createElement('span');
     counts.className = 'dock-count';
-    counts.textContent =
-      (p.out ? ` \u2192${p.out}` : '') + (p.into ? ` \u2190${p.into}` : '');
-    row.append(name, counts);
+    // Down-right for a trip out to this dock, up-right for one back: the pair
+    // reads as one loop away and home rather than two opposed directions on a
+    // line, which is what a dock's traffic actually is.
+    counts.textContent = [
+      p.out ? `\u2198${p.out}` : '',
+      p.into ? `\u2197${p.into}` : '',
+    ].filter(Boolean).join(' ');
+    counts.title =
+      `${p.out} trip${p.out !== 1 ? 's' : ''} out to here, ` +
+      `${p.into} back`;
+    // The counts and the route link go under the name rather than beside it:
+    // a dock name is long, and three things on one line made the popup as
+    // wide as the panel it sits next to.
+    const meta = document.createElement('div');
+    meta.className = 'dock-meta';
+    meta.appendChild(counts);
+    row.append(name, meta);
     // Only a dock that can be drawn is worth offering as a link -- one GBFS
     // could not place has nowhere to jump to, so it must not look clickable.
     if (other.at) {
@@ -831,7 +984,11 @@ function dockPopup(di) {
       row.className = 'dock-row-flat';
       row.title = 'No coordinates for this dock';
     }
+    // Independent of the dock's coordinates: a recording is on the map
+    // whether or not the far end of the trip can be placed on it.
+    const note = p.rides.length ? addTraceControl(meta, p) : null;
     box.appendChild(row);
+    if (note) box.appendChild(note);
   }
   return box;
 }
@@ -882,8 +1039,8 @@ function buildDockLayer() {
       return `${d.name}<br>${out + into} trips (${out} out / ${into} in)`;
     }, { sticky: true });
     m.bindPopup(() => dockPopup(i), { className: 'ride-popup' });
-    m.on('popupopen', () => showDockLinks(i));
-    m.on('popupclose', clearDockLinks);
+    m.on('popupopen', () => { showDockLinks(i); ghostEdges(); });
+    m.on('popupclose', () => { clearDockLinks(); unghostEdges(); });
     return m;
   });
 }
@@ -952,6 +1109,36 @@ function renderCitibike(cb) {
     `\u00b7 at least ${Math.round(100 * cb.ebike_min / cb.trips.length)}% of ` +
     `trips on an ebike</div>`;
   showChip('stat-citibike');
+}
+
+// What an edge looks like when something else is the subject: ride view's
+// unselected streets, and the whole network while a dock is in focus. One
+// style, because they mean the same thing -- the network is context now.
+const EDGE_GHOST = { color: '#555', weight: 1, opacity: 0.12 };
+
+// Ride view owns the drawn edges whenever it is up, so dock focus only
+// paints when there is no ride on screen to be the subject instead.
+function dockFocus() {
+  return dockSelected !== null && rideView === null;
+}
+
+// A dock's straight lines are a handful of thin cyan strokes over 21k plasma
+// ones, which is not a comparison so much as a haystack. Ghosting the
+// heatmap the way ride view does keeps the network on screen in outline --
+// where the docks sit against where the bike goes is the whole point of the
+// layer -- and stops it competing for the eye.
+function ghostEdges() {
+  if (!dockFocus()) return;
+  geoLayer.eachLayer(layer => {
+    if (map.hasLayer(layer)) layer.setStyle(EDGE_GHOST);
+  });
+  restackLayers();
+}
+
+// Only the popup that ghosted the network puts it back: closing a dock while
+// a route from its own row is being shown must leave ride view alone.
+function unghostEdges() {
+  if (rideView === null) applyFilter();
 }
 
 function styleFor(count) {
@@ -1067,14 +1254,23 @@ map.on('popupopen', e => {
 
 // -- Single-ride view --------------------------------------------------------
 
-function viewRide(ri) {
+// keepPopup is for the dock rows: the popup they live in is how a reader
+// walks the network, so tracing one pair must not close it the way a street
+// popup's own row does.
+function viewRide(ri, keepPopup = false) {
   rideView = ri;
-  map.closePopup();
+  if (!keepPopup) { map.closePopup(); dockTrace = null; }
   const d = dateList[rideDateIdx[ri]] ?? '';
   const t = rideList[ri]?.[1] || '';
   const label = document.getElementById('ride-view-label');
+  // Stepping a dock pair's recordings is the one ride view you can be several
+  // clicks into, so the bar carries the position the way the row does.
+  const step = dockTrace && dockTrace.rides.length > 1
+    ? ` &middot; <span class="rv-step" title="Up/down arrows step through this ` +
+      `pair's recordings">\u2191\u2193 route ${dockTrace.at + 1}/${dockTrace.rides.length}</span>`
+    : '';
   label.innerHTML = `${t ? `${d} ${t}` : d}` +
-    `${sourceTag(ri) ? ` &middot; ${sourceTag(ri)}` : ''}`;
+    `${sourceTag(ri) ? ` &middot; ${sourceTag(ri)}` : ''}${step}`;
   document.getElementById('ride-view-bar').style.display = 'flex';
   const on = [];
   geoLayer.eachLayer(layer => {
@@ -1088,7 +1284,7 @@ function viewRide(ri) {
       layer.setStyle({ color: '#00e5ff', weight: 4, opacity: 0.95, lineJoin: 'round', lineCap: 'round' });
       on.push(layer);
     } else {
-      layer.setStyle({ color: '#555', weight: 1, opacity: 0.12 });
+      layer.setStyle(EDGE_GHOST);
     }
   });
   for (const l of on) l.bringToFront();
@@ -1098,6 +1294,9 @@ function viewRide(ri) {
 function exitRideView() {
   if (rideView === null) return;
   rideView = null;
+  // applyFilter redraws the open dock's links through applyDockFilter, so
+  // clearing this first is what brings the other partners back.
+  dockTrace = null;
   document.getElementById('ride-view-bar').style.display = 'none';
   syncYearLinks();
   applyFilter();
@@ -1111,8 +1310,11 @@ function toggleRide(ri) {
 }
 
 // Ride view is also left by Escape, the exit button and the date filter, so
-// the link's selected state is synced from rideView rather than set on click.
+// a link's selected state is synced from rideView rather than set on click.
+// The dock popup's route links are the same case: one row can show a ride
+// another row put on the map, so they read their state from here too.
 function syncYearLinks() {
+  for (const relabel of dockTraceLabels) relabel();
   for (const link of document.querySelectorAll('#stat-years .yd-link')) {
     const on = rideView !== null && +link.dataset.ride === rideView;
     link.classList.toggle('on', on);
@@ -1120,9 +1322,18 @@ function syncYearLinks() {
   }
 }
 
+// Captured, not bubbled: Leaflet pans the map on the arrow keys from its own
+// listener on the map container, which would otherwise run first and slide
+// the city sideways under every step of the cycle.
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') exitRideView();
-});
+  if (e.key === 'Escape') { exitRideView(); return; }
+  if (!dockTrace || (e.key !== 'ArrowDown' && e.key !== 'ArrowUp')) return;
+  e.preventDefault();
+  e.stopPropagation();
+  // Down goes on through the list, which runs newest first, so down is
+  // backwards in time -- the direction the rows themselves read in.
+  stepDockTrace(e.key === 'ArrowDown' ? 1 : -1);
+}, true);
 document.getElementById('ride-view-exit').addEventListener('click', exitRideView);
 
 // -- Per-year table --------------------------------------------------------
@@ -1258,7 +1469,9 @@ function applyFilter(renormalize = true) {
       map.removeLayer(layer);
     } else {
       if (!map.hasLayer(layer)) layer.addTo(map);
-      layer.setStyle(styleFor(c));
+      // Under a focused dock the slider and the time-lapse still move the
+      // network, they just move it in outline.
+      layer.setStyle(dockFocus() ? EDGE_GHOST : styleFor(c));
     }
   });
   restackLayers();

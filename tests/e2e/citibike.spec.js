@@ -74,6 +74,9 @@ test.describe('Citibike dock layer', () => {
     await expect(popup).toContainText('4 trips');
     await expect(popup).toContainText('3 out / 1 in');
     await expect(popup).toContainText('2 docks reached');
+    // Two lines, not one: on a busy dock this line was the widest thing in
+    // the popup and set the width for every row under it.
+    await expect(popup.locator('.dock-sub > div')).toHaveCount(2);
     await expect(popup.locator('.ride-row').first()).toContainText('Park Dock & 5 Ave');
 
     // Closing the popup takes the lines with it.
@@ -91,7 +94,7 @@ test.describe('Citibike dock layer', () => {
 
     // The rows carry the page's link styling, so they have to actually go
     // somewhere -- looking clickable and doing nothing is the bug this covers.
-    await popup.locator('.ride-row', { hasText: 'Terminal Dock' }).click();
+    await popup.locator('.ride-row', { hasText: 'Terminal Dock' }).locator('.dock-name').click();
     // Leaflet holds the outgoing popup in the DOM through its fade, so wait
     // for it to go before reading "the" heading.
     await expect
@@ -103,6 +106,231 @@ test.describe('Citibike dock layer', () => {
     // Terminal's own trips now, not the ones it was reached by: it reaches
     // Home, and Ghost Dock which cannot be drawn.
     expect(await page.evaluate(() => dockLinks.getLayers().length)).toBe(1);
+  });
+
+  test('a row reads name first, counts and route under it', async ({ page }) => {
+    await gotoMap(page);
+    await showDocks(page);
+    await page.evaluate(() => dockMarkers[0].openPopup());
+    const park = page.locator('.leaflet-popup-content .ride-row', { hasText: 'Park Dock' });
+
+    // Home sent two trips to Park and got one back. Down-right out, up-right
+    // home, on their own line under the name: three things on one line made
+    // the popup as wide as the stats panel beside it.
+    await expect(park.locator('.dock-name')).toHaveText('Park Dock & 5 Ave');
+    await expect(park.locator('.dock-meta .dock-count')).toHaveText('\u21982 \u21971');
+    await expect(park.locator('.dock-meta .dock-trace')).toHaveText('\u25b8 2 routes');
+  });
+
+  test('a row offers the recording of the trip, and only where there is one', async ({ page }) => {
+    await gotoMap(page);
+    await showDocks(page);
+    await page.evaluate(() => dockMarkers[0].openPopup());
+    const popup = page.locator('.leaflet-popup-content');
+
+    // Home reaches Park on three trips, two of which were recorded (rides 3
+    // and 1), so the row offers both.
+    const park = popup.locator('.ride-row', { hasText: 'Park Dock' });
+    await expect(park.locator('.dock-trace')).toHaveText('\u25b8 2 routes');
+    // Home -> Terminal was never recorded, so nothing is offered: a link that
+    // has nothing to show must not look like one.
+    const terminal = popup.locator('.ride-row', { hasText: 'Terminal Dock' });
+    await expect(terminal.locator('.dock-trace')).toHaveCount(0);
+  });
+
+  test('showing a recording keeps the popup, the line and the ride view', async ({ page }) => {
+    await gotoMap(page);
+    await showDocks(page);
+    await page.evaluate(() => dockMarkers[0].openPopup());
+    const popup = page.locator('.leaflet-popup-content');
+    await popup.locator('.ride-row', { hasText: 'Park Dock' }).locator('.dock-trace').click();
+
+    // Newest first: ride 3 rather than ride 1.
+    expect(await page.evaluate(() => rideView)).toBe(3);
+    await expect(page.locator('#ride-view-bar')).toBeVisible();
+    // The popup is how a reader walks the network, so tracing a pair must not
+    // close it the way a street popup's own ride row does.
+    await expect(popup.locator('.dock-head')).toHaveText('Home Dock & Main St');
+    expect(await page.evaluate(() => dockSelected)).toBe(0);
+    // Home reaches two docks, but the links are the same cyan as the route:
+    // while a pair's ride is up, that pair's straight line is the only one
+    // drawn, so the route sits over its own trip and nothing else.
+    expect(await page.evaluate(() => dockLinks.getLayers().length)).toBe(1);
+  });
+
+  test('says when the recording holds more than the trip that was clicked', async ({ page }) => {
+    await gotoMap(page);
+    await showDocks(page);
+    await page.evaluate(() => dockMarkers[0].openPopup());
+    const popup = page.locator('.leaflet-popup-content');
+    const trace = popup.locator('.ride-row', { hasText: 'Park Dock' }).locator('.dock-trace');
+
+    // Ride 3 covers two Citibike trips, and ride view draws all of it, so the
+    // extra leg on screen has to be accounted for rather than read as part of
+    // this hop.
+    await trace.click();
+    await expect(popup.locator('.dock-trace-note'))
+      .toHaveText('whole recording \u2014 it also covers 1 other Citibike trip');
+
+    // Ride 1 covers only its own trip, so there is nothing to explain.
+    await trace.click();
+    expect(await page.evaluate(() => rideView)).toBe(1);
+    await expect(trace).toHaveText('\u25b8 route 2/2');
+    await expect(popup.locator('.dock-trace-note')).toBeHidden();
+  });
+
+  test('clicking past the last recording puts the map back', async ({ page }) => {
+    await gotoMap(page);
+    await showDocks(page);
+    await page.evaluate(() => dockMarkers[0].openPopup());
+    const popup = page.locator('.leaflet-popup-content');
+    const trace = popup.locator('.ride-row', { hasText: 'Park Dock' }).locator('.dock-trace');
+
+    await trace.click();
+    await trace.click();
+    await trace.click();
+    expect(await page.evaluate(() => rideView)).toBe(null);
+    await expect(page.locator('#ride-view-bar')).toBeHidden();
+    await expect(trace).toHaveText('\u25b8 2 routes');
+    // The dock is a dock again: every partner it reaches, drawn once more.
+    expect(await page.evaluate(() => dockLinks.getLayers().length)).toBe(2);
+    // ... and the row still hops docks afterwards, which is what it is for.
+    // The name, not the row's centre: that now lands on the meta line, where
+    // the route chip deliberately keeps its clicks to itself.
+    await popup.locator('.ride-row', { hasText: 'Park Dock' }).locator('.dock-name').click();
+    await expect
+      .poll(() => page.locator('.leaflet-popup-content .dock-head').count())
+      .toBe(1);
+    await expect(page.locator('.leaflet-popup-content .dock-head'))
+      .toHaveText('Park Dock & 5 Ave');
+  });
+
+  test('escape takes the route and the dock behind it together', async ({ page }) => {
+    await gotoMap(page);
+    await showDocks(page);
+    await page.evaluate(() => dockMarkers[0].openPopup());
+    const trace = page.locator('.leaflet-popup-content .ride-row', { hasText: 'Park Dock' })
+      .locator('.dock-trace');
+    await trace.click();
+    await expect(trace).toHaveText('\u25b8 route 1/2');
+
+    // Leaflet's own keyboard handler closes the popup and the page's clears
+    // ride view, so one key backs all the way out of the detour rather than
+    // leaving a dock selected with nothing on it.
+    await page.keyboard.press('Escape');
+    await expect.poll(() => page.evaluate(() => rideView)).toBe(null);
+    expect(await page.evaluate(() => [dockSelected, dockLinks])).toEqual([null, null]);
+
+    // Reopening the dock starts from the top of the cycle with every link
+    // back, because the popup is rebuilt from scratch each time.
+    await page.evaluate(() => dockMarkers[0].openPopup());
+    await expect(page.locator('.leaflet-popup-content .ride-row', { hasText: 'Park Dock' })
+      .locator('.dock-trace')).toHaveText('\u25b8 2 routes');
+    expect(await page.evaluate(() => dockLinks.getLayers().length)).toBe(2);
+  });
+
+  test('the arrow keys step the cycle, and the bar says where it is', async ({ page }) => {
+    await gotoMap(page);
+    await showDocks(page);
+    await page.evaluate(() => dockMarkers[0].openPopup());
+    const trace = page.locator('.leaflet-popup-content .ride-row', { hasText: 'Park Dock' })
+      .locator('.dock-trace');
+    const bar = page.locator('#ride-view-label .rv-step');
+
+    // Home reaches Park on two recordings, newest first: rides 3 then 1.
+    await trace.click();
+    expect(await page.evaluate(() => rideView)).toBe(3);
+    await expect(bar).toHaveText('\u2191\u2193 route 1/2');
+
+    // Down goes on through the list, which runs newest first.
+    await page.keyboard.press('ArrowDown');
+    await expect.poll(() => page.evaluate(() => rideView)).toBe(1);
+    await expect(bar).toHaveText('\u2191\u2193 route 2/2');
+    // The row it came from follows the keyboard, since both read one cycle.
+    await expect(trace).toHaveText('\u25b8 route 2/2');
+
+    // Off either end it wraps rather than dropping out of ride view: leaving
+    // is what Escape and the bar's button are for.
+    await page.keyboard.press('ArrowDown');
+    await expect.poll(() => page.evaluate(() => rideView)).toBe(3);
+    await page.keyboard.press('ArrowUp');
+    await expect.poll(() => page.evaluate(() => rideView)).toBe(1);
+  });
+
+  test('the arrows belong to the cycle, not to the map under it', async ({ page }) => {
+    await gotoMap(page);
+    await showDocks(page);
+    const center = () => page.evaluate(() => {
+      const c = map.getCenter();
+      return [c.lat.toFixed(4), c.lng.toFixed(4)];
+    });
+    const before = await center();
+
+    // Leaflet pans on the arrow keys from its own listener on the map
+    // container, so with a cycle running the page has to get there first.
+    await page.evaluate(() => dockMarkers[0].openPopup());
+    await page.locator('.leaflet-popup-content .ride-row', { hasText: 'Park Dock' })
+      .locator('.dock-trace').click();
+    await page.evaluate(() => map.getContainer().focus());
+    await page.keyboard.press('ArrowDown');
+    await expect.poll(() => page.evaluate(() => rideView)).toBe(1);
+    expect(await center()).toEqual(before);
+
+    // With no cycle running the map keeps its own keys.
+    await page.evaluate(() => exitRideView());
+    await page.keyboard.press('ArrowDown');
+    await expect.poll(center).not.toEqual(before);
+  });
+
+  test('a pair with one recording gets no position in the bar', async ({ page }) => {
+    await gotoMap(page);
+    await showDocks(page);
+    // Terminal -> Ghost has a single recording, so there is no cycle to
+    // report and the bar stays about the ride.
+    await page.evaluate(() => dockMarkers[2].openPopup());
+    await page.locator('.leaflet-popup-content .dock-row-flat .dock-trace').click();
+    await expect(page.locator('#ride-view-bar')).toBeVisible();
+    await expect(page.locator('#ride-view-label .rv-step')).toHaveCount(0);
+  });
+
+  test('a ride shown from anywhere else takes no arrow keys with it', async ({ page }) => {
+    await gotoMap(page);
+    await showDocks(page);
+    await page.evaluate(() => dockMarkers[0].openPopup());
+    await page.locator('.leaflet-popup-content .ride-row', { hasText: 'Park Dock' })
+      .locator('.dock-trace').click();
+
+    // viewRide from a street popup or a year link is not a dock pair's cycle,
+    // so the keys go back to the map with it.
+    await page.evaluate(() => viewRide(2));
+    expect(await page.evaluate(() => dockTrace)).toBe(null);
+    await expect(page.locator('#ride-view-label .rv-step')).toHaveCount(0);
+    await page.keyboard.press('ArrowDown');
+    await expect.poll(() => page.evaluate(() => rideView)).toBe(2);
+  });
+
+  test('a recording is offered even where the far dock cannot be placed', async ({ page }) => {
+    await gotoMap(page);
+    await showDocks(page);
+    // Terminal -> Ghost was recorded; Ghost has no coordinates, so the row
+    // stays flat, but the ride is on the map either way.
+    await page.evaluate(() => dockMarkers[2].openPopup());
+    const ghost = page.locator('.leaflet-popup-content .dock-row-flat');
+    await expect(ghost.locator('.dock-trace')).toHaveText('\u25b8 route');
+    await ghost.locator('.dock-trace').click();
+    expect(await page.evaluate(() => rideView)).toBe(3);
+  });
+
+  test('a payload from before the trips carried a ride offers no routes', async ({ page }) => {
+    const cb = buildFixture().properties.citibike;
+    await gotoMap(page, buildFixture({
+      citibike: { ...cb, trips: cb.trips.map(t => t.slice(0, 3)) },
+    }));
+    await showDocks(page);
+    await page.evaluate(() => dockMarkers[0].openPopup());
+    await expect(page.locator('.leaflet-popup-content .dock-trace')).toHaveCount(0);
+    // The rest of the layer is untouched by the missing element.
+    await expect(page.locator('.leaflet-popup-content .ride-row')).toHaveCount(2);
   });
 
   test('a dock with no coordinates is listed but not offered as a link', async ({ page }) => {
@@ -123,7 +351,7 @@ test.describe('Citibike dock layer', () => {
     await page.evaluate(() => dockMarkers[0].openPopup());
     expect(await page.evaluate(() => dockLinks.getLayers().length)).toBe(2);
 
-    // Back to 2023 only: Home's single trip that year went to Park, so the
+    // Back to 2023 only: both of Home's trips that year went to Park, so the
     // Terminal line has to go rather than linger from the wider range.
     await page.evaluate(() => {
       const hi = document.getElementById('range-hi');
@@ -131,6 +359,82 @@ test.describe('Citibike dock layer', () => {
       hi.dispatchEvent(new Event('input', { bubbles: true }));
     });
     await expect.poll(() => page.evaluate(() => dockLinks?.getLayers().length ?? 0)).toBe(1);
+  });
+
+  // The colour of every edge currently drawn. Ghosted edges are all #555;
+  // a live heatmap is plasma, and ride view adds one cyan.
+  const edgeColors = (page) => page.evaluate(() => {
+    const out = [];
+    geoLayer.eachLayer(l => { if (map.hasLayer(l)) out.push(l.options.color); });
+    return out;
+  });
+
+  const allGhosted = (colors) => colors.length > 0 && colors.every(c => c === '#555');
+
+  test('a dock in focus ghosts the heatmap, and closing it paints it back',
+    async ({ page }) => {
+      await gotoMap(page);
+      await showDocks(page);
+      expect(allGhosted(await edgeColors(page))).toBe(false);
+
+      // A handful of straight cyan lines over the whole plasma network is a
+      // haystack; the network stays drawn, in outline.
+      await page.evaluate(() => dockMarkers[0].openPopup());
+      const focused = await edgeColors(page);
+      expect(focused).toHaveLength(3);
+      expect(allGhosted(focused)).toBe(true);
+
+      await page.evaluate(() => map.closePopup());
+      await expect.poll(async () => allGhosted(await edgeColors(page))).toBe(false);
+    });
+
+  test('the ghost survives the slider moving under an open dock', async ({ page }) => {
+    await gotoMap(page);
+    await showDocks(page);
+    await page.evaluate(() => dockMarkers[0].openPopup());
+
+    // The slider and the time-lapse still move the network while a dock is
+    // focused -- they just move it in outline.
+    await page.evaluate(() => {
+      const hi = document.getElementById('range-hi');
+      hi.value = '1';
+      hi.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await expect.poll(async () => allGhosted(await edgeColors(page))).toBe(true);
+  });
+
+  test('leaving a traced route goes back to the ghost, not the heatmap', async ({ page }) => {
+    await gotoMap(page);
+    await showDocks(page);
+    await page.evaluate(() => dockMarkers[0].openPopup());
+    const popup = page.locator('.leaflet-popup-content');
+    const trace = popup.locator('.ride-row', { hasText: 'Park Dock' }).locator('.dock-trace');
+
+    // Ride view owns the styling while it is up: one cyan route, the rest
+    // ghosted by ride view's own rule.
+    await trace.click();
+    expect((await edgeColors(page)).filter(c => c === '#00e5ff')).toHaveLength(2);
+
+    // Two more clicks walk off the end of the cycle and clear ride view. The
+    // dock is still open, so the network goes back to outline.
+    await trace.click();
+    await trace.click();
+    expect(await page.evaluate(() => rideView)).toBe(null);
+    expect(allGhosted(await edgeColors(page))).toBe(true);
+  });
+
+  test('closing the dock while its route is up leaves ride view alone', async ({ page }) => {
+    await gotoMap(page);
+    await showDocks(page);
+    await page.evaluate(() => dockMarkers[0].openPopup());
+    await page.locator('.leaflet-popup-content .ride-row', { hasText: 'Park Dock' })
+      .locator('.dock-trace').click();
+
+    await page.evaluate(() => map.closePopup());
+    // The route is still the subject, so the popup closing must not repaint
+    // the heatmap over it.
+    expect(await page.evaluate(() => rideView)).toBe(3);
+    expect((await edgeColors(page)).filter(c => c === '#00e5ff')).toHaveLength(2);
   });
 
   test('turning the layer off clears the map', async ({ page }) => {
@@ -182,7 +486,7 @@ test.describe('Citibike dock layer', () => {
     await expect(cells.nth(1)).toHaveText('3');       // own rides
     await expect(cells.nth(2)).toHaveText('2 h');
     await expect(cells.nth(3)).toHaveText('4 h');
-    await expect(cells.nth(4)).toHaveText('3');       // days out
+    await expect(cells.nth(4)).toHaveText('4');       // days out
     await expect(cells.nth(5)).toHaveText('2');
     // Whole minutes on both sides: 9.0 and 41.0 round, they do not print .0
     await expect(cells.nth(6)).toHaveText('9 min');

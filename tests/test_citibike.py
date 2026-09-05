@@ -10,8 +10,10 @@ import pytest
 from bike_routes.citibike import (
     SOURCE_OWN,
     SOURCE_UNKNOWN,
+    TRIP_UNTRACED,
     _citibike_summary,
     ride_sources,
+    trip_rides,
 )
 from bike_routes.ingest.citibike import (
     _cache_well_formed,
@@ -206,11 +208,13 @@ def test_trip_rows_index_into_the_dock_and_day_lists(tmp_path):
     # Busiest first: A has 2 out + 1 in, B has 1 out + 2 in -- tied at 3, so
     # the name breaks it.
     assert names == ["A St & 1 Ave", "B St & 2 Ave"]
-    assert s["trips"] == [[0, 1, 0], [1, 0, 1], [0, 1, 1]]
-    for a, b, d in s["trips"]:
+    # No ride index passed, so every trip cites no recording.
+    assert s["trips"] == [[0, 1, 0, -1], [1, 0, 1, -1], [0, 1, 1, -1]]
+    for a, b, d, ri in s["trips"]:
         assert names[a]
         assert names[b]
         assert s["days"][d]
+        assert ri == TRIP_UNTRACED
 
 
 @pytest.mark.usefixtures("trips_path")
@@ -393,3 +397,58 @@ def test_own_bike_column_is_empty_when_every_ride_matched(tmp_path):
     ingest(_write_export(tmp_path, TWO_TRIPS))
     s = _citibike_summary(_stats(cb=(T0 + 60, 300)))
     assert s["own"] == {"rides": 0, "hours": 0.0, "days": 0, "median_min": None}
+
+
+# -- Naming the recording a trip was made on ----------------------------------
+
+
+@pytest.mark.usefixtures("trips_path")
+def test_trip_rides_names_the_recording_over_each_trip(tmp_path):
+    """The same overlap ride_sources uses, read from the trip's side."""
+    ingest(_write_export(tmp_path, TWO_TRIPS))
+    traced = trip_rides(
+        _stats(
+            first=(T0 + 60, 300),  # sits within the first trip
+            gap=(T0 + 1200, 300),  # in the window, over neither trip
+        )
+    )
+    assert traced == ["first.csv", None]
+
+
+@pytest.mark.usefixtures("trips_path")
+def test_a_recording_spanning_two_trips_is_named_by_both(tmp_path):
+    """One ride can hold several trips, and each of them cites it.
+
+    This is the case the page has to caption: showing the recording draws
+    more than the hop a reader clicked.
+    """
+    ingest(_write_export(tmp_path, TWO_TRIPS))
+    assert trip_rides(_stats(long=(T0, 4200))) == ["long.csv", "long.csv"]
+
+
+@pytest.mark.usefixtures("trips_path")
+def test_trip_rides_takes_the_longer_overlap(tmp_path):
+    """Two recordings over one trip: the one that covers more of it wins."""
+    ingest(_write_export(tmp_path, TWO_TRIPS[:1]))
+    assert trip_rides(_stats(clipped=(T0 - 200, 300), full=(T0, 600))) == ["full.csv"]
+    # Under MATCH_MIN_OVERLAP_S neither is a candidate at all.
+    assert trip_rides(_stats(grazing=(T0 - 200, 230))) == [None]
+
+
+@pytest.mark.usefixtures("trips_path")
+def test_trip_rides_is_empty_without_a_cache():
+    assert trip_rides(_stats(any=(T0, 600))) == []
+
+
+@pytest.mark.usefixtures("trips_path")
+def test_trip_rows_cite_the_recording_by_export_index(tmp_path):
+    """The fourth element indexes the same `rides` array a feature cites."""
+    ingest(_write_export(tmp_path, TWO_TRIPS))
+    stats = _stats(**{"2023-11-14_17-14-20_-0500": (T0 + 60, 300)})
+    fname = next(iter(stats))
+    s = _citibike_summary(stats, {"2021-01-01_00-00-00_-0500.csv": 0, fname: 1})
+    assert [row[3] for row in s["trips"]] == [1, TRIP_UNTRACED]
+    # A ride the export never indexed cannot be cited, and says so rather
+    # than pointing at whatever sits at that position.
+    s = _citibike_summary(stats, {"2021-01-01_00-00-00_-0500.csv": 0})
+    assert [row[3] for row in s["trips"]] == [TRIP_UNTRACED, TRIP_UNTRACED]

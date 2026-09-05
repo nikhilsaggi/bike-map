@@ -47,19 +47,24 @@ export const SPEED_BLOCK = {
 // on click. Arithmetic is closed by hand: every trip has one departure and
 // one arrival, so both columns sum to 5 (out 3 + 1 + 1, in 1 + 3 + 1).
 //
-// `days` deliberately straddles the ride dates: 2023-04-01 and 2024-05-01 are
-// also ride days, 2025-01-01 is past the last one, so filtering the slider to
-// 2023 must drop the later docks. Coordinates sit near the map centre so a
-// marker is on screen; Ghost Dock has none, the way a renamed dock does.
+// `days` deliberately straddles the ride dates: the first is also a ride day,
+// 2025-01-01 is past the last one, so filtering the slider to 2023 must drop
+// the later docks. Coordinates sit near the map centre so a marker is on
+// screen; Ghost Dock has none, the way a renamed dock does.
+//
+// The fourth element of a trip is the ride recorded over it, or -1. It agrees
+// with the `rides` array below: ride 1 is marked as covering one trip and
+// covers exactly one here, ride 3 covers two, and the two rides no trip cites
+// are the ones marked own-bike and unknown.
 export const CITIBIKE_BLOCK = {
   trips: [
-    [0, 1, 0],  // Home -> Park, 2023-04-01
-    [0, 1, 1],  // Home -> Park, 2024-05-01
-    [0, 2, 2],  // Home -> Terminal, 2025-01-01
-    [1, 0, 2],  // Park -> Home, 2025-01-01
-    [2, 3, 2],  // Terminal -> Ghost, 2025-01-01
+    [0, 1, 0, -1],  // Home -> Park, 2023-04-01, no recording
+    [0, 1, 1, 1],   // Home -> Park, 2023-06-15, recorded as ride 1
+    [0, 2, 3, -1],  // Home -> Terminal, 2025-01-01, no recording
+    [1, 0, 2, 3],   // Park -> Home, 2024-07-04, recorded as ride 3
+    [2, 3, 2, 3],   // Terminal -> Ghost, 2024-07-04, the same recording again
   ],
-  days: ['2023-04-01', '2024-05-01', '2025-01-01'],
+  days: ['2023-04-01', '2023-06-15', '2024-07-04', '2025-01-01'],
   docks: [
     { name: 'Home Dock & Main St', at: [-73.955, 40.7325], out: 3, in: 1 },
     { name: 'Park Dock & 5 Ave', at: [-73.965, 40.7375], out: 1, in: 3 },

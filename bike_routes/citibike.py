@@ -16,6 +16,11 @@ The point is to be explorable next to the ride heatmap, not to state a
 finding -- a reader comparing where the bike goes against where the docks
 are is doing something no ranked list does for them.
 
+The one route a dock row can put on the map is a recorded one: a trip whose
+clock a GPS ride runs over cites that ride, and the page draws the ride
+itself. The dock-to-dock line stays straight underneath it -- what is drawn
+is a trace that exists, never a path chosen for the gap between two docks.
+
 Speed is deliberately absent. Every duration in the export is a whole number
 of minutes and the end time is the start plus that duration, so at a median
 8-minute trip the quantisation is +/-6%. Alongside GPS-measured edge speeds
@@ -43,6 +48,12 @@ MATCH_MIN_OVERLAP_S = 60.0
 # count for a ride that spans several.
 SOURCE_UNKNOWN = -1  # outside the span the Citibike export covers
 SOURCE_OWN = 0  # inside it, and nothing overlaps: the owner's own bike
+
+# Fourth element of each row in the export's `citibike.trips` array: the same
+# match read from the trip's side, as an index into the export's `rides`. The
+# trip is still not a trace -- this only names the recording that was running
+# beside it, so the page can offer it.
+TRIP_UNTRACED = -1
 
 try:
     from zoneinfo import ZoneInfo
@@ -81,6 +92,32 @@ def _median(values: list[float]) -> float:
     return (ordered[mid - 1] + ordered[mid]) / 2
 
 
+def _trip_spans(payload: dict[str, Any]) -> list[tuple[float, float]]:
+    """(start, end) of every trip in seconds, in the cache's own order."""
+    return [(t["t"] / 1000, (t["t"] + t["dur"]) / 1000) for t in payload["trips"]]
+
+
+def _ride_windows(
+    ride_stats: dict[str, dict[str, Any] | None],
+) -> list[tuple[str, float, float]]:
+    """(filename, start, end) in seconds for every ride that can be placed in time.
+
+    A ride with no start or no duration is not "own bike" -- it is a ride the
+    clock cannot speak for at all, so it is left out of both directions of
+    the match rather than answered wrongly.
+    """
+    out = []
+    for fname, rs in ride_stats.items():
+        if not rs or not rs.get("start") or rs.get("duration_s") is None:
+            continue
+        try:
+            start = datetime.fromisoformat(rs["start"]).timestamp()
+        except ValueError:
+            continue
+        out.append((fname, start, start + rs["duration_s"]))
+    return out
+
+
 def ride_sources(ride_stats: dict[str, dict[str, Any] | None]) -> dict[str, int]:
     """Label each GPS ride by the Citibike trips it overlaps in time.
 
@@ -97,32 +134,55 @@ def ride_sources(ride_stats: dict[str, dict[str, Any] | None]) -> dict[str, int]
     payload = _load_trips()
     if payload is None:
         return {}
-    spans = sorted((t["t"] / 1000, (t["t"] + t["dur"]) / 1000) for t in payload["trips"])
+    spans = _trip_spans(payload)
     if not spans:
         return {}
-    win_start = spans[0][0]
+    win_start = min(start for start, _ in spans)
     win_end = max(end for _, end in spans)
 
     sources: dict[str, int] = {}
-    for fname, rs in ride_stats.items():
-        if not rs or not rs.get("start") or rs.get("duration_s") is None:
-            continue
-        try:
-            start = datetime.fromisoformat(rs["start"]).timestamp()
-        except ValueError:
-            continue
+    for fname, start, end in _ride_windows(ride_stats):
         if not win_start <= start <= win_end:
             sources[fname] = SOURCE_UNKNOWN
             continue
-        end = start + rs["duration_s"]
         sources[fname] = sum(
             1 for s, e in spans if min(end, e) - max(start, s) >= MATCH_MIN_OVERLAP_S
         )
     return sources
 
 
+def trip_rides(ride_stats: dict[str, dict[str, Any] | None]) -> list[str | None]:
+    """Name the GPS recording running over each trip, in cache order.
+
+    The same clock overlap `ride_sources` uses, read from the trip's side:
+    that function keeps only how many trips a ride hit, and which trip it was
+    is thrown away. The page wants the other direction -- a dock popup's row
+    is a pair of docks, and what a reader can be shown for it is the
+    recording that was running at the time.
+
+    Where two recordings overlap one trip (an activity stopped and restarted
+    mid-trip) the longer overlap wins, with the filename breaking a tie, so
+    the export does not depend on dict order.
+    """
+    payload = _load_trips()
+    if payload is None:
+        return []
+    spans = _trip_spans(payload)
+    best: list[tuple[float, str] | None] = [None] * len(spans)
+    for fname, start, end in _ride_windows(ride_stats):
+        for i, (s, e) in enumerate(spans):
+            overlap = min(end, e) - max(start, s)
+            if overlap < MATCH_MIN_OVERLAP_S:
+                continue
+            held = best[i]
+            if held is None or (-overlap, fname) < (-held[0], held[1]):
+                best[i] = (overlap, fname)
+    return [None if held is None else held[1] for held in best]
+
+
 def _citibike_summary(
     ride_stats: dict[str, dict[str, Any] | None],
+    ride_index: dict[str, int] | None = None,
 ) -> dict[str, Any] | None:
     """Aggregate the Citibike trip cache into the export's stats block.
 
@@ -131,6 +191,11 @@ def _citibike_summary(
     no GPS ride was recorded over -- while the own-bike figures come from the
     rides `ride_sources` found no Citibike trip under. Both are complete
     records of their own kind.
+
+    `ride_index` maps a ride filename to its position in the export's `rides`
+    array, which is how a trip cites the recording that was running over it.
+    Without it every trip ships untraced, which is what a caller with no ride
+    index is entitled to say.
     """
     payload = _load_trips()
     if payload is None:
@@ -161,7 +226,20 @@ def _citibike_summary(
     # avoids inventing a joint index over two different sets of days.
     days = sorted({_local_date(t["t"]) for t in raw})
     day_index = {d: i for i, d in enumerate(days)}
-    trips = [[index[t["a"]], index[t["b"]], day_index[_local_date(t["t"])]] for t in raw]
+    # ... and, fourth, the GPS recording that was running over the trip, so a
+    # dock popup can offer it. An index into the same `rides` array a feature
+    # cites, TRIP_UNTRACED where no recording covers the trip.
+    traced = trip_rides(ride_stats) if ride_index else [None] * len(raw)
+
+    def cite(fname: str | None) -> int:
+        if fname is None or ride_index is None:
+            return TRIP_UNTRACED
+        return ride_index.get(fname, TRIP_UNTRACED)
+
+    trips = [
+        [index[t["a"]], index[t["b"]], day_index[_local_date(t["t"])], cite(fname)]
+        for t, fname in zip(raw, traced, strict=True)
+    ]
 
     # The own-bike column: the GPS rides no Citibike trip overlaps.
     sources = ride_sources(ride_stats)
