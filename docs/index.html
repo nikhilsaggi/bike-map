@@ -193,7 +193,7 @@
      grows to roughly hold what it held before. */
   .dock-popup { max-height: 260px; overflow-y: auto; }
   .dock-head { color: #a8d8e8; font-weight: 600; }
-  .dock-sub { color: #666; font-size: 10px; margin-bottom: 3px; }
+  .dock-sub { color: #666; font-size: 10px; line-height: 1.5; margin-bottom: 4px; }
   .dock-count { color: #666; }
   /* Second line of a dock row: the counts, and the route link when there is
      one. Indented under the name it belongs to, and set back from it. */
@@ -931,11 +931,22 @@ function dockPopup(di) {
   const head = document.createElement('div');
   head.className = 'dock-head';
   head.textContent = d.name;
+  // Two facts, two lines: the dock's own traffic, then how far it reaches.
+  // On one line this was the widest thing in the popup and set the width for
+  // everything under it. "out / in" stays spelled out here because it is what
+  // teaches the arrows in the rows below.
   const sub = document.createElement('div');
   sub.className = 'dock-sub';
-  sub.textContent =
-    `${out + into} trip${out + into !== 1 ? 's' : ''} \u00b7 ${out} out / ${into} in` +
-    (partners.length ? ` \u00b7 ${partners.length} dock${partners.length !== 1 ? 's' : ''} reached` : '');
+  const traffic = document.createElement('div');
+  traffic.textContent =
+    `${out + into} trip${out + into !== 1 ? 's' : ''} \u00b7 ${out} out / ${into} in`;
+  sub.appendChild(traffic);
+  if (partners.length) {
+    const reach = document.createElement('div');
+    reach.textContent =
+      `${partners.length} dock${partners.length !== 1 ? 's' : ''} reached`;
+    sub.appendChild(reach);
+  }
   box.append(head, sub);
 
   for (const p of partners) {

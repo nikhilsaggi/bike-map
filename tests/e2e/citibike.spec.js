@@ -74,6 +74,9 @@ test.describe('Citibike dock layer', () => {
     await expect(popup).toContainText('4 trips');
     await expect(popup).toContainText('3 out / 1 in');
     await expect(popup).toContainText('2 docks reached');
+    // Two lines, not one: on a busy dock this line was the widest thing in
+    // the popup and set the width for every row under it.
+    await expect(popup.locator('.dock-sub > div')).toHaveCount(2);
     await expect(popup.locator('.ride-row').first()).toContainText('Park Dock & 5 Ave');
 
     // Closing the popup takes the lines with it.
