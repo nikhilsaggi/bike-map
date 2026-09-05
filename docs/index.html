@@ -286,6 +286,23 @@
   .ride-popup .leaflet-popup-tip { background: rgba(13, 13, 13, 0.92); }
   .ride-popup .leaflet-popup-close-button { color: #888; }
   .ride-popup .leaflet-popup-close-button:hover { color: #fff; }
+
+  /* A popup opens on top of the very stretch of map it describes, so it gets
+     a grab bar to move it aside. Only the bar drags: the rows under it are
+     links and the list scrolls. The tip goes once the box has been moved,
+     because it would be pointing at nothing. */
+  .ride-popup .leaflet-popup-content { margin-top: 6px; }
+  .popup-drag {
+    height: 14px; display: flex; align-items: center; justify-content: center;
+    cursor: grab; touch-action: none;
+  }
+  .popup-drag::before {
+    content: ''; width: 26px; height: 3px; border-radius: 2px; background: #444;
+  }
+  .popup-drag:hover::before { background: #777; }
+  .popup-drag.dragging { cursor: grabbing; }
+  .popup-drag.dragging::before { background: #888; }
+  .leaflet-popup.popup-moved .leaflet-popup-tip-container { display: none; }
 </style>
 </head>
 <body>
@@ -971,6 +988,80 @@ function popupContent(rideIds) {
     (passes !== rows.length ? ` across ${rows.length} ride${rows.length !== 1 ? 's' : ''}` : '');
   return `<div style="max-height:200px;overflow-y:auto">${header}${rows.join('')}</div>`;
 }
+
+// -- Draggable popups --------------------------------------------------------
+// A popup covers the feature it describes, which is often exactly what the
+// reader wants to look at while reading it. The grab bar moves the box
+// without letting go of that feature: the drag is a margin applied on top of
+// Leaflet's own positioning, which Leaflet never writes, so a moved popup
+// still pans and zooms with its street or dock.
+
+const POPUP_EDGE = 8;  // px of the popup that has to stay on the map
+
+// The offset now applied to a popup, in px right and down of where Leaflet
+// put it.
+function popupOffset(container) {
+  return [
+    parseFloat(container.style.marginLeft) || 0,
+    -(parseFloat(container.style.marginBottom) || 0),
+  ];
+}
+
+function setPopupOffset(container, dx, dy) {
+  container.style.marginLeft = `${dx}px`;
+  container.style.marginBottom = `${-dy}px`;
+  container.classList.toggle('popup-moved', dx !== 0 || dy !== 0);
+}
+
+function dragPopupFrom(e, container, bar) {
+  if (e.button !== 0) return;
+  e.preventDefault();  // no text selection, and no map drag underneath
+  const [dx0, dy0] = popupOffset(container);
+  const box = container.getBoundingClientRect();
+  const view = map.getContainer().getBoundingClientRect();
+  // Clamped as bounds on the offset, measured from where Leaflet would put
+  // the box (its current rect less the offset already on it), so a popup can
+  // never be dragged out of reach: a corner of it stays on the map, and the
+  // bar that moves it stays with it.
+  const minX = view.left + POPUP_EDGE - (box.right - dx0);
+  const maxX = view.right - POPUP_EDGE - (box.left - dx0);
+  const minY = view.top + POPUP_EDGE - (box.top - dy0);
+  const maxY = view.bottom - POPUP_EDGE - bar.offsetHeight - (box.top - dy0);
+  const x0 = e.clientX, y0 = e.clientY;
+
+  const move = ev => setPopupOffset(
+    container,
+    Math.min(maxX, Math.max(minX, dx0 + ev.clientX - x0)),
+    Math.min(maxY, Math.max(minY, dy0 + ev.clientY - y0)),
+  );
+  const stop = () => {
+    bar.classList.remove('dragging');
+    bar.removeEventListener('pointermove', move);
+    bar.removeEventListener('pointerup', stop);
+    bar.removeEventListener('pointercancel', stop);
+  };
+  bar.setPointerCapture(e.pointerId);
+  bar.classList.add('dragging');
+  bar.addEventListener('pointermove', move);
+  bar.addEventListener('pointerup', stop);
+  bar.addEventListener('pointercancel', stop);
+}
+
+// Leaflet rebuilds a popup's content on every open but keeps its container,
+// so the bar is added once and the offset is cleared every time: where one
+// dock's popup was dragged to is off screen for the next one.
+map.on('popupopen', e => {
+  const container = e.popup.getElement();
+  const wrapper = container?.querySelector('.leaflet-popup-content-wrapper');
+  if (!wrapper) return;
+  setPopupOffset(container, 0, 0);
+  if (wrapper.querySelector('.popup-drag')) return;
+  const bar = document.createElement('div');
+  bar.className = 'popup-drag';
+  bar.title = 'Drag to move';
+  bar.addEventListener('pointerdown', ev => dragPopupFrom(ev, container, bar));
+  wrapper.insertBefore(bar, wrapper.firstChild);
+});
 
 // -- Single-ride view --------------------------------------------------------
 

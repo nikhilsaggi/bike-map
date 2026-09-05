@@ -63,3 +63,78 @@ test.describe('single-ride view', () => {
     await expect(page.locator('#ride-view-bar')).toBeHidden();
   });
 });
+
+test.describe('draggable popups', () => {
+  // The same bar is on every popup -- the street popup here and the dock
+  // popup in citibike.spec.js are the same Leaflet container.
+  async function dragBar(page, dx, dy) {
+    const bar = page.locator('.leaflet-popup .popup-drag');
+    const box = await bar.boundingBox();
+    const x = box.x + box.width / 2, y = box.y + box.height / 2;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.move(x + dx, y + dy, { steps: 5 });
+    await page.mouse.up();
+  }
+
+  test('the grab bar moves a popup off the street it covers', async ({ page }) => {
+    await gotoMap(page);
+    await clickEdge(page, EDGES.center.lat);
+    const popup = page.locator('.leaflet-popup');
+    await expect(popup).toBeVisible();
+    const before = await popup.boundingBox();
+
+    await dragBar(page, 160, -90);
+
+    const after = await popup.boundingBox();
+    expect(Math.round(after.x - before.x)).toBe(160);
+    expect(Math.round(after.y - before.y)).toBe(-90);
+    // Moved, not reopened: the rides it was showing are still listed, and
+    // the tip is gone because it would point at nothing.
+    await expect(popup.locator('.ride-row')).toHaveCount(4);
+    await expect(popup.locator('.leaflet-popup-tip-container')).toBeHidden();
+  });
+
+  test('a moved popup still travels with its street', async ({ page }) => {
+    await gotoMap(page);
+    await clickEdge(page, EDGES.center.lat);
+    const popup = page.locator('.leaflet-popup');
+    await dragBar(page, 120, -60);
+    const before = await popup.boundingBox();
+
+    await page.evaluate(() => map.panBy([70, 40], { animate: false }));
+
+    const after = await popup.boundingBox();
+    expect(Math.round(after.x - before.x)).toBe(-70);
+    expect(Math.round(after.y - before.y)).toBe(-40);
+  });
+
+  test('the popup cannot be dragged off the map', async ({ page }) => {
+    await gotoMap(page);
+    await clickEdge(page, EDGES.center.lat);
+    const popup = page.locator('.leaflet-popup');
+    await dragBar(page, -3000, 3000);
+    const box = await popup.boundingBox();
+    const view = page.viewportSize();
+    expect(box.x + box.width).toBeGreaterThan(0);
+    expect(box.y).toBeLessThan(view.height);
+    // The bar itself stays reachable, so the popup can be dragged back.
+    await expect(page.locator('.leaflet-popup .popup-drag')).toBeInViewport();
+  });
+
+  test('the next popup opens back on its street', async ({ page }) => {
+    await gotoMap(page);
+    await clickEdge(page, EDGES.center.lat);
+    const popup = page.locator('.leaflet-popup');
+    const home = await popup.boundingBox();
+    await dragBar(page, 150, 80);
+    await page.locator('.leaflet-popup-close-button').click();
+    await expect(popup).toHaveCount(0);
+
+    await clickEdge(page, EDGES.center.lat);
+    const again = await popup.boundingBox();
+    expect(Math.round(again.x)).toBe(Math.round(home.x));
+    expect(Math.round(again.y)).toBe(Math.round(home.y));
+    await expect(popup.locator('.leaflet-popup-tip-container')).toBeVisible();
+  });
+});
