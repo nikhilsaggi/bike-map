@@ -177,7 +177,7 @@
      unlabelled rather than guessed at. */
   .src-tag { font-size: 10px; }
   .src-tag.cb { color: #a8d8e8; }
-  .src-tag.mine { color: #888; }
+  .src-tag.own { color: #888; }
   #cb-toggle {
     display: block; margin-top: 8px; padding-top: 8px; border-top: 1px solid #333;
     color: #888; font-size: 11px; cursor: pointer; user-select: none;
@@ -198,15 +198,20 @@
      plainly not being a link. */
   .dock-row-flat { color: #888; font-size: 12px; }
   #stat-citibike { line-height: 1.5; }
-  #stat-citibike .r-row { margin: 1px 0; }
-  .cb-flow-row { display: flex; align-items: baseline; gap: 6px; padding: 1px 0; }
-  .cb-flow-name {
-    flex: 1; color: #ccc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  /* One grid for the header and every row, so the two columns line up
+     instead of each row right-justifying its own text. */
+  .cb-cmp {
+    display: grid; grid-template-columns: 1fr auto auto;
+    gap: 2px 14px; align-items: baseline;
   }
-  .cb-flow-val { flex: none; color: #fff; font-weight: 600; font-variant-numeric: tabular-nums; }
-  .cb-flow-sub { flex: none; color: #666; font-size: 9px; font-variant-numeric: tabular-nums; }
-  .cb-note { color: #777; font-size: 9px; line-height: 1.4; margin-top: 5px; }
-  .cb-note strong { color: #ccc; font-weight: 600; }
+  .cb-cmp .head { font-size: 9px; letter-spacing: 0.3px; text-align: right; }
+  /* The column headings take their series' colours from the map: the dock
+     layer's tone for Citibike, the own-bike tag's grey for the other. */
+  .cb-cmp .head.cb { color: #a8d8e8; }
+  .cb-cmp .head.own { color: #888; }
+  .cb-cmp .label { color: #888; }
+  .cb-cmp .v { color: #fff; text-align: right; font-variant-numeric: tabular-nums; }
+  .cb-note { color: #777; font-size: 9px; line-height: 1.4; margin-top: 8px; }
 
   @media (max-width: 640px) {
     #stats-sections.open { max-height: min(240px, calc(100vh - 300px)); }
@@ -345,7 +350,7 @@
   <div id="src-row" class="hidden">
     <button class="src-btn on" data-src="all">All</button>
     <button class="src-btn" data-src="citibike">Citibike</button>
-    <button class="src-btn" data-src="mine">My bike</button>
+    <button class="src-btn" data-src="own">Own bike</button>
   </div>
   <div id="src-note"></div>
   <!-- Revealed only when the payload carries a citibike block. Off by
@@ -503,7 +508,7 @@ function sourceTag(ri) {
   const s = rideSrc[ri];
   if (s > 1) return `<span class="src-tag cb">${s} Citibike trips</span>`;
   if (s === 1) return '<span class="src-tag cb">Citibike</span>';
-  if (s === 0) return '<span class="src-tag mine">my bike</span>';
+  if (s === 0) return '<span class="src-tag own">own bike</span>';
   return '';
 }
 let newKmByYear = {};
@@ -901,78 +906,32 @@ function initDockLayer(cb) {
 
 function renderCitibike(cb) {
   if (!cb || !cb.trips?.length) return;
-  const el = document.getElementById('stat-citibike');
-  el.innerHTML =
-    [['Trips', cb.trips.length.toLocaleString()],
-     ['Time', `${Math.round(cb.hours).toLocaleString()} h`],
-     ['Days out', cb.days.length.toLocaleString()],
-     ['Typical trip', `${cb.median_min} min`]]
-      .map(([k, v]) => `<div class="r-row"><span class="label">${k}</span><strong>${v}</strong></div>`)
-      .join('') +
-    `<div class="sub-title">One-way docks</div>`;
-
-  // Both ends of the net-flow range, so the list reads as a balance rather
-  // than a leaderboard.  Ranked in the pipeline (citibike._flow_extremes),
-  // the same way the speed corridors are.
-  const flows = document.createElement('div');
-  for (const s of cb.flow || []) {
-    const row = document.createElement('div');
-    row.className = 'cb-flow-row';
-    const name = document.createElement('span');
-    name.className = 'cb-flow-name';
-    name.title = s.name;
-    name.textContent = s.name;  // textContent, not innerHTML: this is Lyft data
-    const val = document.createElement('span');
-    val.className = 'cb-flow-val';
-    // The share, not the difference: "+93" sounds decisive until you see it
-    // is 363 out against 270 in. The pipeline ranks on this too.
-    const total = s.out + s.in;
-    val.textContent = s.out === s.in ? 'even'
-      : `${Math.round(100 * Math.max(s.out, s.in) / total)}% ${s.out > s.in ? 'out' : 'in'}`;
-    const sub = document.createElement('span');
-    sub.className = 'cb-flow-sub';
-    sub.textContent = `${s.out}/${s.in}`;
-    row.append(name, val, sub);
-    flows.appendChild(row);
-  }
-  el.appendChild(flows);
-
-  // The number that ties the two datasets together, and the reason the
-  // legend's source filter exists.
-  if (cb.gps) {
-    const gps = document.createElement('div');
-    gps.className = 'cb-note';
-    const total = cb.gps.citibike + cb.gps.own;
-    // "the rides it covers" rather than "in that window": the phrasing has to
-    // hold whether the export spans the whole ride history or one year of it.
-    gps.innerHTML =
-      `Matched by clock overlap, <strong>${cb.gps.citibike.toLocaleString()} of the ` +
-      `${total.toLocaleString()}</strong> recorded rides the Citibike history ` +
-      `covers were on a Citibike; ${cb.gps.own.toLocaleString()} were not. ` +
-      `Filter the map by source in the legend.`;
-    el.appendChild(gps);
-  }
-
-  const note = document.createElement('div');
-  note.className = 'cb-note';
-  note.innerHTML =
-    `The share of each dock's use running one way, with out/in beside it; ` +
-    `docks used fewer than 10 times are left out. ` +
-    `<strong>${cb.same_day} of ${cb.days.length}</strong> Citibike days were ` +
-    `days with an own-bike ride too. ${cb.once_only} of ${cb.docks.length} docks ` +
-    `were used once. Turn on <em>Citibike docks</em> in the legend to put them ` +
-    `on the map; no trace is recorded between docks, so nothing here is drawn ` +
-    `as a route or counted toward coverage.`;
-  el.appendChild(note);
-
-  const odd = document.createElement('div');
-  odd.className = 'cb-note';
-  odd.textContent = [`${cb.aborted} unlocks re-docked within 2 min`,
-    `${cb.repeat_bikes} of ${cb.bikes} bikes ridden more than once`,
-    `at least ${cb.ebike_min} ebike trips`,
-    `$${cb.paid.toFixed(2)} paid of $${cb.charged.toFixed(2)} charged`].join(' · ');
-  el.appendChild(odd);
-
+  const own = cb.own || {};
+  const n = (v) => (v == null ? '\u2014' : v.toLocaleString());
+  // Two complete records of different kinds, side by side: every Citibike
+  // trip against every recorded ride no Citibike trip was found under. One
+  // GPS recording can hold several Citibike trips, but never several
+  // own-bike ones, so "trips" counts honestly in both columns.
+  const rows = [
+    ['Trips', n(cb.trips.length), n(own.rides)],
+    ['Time', `${n(Math.round(cb.hours))} h`, `${n(Math.round(own.hours))} h`],
+    ['Days out', n(cb.days.length), n(own.days)],
+    // Whole minutes: Lyft's own durations are, and a median to a tenth of
+    // a minute claims a precision neither side has.
+    ['Typical', `${n(Math.round(cb.median_min))} min`,
+      own.median_min == null ? '\u2014' : `${n(Math.round(own.median_min))} min`],
+  ];
+  document.getElementById('stat-citibike').innerHTML =
+    `<div class="cb-cmp">` +
+    `<span></span><span class="head cb">Citibike</span><span class="head own">Own bike</span>` +
+    rows.map(([k, a, b]) =>
+      `<span class="label">${k}</span><span class="v">${a}</span><span class="v">${b}</span>`
+    ).join('') +
+    `</div>` +
+    `<div class="cb-note">${cb.aborted.toLocaleString()} unlocks re-docked within 2 min ` +
+    `\u00b7 ${cb.repeat_bikes.toLocaleString()} of ${cb.bikes.toLocaleString()} bikes ridden ` +
+    `more than once \u00b7 at least ${cb.ebike_min.toLocaleString()} ebike trips ` +
+    `\u00b7 $${cb.paid.toFixed(2)} paid of $${cb.charged.toFixed(2)} charged</div>`;
   showChip('stat-citibike');
 }
 

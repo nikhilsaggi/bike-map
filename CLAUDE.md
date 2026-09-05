@@ -127,12 +127,14 @@ reads everything from `rides.geojson.gz` top-level `properties`.
   than counting them as own-bike. The 60s minimum overlap is not a tuned
   threshold: anything from 1s to 120s gives the same answer on the real
   rides.
-- **The one-way dock list ranks by share, not by the raw difference**
-  (`citibike._flow_extremes`, floor `FLOW_MIN_USES`). Difference is
-  scale-dependent and surfaces the busiest dock instead of the most lopsided
-  one -- over five years the top dock by difference is +93, which is 363 out
-  against 270 in. The dock markers' colour has the same rule for the same
-  reason; if one changes, check the other.
+- **The Citibike panel is a two-column comparison**, Citibike against own
+  bike, on trips / time / days / typical length. The Citibike column is the
+  export's own totals (every trip, including ones no GPS ride covers); the
+  own-bike column is the rides `ride_sources` found no trip under. Both are
+  complete records of their own kind, and the units line up because one GPS
+  recording can hold several Citibike trips but never several own-bike ones.
+  A one-way-dock ranking used to live here and was dropped as not saying
+  enough ([details](findings/citibike-trips.md)).
 - **The dock layer is meant to be explored, not read.** Markers resize with
   the same `filterLo`/`filterHi` range that filters the edges (`applyFilter`
   calls `applyDockFilter`), so the slider and time-lapse move them too. The

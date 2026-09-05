@@ -170,34 +170,34 @@ test.describe('Citibike dock layer', () => {
     expect(await edges()).toBe(3);
   });
 
-  test('the stats section reports the totals and the caveat', async ({ page }) => {
+  test('sets the Citibike totals against the own-bike ones', async ({ page }) => {
+    await gotoMap(page);
+    await openSection(page, SECTION);
+    const cells = page.locator(`#${SECTION} .cb-cmp .v`);
+
+    // Two columns, four rows, Citibike first.
+    await expect(page.locator(`#${SECTION} .cb-cmp .head`)).toHaveText(['Citibike', 'Own bike']);
+    await expect(cells).toHaveCount(8);
+    await expect(cells.nth(0)).toHaveText('5');       // trips
+    await expect(cells.nth(1)).toHaveText('3');       // own rides
+    await expect(cells.nth(2)).toHaveText('2 h');
+    await expect(cells.nth(3)).toHaveText('4 h');
+    await expect(cells.nth(4)).toHaveText('3');       // days out
+    await expect(cells.nth(5)).toHaveText('2');
+    // Whole minutes on both sides: 9.0 and 41.0 round, they do not print .0
+    await expect(cells.nth(6)).toHaveText('9 min');
+    await expect(cells.nth(7)).toHaveText('41 min');
+  });
+
+  test('keeps the oddities line and drops the explanatory prose', async ({ page }) => {
     await gotoMap(page);
     await openSection(page, SECTION);
     const section = page.locator(`#${SECTION}`);
-
-    await expect(section).toContainText('5');        // trips, from the array
-    await expect(section).toContainText('2 h');
-    await expect(section).toContainText('9 min');
-    await expect(section).toContainText('2 of 3');   // same_day of days
-    await expect(section).toContainText('0 of 4 docks');
-    await expect(section).toContainText('drawn as a route or counted toward coverage');
+    await expect(section).toContainText('1 unlocks re-docked');
     await expect(section).toContainText('$5.00 paid of $12.00 charged');
-
-    // Share, not raw difference, and an evenly used dock says so.
-    const rows = section.locator('.cb-flow-row');
-    await expect(rows).toHaveCount(3);
-    await expect(rows.nth(0).locator('.cb-flow-val')).toHaveText('75% out');
-    await expect(rows.nth(0).locator('.cb-flow-sub')).toHaveText('3/1');
-    await expect(rows.nth(1).locator('.cb-flow-val')).toHaveText('even');
-    await expect(rows.nth(2).locator('.cb-flow-val')).toHaveText('75% in');
-  });
-
-  test('reports how many recorded rides were Citibike', async ({ page }) => {
-    await gotoMap(page, buildFixture({
-      citibike: { ...buildFixture().properties.citibike, gps: { citibike: 9, own: 4 } },
-    }));
-    await openSection(page, SECTION);
-    await expect(page.locator(`#${SECTION}`)).toContainText('9 of the 13');
+    // The one-way dock rows and the paragraphs that explained them are gone.
+    await expect(section.locator('.cb-flow-row')).toHaveCount(0);
+    await expect(section).not.toContainText('one way');
   });
 
   test('section, chip and toggle stay hidden without a citibike block', async ({ page }) => {
@@ -222,7 +222,7 @@ test.describe('ride source', () => {
     await expect(rows.nth(0)).not.toContainText('Citibike');
     await expect(rows.nth(0)).not.toContainText('my bike');
     await expect(rows.nth(1).locator('.src-tag.cb')).toHaveText('Citibike');
-    await expect(rows.nth(2).locator('.src-tag.mine')).toHaveText('my bike');
+    await expect(rows.nth(2).locator('.src-tag.own')).toHaveText('own bike');
     // A ride spanning two Citibike trips says so.
     await expect(rows.nth(3).locator('.src-tag.cb')).toHaveText('2 Citibike trips');
   });
@@ -232,7 +232,7 @@ test.describe('ride source', () => {
     await page.evaluate(() => viewRide(1));
     await expect(page.locator('#ride-view-label .src-tag.cb')).toHaveText('Citibike');
     await page.evaluate(() => viewRide(2));
-    await expect(page.locator('#ride-view-label .src-tag.mine')).toHaveText('my bike');
+    await expect(page.locator('#ride-view-label .src-tag.own')).toHaveText('own bike');
   });
 
   const drawn = (page) => page.evaluate(() => {
@@ -251,7 +251,7 @@ test.describe('ride source', () => {
     await expect.poll(() => drawn(page)).toBe(3);
 
     // Own-bike is ride 2 alone, which only touches the center edge.
-    await page.click('.src-btn[data-src="mine"]');
+    await page.click('.src-btn[data-src="own"]');
     await expect.poll(() => drawn(page)).toBe(1);
 
     await page.click('.src-btn[data-src="all"]');
@@ -261,7 +261,7 @@ test.describe('ride source', () => {
   test('says what a source filter is hiding', async ({ page }) => {
     await gotoMap(page);
     await expect(page.locator('#src-note')).toHaveText('');
-    await page.click('.src-btn[data-src="mine"]');
+    await page.click('.src-btn[data-src="own"]');
     // Ride 0 has an unknown source and belongs to neither side.
     await expect(page.locator('#src-note')).toContainText('1 ride falls outside');
     await page.click('.src-btn[data-src="all"]');
@@ -270,11 +270,11 @@ test.describe('ride source', () => {
 
   test('the popup lists only the rides the filter kept', async ({ page }) => {
     await gotoMap(page);
-    await page.click('.src-btn[data-src="mine"]');
+    await page.click('.src-btn[data-src="own"]');
     await clickEdge(page, EDGES.center.lat);
     const popup = page.locator('.ride-popup');
     await expect(popup.locator('.ride-row')).toHaveCount(1);
-    await expect(popup.locator('.src-tag.mine')).toHaveText('my bike');
+    await expect(popup.locator('.src-tag.own')).toHaveText('own bike');
   });
 
   test('the control is absent when no ride has a known source', async ({ page }) => {

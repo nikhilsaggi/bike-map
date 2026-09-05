@@ -149,86 +149,15 @@ def test_summary_counts_docks_and_oddities(tmp_path):
     assert s["bikes"] == 5
     assert s["repeat_bikes"] == 1
     assert len(s["docks"]) == 2
-    assert s["once_only"] == 0
     # A: four departures to B plus the aborted unlock that also started there,
     # against r4's arrival and the aborted unlock's own return. B is the mirror.
     docks = {d["name"]: (d["out"], d["in"]) for d in s["docks"]}
     assert docks == {a: (5, 2), b: (1, 4)}
-    # Neither dock clears FLOW_MIN_USES, so neither is called one-way.
-    assert s["flow"] == []
 
 
 def _flows(n, a, b, start=1_000):
     """n trips from dock a to dock b, each with a distinct rideId."""
     return [_record(f"{a}{b}{i}", start + i * 60_000, a, b, dur=300_000) for i in range(n)]
-
-
-@pytest.mark.usefixtures("trips_path")
-def test_flow_ranks_by_share_not_by_difference(tmp_path):
-    """A busy balanced dock must not outrank a lopsided quiet one.
-
-    This is what the five-year history exposed: ranked on the raw difference
-    the top "one-way" dock was 363 out against 270 in, a 15% lean that only
-    led because the dock is busy.
-    """
-    records = (
-        _flows(60, "Busy", "Sink", start=1_000)
-        + _flows(40, "Sink", "Busy", start=9_000_000)
-        + _flows(12, "Lopsided", "Sink", start=20_000_000)
-        + _flows(1, "Sink", "Lopsided", start=30_000_000)
-    )
-    ingest(_write_export(tmp_path, records))
-    flow = _citibike_summary({})["flow"]
-
-    # Busy is +20 and Lopsided only +11, but Lopsided is 92% one way.
-    assert [f["name"] for f in flow][:2] == ["Lopsided", "Busy"]
-    assert (flow[0]["out"], flow[0]["in"]) == (12, 1)
-
-
-@pytest.mark.usefixtures("trips_path")
-def test_flow_ignores_docks_below_the_use_floor(tmp_path):
-    """One trip out and none back is not a one-way dock, it is one trip."""
-    records = _flows(12, "Busy", "Sink", start=1_000) + _flows(1, "Once", "Sink", start=9_000_000)
-    ingest(_write_export(tmp_path, records))
-    names = [f["name"] for f in _citibike_summary({})["flow"]]
-
-    # "Once" is 100% one way and still has no business being ranked.
-    assert "Once" not in names
-    assert "Busy" in names
-
-
-@pytest.mark.usefixtures("trips_path")
-def test_flow_lists_both_ends_without_repeating_a_dock(tmp_path):
-    """The top-3 and bottom-2 slices overlap on a short list.
-
-    Listing one dock twice would read as two different docks that happen to
-    share a name, so the tail drops anything already in the head.
-    """
-    # Two eligible docks: the slices overlap completely.
-    records = _flows(12, "Out", "Sink", start=1_000) + _flows(3, "Sink", "Out", start=9_000_000)
-    ingest(_write_export(tmp_path, records))
-    names = [f["name"] for f in _citibike_summary({})["flow"]]
-
-    assert names == sorted(set(names), key=names.index)  # no repeats
-    assert set(names) == {"Out", "Sink"}
-
-
-@pytest.mark.usefixtures("trips_path")
-def test_flow_runs_from_most_departed_to_most_arrived(tmp_path):
-    records = []
-    at = 1_000
-    for name, out, into in [("A", 18, 2), ("B", 15, 5), ("D", 8, 12), ("E", 2, 18)]:
-        records += _flows(out, name, "Sink", start=at)
-        at += 5_000_000
-        records += _flows(into, "Sink", name, start=at)
-        at += 5_000_000
-    ingest(_write_export(tmp_path, records))
-    flow = _citibike_summary({})["flow"]
-
-    shares = [(f["out"] - f["in"]) / (f["out"] + f["in"]) for f in flow]
-    assert shares == sorted(shares, reverse=True)
-    assert flow[0]["name"] == "A"
-    assert flow[-1]["name"] == "E"
 
 
 @pytest.mark.usefixtures("trips_path")
@@ -247,7 +176,6 @@ def test_summary_same_day_matches_ride_filenames(tmp_path):
     ride_stats = {"2023-11-14_08-00-00_-0500.csv": {"dist_m": 5000.0}}
     s = _citibike_summary(ride_stats)
     assert len(s["days"]) == 2
-    assert s["same_day"] == 1
     assert s["from"] == "2023-11-14"
     assert s["to"] == "2023-11-15"
 
@@ -310,7 +238,6 @@ def test_a_dock_gbfs_cannot_place_keeps_its_counts(tmp_path):
     assert all(d["at"] is not None for d in s["docks"] if d["name"] != gone["name"])
     # Still a trip, still a day, still in the once-only count.
     assert len(s["trips"]) == 2
-    assert s["once_only"] == 2  # B and Gone, each used once
 
 
 @pytest.mark.usefixtures("trips_path")
@@ -426,8 +353,43 @@ def test_ride_sources_is_empty_without_a_cache():
     assert ride_sources(_stats(any=(T0, 600))) == {}
 
 
+def _ride(start, dur):
+    return {
+        "start": dt.datetime.fromtimestamp(start, tz=dt.timezone.utc).isoformat(),
+        "duration_s": float(dur),
+        "dist_m": 1000.0,
+    }
+
+
 @pytest.mark.usefixtures("trips_path")
-def test_summary_reports_the_gps_split(tmp_path):
+def test_summary_reports_the_own_bike_column(tmp_path):
+    """The rides no Citibike trip overlaps, summarised beside the trips.
+
+    Real filenames here rather than the label-based ones: the day count
+    slices the date out of the name the way the pipeline's rides do.
+    """
     ingest(_write_export(tmp_path, TWO_TRIPS))
-    s = _citibike_summary(_stats(one=(T0 + 60, 300), two=(T0 + 3660, 300), none=(T0 + 1200, 300)))
-    assert s["gps"] == {"citibike": 2, "own": 1}
+    # The trips run T0..T0+600 and T0+3600..T0+4200; both own rides sit in
+    # the gap between them, and all four share a date.
+    s = _citibike_summary(
+        {
+            "2023-11-14_17-14-00_-0500.csv": _ride(T0 + 60, 300),  # in trip 1
+            "2023-11-14_18-15-00_-0500.csv": _ride(T0 + 3660, 300),  # in trip 2
+            "2023-11-14_17-25-00_-0500.csv": _ride(T0 + 700, 600),  # 10 min
+            "2023-11-14_17-38-00_-0500.csv": _ride(T0 + 1500, 1800),  # 30 min
+        }
+    )
+    own = s["own"]
+    assert own["rides"] == 2
+    assert own["hours"] == pytest.approx(0.7, abs=0.05)  # 10 + 30 minutes
+    assert own["days"] == 1
+    assert own["median_min"] == pytest.approx(20.0)  # median of 10 and 30
+    # The Citibike column is the export's own count, not the matched subset.
+    assert len(s["trips"]) == 2
+
+
+@pytest.mark.usefixtures("trips_path")
+def test_own_bike_column_is_empty_when_every_ride_matched(tmp_path):
+    ingest(_write_export(tmp_path, TWO_TRIPS))
+    s = _citibike_summary(_stats(cb=(T0 + 60, 300)))
+    assert s["own"] == {"rides": 0, "hours": 0.0, "days": 0, "median_min": None}

@@ -80,13 +80,8 @@ export const CITIBIKE_BLOCK = {
   bikes: 8,
   repeat_bikes: 2,
   once_only: 0,
-  // Matches the dock counts above, and covers all three ways a row renders:
-  // a share out, an even dock, a share in.
-  flow: [
-    { name: 'Home Dock & Main St', out: 3, in: 1 },
-    { name: 'Terminal Dock & 42 St', out: 1, in: 1 },
-    { name: 'Park Dock & 5 Ave', out: 1, in: 3 },
-  ],
+  // The own-bike column: rides no Citibike trip was found under.
+  own: { rides: 3, hours: 4.0, days: 2, median_min: 41.0 },
 };
 
 const line = (lat) => ({

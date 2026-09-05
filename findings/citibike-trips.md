@@ -212,16 +212,55 @@ grid, while the own-bike rides are long and reach out to Queens and across the
 bridges. Neither of those is a fact the stats panel states — it is what the
 filter is for.
 
+## What the panel shows
+
+Two columns, Citibike against own bike, over the whole history:
+
+| | Citibike | Own bike |
+|---|---|---|
+| Trips | 2,524 | 115 |
+| Time | 510 h | 160 h |
+| Days out | 989 | 73 |
+| Typical | 8 min | 32 min |
+
+The Citibike column is the export's own totals — every trip, including the
+1,259 no GPS ride was recorded over. The own-bike column is the rides
+`ride_sources` found no trip under. Both are complete records of their own
+kind, and "trips" counts honestly in both: one GPS recording can hold several
+Citibike trips, but never several own-bike ones.
+
+The four-times-longer typical ride is the shape of the whole thing. Citibike
+is a way of getting somewhere; the own bike is the ride itself.
+
+### The one-way dock ranking, measured and dropped
+
+The panel used to lead with the most one-way docks — the docks only ever
+departed from or arrived at. Two rounds of work went into ranking them
+correctly, and the whole thing came out anyway because the numbers were not
+worth the space.
+
+Worth recording, because the ranking bug is a general one. Ranked on the raw
+difference between departures and arrivals, the top "one-way" dock over five
+years was `Broadway & W 48 St` at +93 — which sounds decisive until you see
+it is 363 out against 270 in, a 15% lean that only led because the dock is
+busy. Difference is scale-dependent; **share** is the statistic, above a
+floor that stops a dock used twice from claiming a perfect score. On that
+basis the real answers were `Madison Av & E 51 St` at 28/2 and
+`Lispenard St & Broadway` at 1/14.
+
+The same trap had already been sprung once on the dock markers' colour,
+which encodes the same quantity. Fixing one and not the other is how the two
+drifted apart until five years of data made it obvious.
+
 ## What the numbers say
 
-- **Grand Central is a one-way valve.** `E 43 St & Madison Ave` is 33
-  departures against 9 arrivals; `Park Ave & E 42 St` is 10 and 0. 43 out, 9
-  in. This is the finding that justified the feature: a matched edge has a
-  direction but no origin, so the ride map has no way to express "a place I
-  only ever leave from".
-- **It is a supplement, not a substitute.** 140 of 172 Citibike days were
-  days with an own-bike ride too. These are the one-way legs of days that
-  otherwise went on the owner's own bike.
+- **Docks near the Midtown terminals are one-way.** `Madison Av & E 51 St`
+  is 28 departures against 2 arrivals, `Park Ave & E 42 St` 22 against 3.
+  A matched edge has a direction but no origin, so this is a fact about
+  trips the ride map cannot express — interesting enough to have measured,
+  not interesting enough to have kept in the panel.
+- **It is a supplement, not a substitute.** 737 of 989 Citibike days were
+  days with an own-bike ride too.
 - 118 of 216 docks were used exactly once, against `Montrose Ave & Bushwick
   Ave` at 189 endpoint touches — home, and reaching 87 other docks.
 - 8 trips started and ended at the same dock within one minute: a bad bike

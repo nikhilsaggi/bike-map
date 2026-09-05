@@ -34,20 +34,6 @@ from . import config
 # Reported on its own rather than silently folded into the totals.
 ABORT_MAX_MS = 120_000
 
-# How many docks from each end of the one-way range the stats section lists.
-# Ranked here rather than in the browser, the way the speed corridors are.
-FLOW_TOP = 3
-FLOW_BOTTOM = 2
-# Ranked by the *share* of a dock's use running one way, not the raw
-# difference. The difference is scale-dependent and picks the busiest dock
-# rather than the most lopsided one: over five years Broadway & W 48 St is
-# +93, which sounds decisive until you see it is 363 out against 270 in, a
-# 15% lean. Madison Av & E 51 St at 28/2 is the fact worth showing.
-# The floor keeps a dock used twice from claiming a perfect score; 10 leaves
-# 77 of 591 docks eligible on the full history and still ranks sensibly on a
-# single year's worth.
-FLOW_MIN_USES = 10
-
 # A GPS ride and a Citibike trip are the same journey when their recorded
 # spans overlap. Requiring a minute of it, rather than an instant, keeps a
 # ride that merely abuts a trip from claiming it. The split is insensitive to
@@ -99,27 +85,6 @@ def _median(values: list[float]) -> float:
     return (ordered[mid - 1] + ordered[mid]) / 2
 
 
-def _flow_extremes(
-    out_n: dict[str, int], in_n: dict[str, int], names: list[str]
-) -> list[dict[str, Any]]:
-    """Rank the most one-way docks at each end of the range, departures first.
-
-    Both ends, so the list reads as a balance rather than a leaderboard. With
-    few enough docks the two slices overlap, and listing one twice would read
-    as two different docks that happen to share a name.
-    """
-
-    def share(name: str) -> float:
-        out, into = out_n.get(name, 0), in_n.get(name, 0)
-        return (out - into) / (out + into)
-
-    eligible = [n for n in names if out_n.get(n, 0) + in_n.get(n, 0) >= FLOW_MIN_USES]
-    ranked = sorted(eligible, key=lambda n: (-share(n), n))
-    head = ranked[:FLOW_TOP]
-    tail = [n for n in ranked[-FLOW_BOTTOM:] if n not in head]
-    return [{"name": n, "out": out_n.get(n, 0), "in": in_n.get(n, 0)} for n in head + tail]
-
-
 def ride_sources(ride_stats: dict[str, dict[str, Any] | None]) -> dict[str, int]:
     """Label each GPS ride by the Citibike trips it overlaps in time.
 
@@ -163,7 +128,14 @@ def ride_sources(ride_stats: dict[str, dict[str, Any] | None]) -> dict[str, int]
 def _citibike_summary(
     ride_stats: dict[str, dict[str, Any] | None],
 ) -> dict[str, Any] | None:
-    """Aggregate the Citibike trip cache into the export's stats block."""
+    """Aggregate the Citibike trip cache into the export's stats block.
+
+    The block is a Citibike column and an own-bike one, side by side. The
+    Citibike figures come from the export -- every trip, including the ones
+    no GPS ride was recorded over -- while the own-bike figures come from the
+    rides `ride_sources` found no Citibike trip under. Both are complete
+    records of their own kind.
+    """
     payload = _load_trips()
     if payload is None:
         return None
@@ -195,8 +167,15 @@ def _citibike_summary(
     day_index = {d: i for i, d in enumerate(days)}
     trips = [[index[t["a"]], index[t["b"]], day_index[_local_date(t["t"])]] for t in raw]
 
+    # The own-bike column: the GPS rides no Citibike trip overlaps.
     sources = ride_sources(ride_stats)
-    own_days = {fname[:10] for fname in ride_stats}
+    own_minutes: list[float] = []
+    own_days: set[str] = set()
+    for fname, rs in ride_stats.items():
+        if sources.get(fname) != SOURCE_OWN or not rs or rs.get("duration_s") is None:
+            continue
+        own_minutes.append(rs["duration_s"] / 60)
+        own_days.add(fname[:10])
     minutes = [t["dur"] / 60_000 for t in raw]
     bikes: dict[str, int] = {}
     for t in raw:
@@ -211,25 +190,20 @@ def _citibike_summary(
         "hours": round(sum(minutes) / 60, 1),
         "from": days[0],
         "to": days[-1],
-        # Citibike days that were also own-bike days: the number that says
-        # this is a supplement to the GPS map, not a substitute for it.
-        "same_day": len(set(days) & own_days),
         "median_min": round(_median(minutes), 1),
-        "longest_min": round(max(minutes)),
+        # The column beside it. Rides rather than trips -- one recorded ride
+        # can span several Citibike trips, and nothing splits an own-bike one.
+        "own": {
+            "rides": len(own_minutes),
+            "hours": round(sum(own_minutes) / 60, 1),
+            "days": len(own_days),
+            "median_min": round(_median(own_minutes), 1) if own_minutes else None,
+        },
         # A floor: a free ebike ride can carry no line item naming one.
         "ebike_min": sum(1 for t in raw if t["ebike"]),
         "paid": round(sum(t["paid"] for t in raw), 2),
         "charged": round(sum(t["gross"] for t in raw), 2),
-        "credits": round(sum(t["credit"] for t in raw), 2),
         "aborted": sum(1 for t in raw if t["a"] == t["b"] and t["dur"] <= ABORT_MAX_MS),
         "bikes": len(bikes),
         "repeat_bikes": sum(1 for n in bikes.values() if n > 1),
-        "once_only": sum(1 for d in docks if d["out"] + d["in"] == 1),
-        "flow": _flow_extremes(out_n, in_n, names),
-        # How the GPS rides inside the window split by source. Rides outside
-        # it are not counted here at all -- they are unknown, not own-bike.
-        "gps": {
-            "citibike": sum(1 for v in sources.values() if v > 0),
-            "own": sum(1 for v in sources.values() if v == SOURCE_OWN),
-        },
     }
