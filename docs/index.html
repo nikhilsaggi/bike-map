@@ -41,6 +41,16 @@
      target; a very short window still needs somewhere to scroll. */
   #stats-body { max-height: calc(100vh - 72px); overflow-y: auto; }
 
+  /* The page's one scroll bar: a thin dark thumb over no track, so a
+     scrollable box reads as part of the panel it sits in rather than as a
+     browser widget bolted onto it.  Every box on the page that scrolls wears
+     this class -- the stats panel, its sections, and both popups. */
+  .scrollbox::-webkit-scrollbar { width: 6px; }
+  .scrollbox::-webkit-scrollbar-track { background: transparent; }
+  .scrollbox::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+  .scrollbox::-webkit-scrollbar-thumb:hover { background: #555; }
+  .scrollbox { scrollbar-width: thin; scrollbar-color: #333 transparent; }
+
   /* Hero: effort on the top row, coverage on the bottom.  Tiles hide
      individually so a partial payload leaves no empty cells. */
   #stat-hero {
@@ -77,19 +87,6 @@
   }
   #stats-sections > div { display: none; }
   #stats-sections > div.open { display: block; }
-  /* The page's one scroll bar: a thin dark thumb over no track, so a
-     scrollable box reads as part of the panel rather than as a browser widget
-     bolted onto it. Every scrollable box shares it -- add new ones here. */
-  #stats-sections::-webkit-scrollbar,
-  .dock-popup::-webkit-scrollbar { width: 6px; }
-  #stats-sections::-webkit-scrollbar-track,
-  .dock-popup::-webkit-scrollbar-track { background: transparent; }
-  #stats-sections::-webkit-scrollbar-thumb,
-  .dock-popup::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
-  #stats-sections::-webkit-scrollbar-thumb:hover,
-  .dock-popup::-webkit-scrollbar-thumb:hover { background: #555; }
-  #stats-sections,
-  .dock-popup { scrollbar-width: thin; scrollbar-color: #333 transparent; }
 
   #stat-years { line-height: 1.5; }
   /* One grid template shared by the header and every row, so the columns line
@@ -289,6 +286,7 @@
     display: none; justify-content: space-between; margin-top: 4px;
     font-size: 10px; color: #888; font-variant-numeric: tabular-nums;
   }
+  .ride-list { max-height: 200px; overflow-y: auto; padding-right: 4px; }
   .ride-row { color: #9fd8ff; font-size: 12px; cursor: pointer; }
   .ride-row:hover { color: #fff; text-decoration: underline; }
   #ride-view-bar {
@@ -344,7 +342,7 @@
 <div id="stats">
   <button id="stats-toggle" title="Collapse stats">&ndash;</button>
   <span id="stats-collapsed-label">Stats</span>
-  <div id="stats-body">
+  <div id="stats-body" class="scrollbox">
     <div id="stat-hero">
       <div class="hero-tile"><strong id="stat-rides">&mdash;</strong><span class="label">rides</span></div>
       <div class="hero-tile hidden" id="tile-ridden"><strong id="stat-ridden">&mdash;</strong><span class="label">mi ridden</span></div>
@@ -359,7 +357,7 @@
       <button class="chip hidden" data-section="stat-streets" aria-expanded="false" aria-controls="stat-streets">Streets</button>
       <button class="chip hidden" data-section="stat-citibike" aria-expanded="false" aria-controls="stat-citibike">Citibike</button>
     </div>
-    <div id="stats-sections">
+    <div id="stats-sections" class="scrollbox">
       <div id="stat-years"></div>
       <div id="stat-riding"></div>
       <div id="stat-weather"></div>
@@ -934,7 +932,7 @@ function dockPopup(di) {
   const partners = dockPartners(di, lo, hi);
 
   const box = document.createElement('div');
-  box.className = 'dock-popup';
+  box.className = 'dock-popup scrollbox';
 
   const head = document.createElement('div');
   head.className = 'dock-head';
@@ -1183,7 +1181,7 @@ function popupContent(rideIds) {
   }
   const header = `<strong>${passes} pass${passes !== 1 ? 'es' : ''}</strong>` +
     (passes !== rows.length ? ` across ${rows.length} ride${rows.length !== 1 ? 's' : ''}` : '');
-  return `<div style="max-height:200px;overflow-y:auto">${header}${rows.join('')}</div>`;
+  return `<div class="ride-list scrollbox">${header}${rows.join('')}</div>`;
 }
 
 // -- Draggable popups --------------------------------------------------------
