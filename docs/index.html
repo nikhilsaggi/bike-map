@@ -945,10 +945,12 @@ function renderCitibike(cb) {
       `<span class="label">${k}</span><span class="v">${a}</span><span class="v">${b}</span>`
     ).join('') +
     `</div>` +
-    `<div class="cb-note">${cb.aborted.toLocaleString()} unlocks re-docked within 2 min ` +
-    `\u00b7 ${cb.repeat_bikes.toLocaleString()} of ${cb.bikes.toLocaleString()} bikes ridden ` +
-    `more than once \u00b7 at least ${cb.ebike_min.toLocaleString()} ebike trips ` +
-    `\u00b7 $${cb.paid.toFixed(2)} paid of $${cb.charged.toFixed(2)} charged</div>`;
+    `<div class="cb-note">${cb.repeat_bikes.toLocaleString()} of ` +
+    `${cb.bikes.toLocaleString()} bikes ridden more than once ` +
+    // "at least" is load-bearing: a free ebike ride can carry no line item
+    // naming one, so this is a floor rather than a measurement.
+    `\u00b7 at least ${Math.round(100 * cb.ebike_min / cb.trips.length)}% of ` +
+    `trips on an ebike</div>`;
   showChip('stat-citibike');
 }
 

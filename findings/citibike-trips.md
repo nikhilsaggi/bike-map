@@ -36,12 +36,14 @@ Three properties of the raw file drove the design:
   the identity, so `ingest.citibike` dedupes on it and reports the count.
 - **`endTimeMs == startTimeMs + duration`, and every `duration` is a whole
   number of minutes.** The end time is derived, not measured.
-- **`rideableName` is not a bike type.** 323 of 352 are hyphenated
-  (`812-7417`) and 29 are five-digit (`16825`), but the five-digit ones are
-  spread evenly across all 13 months, so the split is fleet generation, not
-  propulsion. Ebike is only knowable from a line item naming one, which gives
-  **27 rides as a floor** — a free ebike ride can carry no such item. The
-  block reports it as "at least".
+- **`rideableName` is not a bike type.** Ids come in two shapes, hyphenated
+  (`812-7417`) and five-digit (`16825`), and it is tempting to read that as
+  ebike against classic. It is not: **26 ebike line items sit on
+  five-digit bikes**, and the hyphenated share climbs steadily by year —
+  41% of trips in 2021, 69%, 86%, 89%, 93%, 90% — which is a fleet being
+  replaced, not a change in what was ridden. Ebike is knowable only from a
+  line item naming one: **189 of 2,524 trips, 7%, and a floor**, because a
+  free ebike ride can carry no such item. The panel says "at least".
 
 ## Why there is no speed
 
@@ -263,14 +265,22 @@ drifted apart until five years of data made it obvious.
   days with an own-bike ride too.
 - 118 of 216 docks were used exactly once, against `Montrose Ave & Bushwick
   Ave` at 189 endpoint touches — home, and reaching 87 other docks.
-- 8 trips started and ended at the same dock within one minute: a bad bike
-  unlocked and immediately re-docked.
-- 32 of 318 bikes were ridden more than once. Three were ridden three times,
-  each within a single day. `870-0494` came round again on 2026-08-18, 357
-  days after 2025-08-27.
-- $41.31 charged, $26.68 credited, $14.63 actually paid across 4 trips.
+- 253 of 2,225 bikes were ridden more than once — but 198 of the 293
+  re-encounters happen on the same day, which is a round trip on a bike that
+  was still where it was left rather than meeting one again. Whether the
+  remainder beats chance is [issue #21](https://github.com/nikhilsaggi/bike-map/issues/21).
 
 ## What was measured and deliberately dropped
+
+**Fast facts that did not earn their line.** The panel briefly carried two
+more: 88 unlocks re-docked within two minutes, and $438.21 paid against
+$588.91 charged. The first is a fact about bad bikes, not about riding; the
+second needs a paragraph about credits and memberships before it means
+anything. Both were cut. The per-trip fare fields stay in
+`cache/citibike_trips.json` — that file is the normalised copy of an export
+that lives outside the repo, so throwing away what it recorded is not the
+same as declining to render it.
+
 
 **Hour and weekday profiles.** Both were computed against the own-bike
 equivalents in `properties.riding` and both are near-identical: peak hour 18

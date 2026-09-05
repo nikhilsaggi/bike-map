@@ -127,7 +127,7 @@ def test_summary_rejects_a_stale_format(trips_path):
 
 
 @pytest.mark.usefixtures("trips_path")
-def test_summary_counts_docks_and_oddities(tmp_path):
+def test_summary_counts_docks_and_bikes(tmp_path):
     a, b = "A St & 1 Ave", "B St & 2 Ave"
     day = 1_700_000_000_000  # a Tuesday afternoon in NYC
     hour = 3_600_000
@@ -136,7 +136,8 @@ def test_summary_counts_docks_and_oddities(tmp_path):
         _record("r2", day + hour, a, b, bike="100-0002"),
         _record("r3", day + 2 * hour, a, b, bike="100-0003"),
         _record("r4", day + 3 * hour, b, a, bike="100-0004"),
-        # Same dock, one minute: an unlock re-docked, not a ride.
+        # Same dock, one minute: an unlock re-docked. It still counts as a
+        # trip and as a use at both ends of dock A.
         _record("r5", day + 4 * hour, a, a, dur=60_000, bike="100-0005"),
         # Bike 0001 again, so one of five bikes was ridden twice.
         _record("r6", day + 5 * hour, a, b, bike="100-0001"),
@@ -145,12 +146,11 @@ def test_summary_counts_docks_and_oddities(tmp_path):
     s = _citibike_summary({})
 
     assert len(s["trips"]) == 6
-    assert s["aborted"] == 1
     assert s["bikes"] == 5
     assert s["repeat_bikes"] == 1
     assert len(s["docks"]) == 2
-    # A: four departures to B plus the aborted unlock that also started there,
-    # against r4's arrival and the aborted unlock's own return. B is the mirror.
+    # A: four departures to B plus the re-docked unlock that also started
+    # there, against r4's arrival and that unlock's own return. B mirrors it.
     docks = {d["name"]: (d["out"], d["in"]) for d in s["docks"]}
     assert docks == {a: (5, 2), b: (1, 4)}
 

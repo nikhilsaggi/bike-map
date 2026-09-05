@@ -189,15 +189,19 @@ test.describe('Citibike dock layer', () => {
     await expect(cells.nth(7)).toHaveText('41 min');
   });
 
-  test('keeps the oddities line and drops the explanatory prose', async ({ page }) => {
+  test('keeps the fast facts and drops the explanatory prose', async ({ page }) => {
     await gotoMap(page);
     await openSection(page, SECTION);
     const section = page.locator(`#${SECTION}`);
-    await expect(section).toContainText('1 unlocks re-docked');
-    await expect(section).toContainText('$5.00 paid of $12.00 charged');
-    // The one-way dock rows and the paragraphs that explained them are gone.
+    await expect(section).toContainText('2 of 8 bikes ridden more than once');
+    // 3 of 5 trips carry an ebike line item, and "at least" is load-bearing:
+    // a free ebike ride can carry none.
+    await expect(section).toContainText('at least 60% of trips on an ebike');
+    // The one-way dock rows and the paragraphs that explained them are gone,
+    // and so are the fare and re-dock counts.
     await expect(section.locator('.cb-flow-row')).toHaveCount(0);
-    await expect(section).not.toContainText('one way');
+    await expect(section).not.toContainText('re-docked');
+    await expect(section).not.toContainText('paid of');
   });
 
   test('section, chip and toggle stay hidden without a citibike block', async ({ page }) => {

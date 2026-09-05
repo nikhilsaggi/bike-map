@@ -30,10 +30,6 @@ from typing import Any
 
 from . import config
 
-# Same dock, under this long: a bad bike unlocked and re-docked, not a ride.
-# Reported on its own rather than silently folded into the totals.
-ABORT_MAX_MS = 120_000
-
 # A GPS ride and a Citibike trip are the same journey when their recorded
 # spans overlap. Requiring a minute of it, rather than an instant, keeps a
 # ride that merely abuts a trip from claiming it. The split is insensitive to
@@ -199,11 +195,12 @@ def _citibike_summary(
             "days": len(own_days),
             "median_min": round(_median(own_minutes), 1) if own_minutes else None,
         },
-        # A floor: a free ebike ride can carry no line item naming one.
+        # A floor, shown as a percentage of trips: an ebike ride is only
+        # visible when it carries a line item naming one, and a free one may
+        # not. `rideableName` gives no help -- across five years 26 ebike
+        # line items sit on plain-numbered bikes, and the hyphenated share
+        # climbs 41% -> 90% by year, so the id format is fleet generation.
         "ebike_min": sum(1 for t in raw if t["ebike"]),
-        "paid": round(sum(t["paid"] for t in raw), 2),
-        "charged": round(sum(t["gross"] for t in raw), 2),
-        "aborted": sum(1 for t in raw if t["a"] == t["b"] and t["dur"] <= ABORT_MAX_MS),
         "bikes": len(bikes),
         "repeat_bikes": sum(1 for n in bikes.values() if n > 1),
     }
