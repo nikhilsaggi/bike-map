@@ -118,13 +118,22 @@ reads everything from `rides.geojson.gz` top-level `properties`.
   ([why](findings/citibike-trips.md)). No speed is derived either -- the
   export's durations are whole minutes and its end times are the start plus
   that duration.
+- **A dock in focus ghosts the drawn network**, using ride view's own
+  `EDGE_GHOST` style, because a busy dock's straight lines are the same cyan
+  as 21k plasma edges and lose against them. The network stays on screen in
+  outline -- reading the docks against where the bike goes is the point of
+  the layer -- and the slider still moves it, in outline (`dockFocus()` gates
+  `applyFilter`'s restyle).
 - **The one route a dock row can draw is a recorded one.** `trip_rides` names
   the GPS ride running over each trip and ships it as the 4th element of each
   `properties.citibike.trips` row (`-1` where none), so a popup row can put
   that ride on the map in the page's own single-ride view. It is not the
   rejected routed layer: the dock-to-dock line stays straight, and what is
-  drawn over it was measured. Ride view draws the **whole** recording, and
-  23% of recorded trips sit inside one that holds several, so the row says
+  drawn over it was measured. While a pair's route is up, that pair's straight
+  line is the **only** link drawn (`dockTraceTo`): a dock reaching 141 others
+  buries the route under its own starburst otherwise. Ride view draws the
+  **whole** recording, and 23% of recorded trips sit inside one that holds
+  several, so the row says
   when it covers others -- clipping the trace to a trip's clock window would
   need a per-(edge, ride) timestamp nothing in `state` carries. Tracing a
   pair deliberately leaves the popup open (`viewRide(ri, keepPopup)`): the

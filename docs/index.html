@@ -719,6 +719,7 @@ let dockMarkers = [];      // index-aligned with cbData.docks
 let dockTrips = [];        // dock index -> indices into cbData.trips
 let dockSelected = null;   // dock index whose trips are drawn, if any
 let dockTraceLabels = [];  // relabel callbacks for the open popup's route links
+let dockTraceTo = null;    // partner whose recorded route is being shown, if any
 let dockSqrtMax = 1;
 
 // The two sources share dates but not days: 32 of the Citibike days have no
@@ -783,7 +784,12 @@ function showDockLinks(di) {
   const from = cbData.docks[di];
   if (!from.at) return;
   dockLinks = L.layerGroup();
+  // A busy dock reaches 141 others, and the links are the same cyan as ride
+  // view. Drawing them all over a recorded route buries it, so while one
+  // pair's route is up that pair is the only line: the trip, and the ride
+  // that was made on it.
   for (const p of dockPartners(di, lo, hi)) {
+    if (dockTraceTo !== null && p.idx !== dockTraceTo) continue;
     const to = cbData.docks[p.idx];
     if (!to.at) continue;
     L.polyline([[from.at[1], from.at[0]], [to.at[1], to.at[0]]], {
@@ -867,7 +873,9 @@ function addTraceControl(row, p) {
       // there is nothing to clear and the click should show the first one.
       if (rideView !== null) { exitRideView(); relabel(); return; }
     }
+    dockTraceTo = p.idx;
     viewRide(p.rides[next], true);  // keep the popup: its rows are the point
+    showDockLinks(dockSelected);    // ... and this pair's line, on its own
     next++;
     relabel();
   });
@@ -978,8 +986,8 @@ function buildDockLayer() {
       return `${d.name}<br>${out + into} trips (${out} out / ${into} in)`;
     }, { sticky: true });
     m.bindPopup(() => dockPopup(i), { className: 'ride-popup' });
-    m.on('popupopen', () => showDockLinks(i));
-    m.on('popupclose', clearDockLinks);
+    m.on('popupopen', () => { showDockLinks(i); ghostEdges(); });
+    m.on('popupclose', () => { clearDockLinks(); unghostEdges(); });
     return m;
   });
 }
@@ -1048,6 +1056,36 @@ function renderCitibike(cb) {
     `\u00b7 at least ${Math.round(100 * cb.ebike_min / cb.trips.length)}% of ` +
     `trips on an ebike</div>`;
   showChip('stat-citibike');
+}
+
+// What an edge looks like when something else is the subject: ride view's
+// unselected streets, and the whole network while a dock is in focus. One
+// style, because they mean the same thing -- the network is context now.
+const EDGE_GHOST = { color: '#555', weight: 1, opacity: 0.12 };
+
+// Ride view owns the drawn edges whenever it is up, so dock focus only
+// paints when there is no ride on screen to be the subject instead.
+function dockFocus() {
+  return dockSelected !== null && rideView === null;
+}
+
+// A dock's straight lines are a handful of thin cyan strokes over 21k plasma
+// ones, which is not a comparison so much as a haystack. Ghosting the
+// heatmap the way ride view does keeps the network on screen in outline --
+// where the docks sit against where the bike goes is the whole point of the
+// layer -- and stops it competing for the eye.
+function ghostEdges() {
+  if (!dockFocus()) return;
+  geoLayer.eachLayer(layer => {
+    if (map.hasLayer(layer)) layer.setStyle(EDGE_GHOST);
+  });
+  restackLayers();
+}
+
+// Only the popup that ghosted the network puts it back: closing a dock while
+// a route from its own row is being shown must leave ride view alone.
+function unghostEdges() {
+  if (rideView === null) applyFilter();
 }
 
 function styleFor(count) {
@@ -1168,7 +1206,7 @@ map.on('popupopen', e => {
 // popup's own row does.
 function viewRide(ri, keepPopup = false) {
   rideView = ri;
-  if (!keepPopup) map.closePopup();
+  if (!keepPopup) { map.closePopup(); dockTraceTo = null; }
   const d = dateList[rideDateIdx[ri]] ?? '';
   const t = rideList[ri]?.[1] || '';
   const label = document.getElementById('ride-view-label');
@@ -1187,7 +1225,7 @@ function viewRide(ri, keepPopup = false) {
       layer.setStyle({ color: '#00e5ff', weight: 4, opacity: 0.95, lineJoin: 'round', lineCap: 'round' });
       on.push(layer);
     } else {
-      layer.setStyle({ color: '#555', weight: 1, opacity: 0.12 });
+      layer.setStyle(EDGE_GHOST);
     }
   });
   for (const l of on) l.bringToFront();
@@ -1197,6 +1235,9 @@ function viewRide(ri, keepPopup = false) {
 function exitRideView() {
   if (rideView === null) return;
   rideView = null;
+  // applyFilter redraws the open dock's links through applyDockFilter, so
+  // clearing this first is what brings the other partners back.
+  dockTraceTo = null;
   document.getElementById('ride-view-bar').style.display = 'none';
   syncYearLinks();
   applyFilter();
@@ -1360,7 +1401,9 @@ function applyFilter(renormalize = true) {
       map.removeLayer(layer);
     } else {
       if (!map.hasLayer(layer)) layer.addTo(map);
-      layer.setStyle(styleFor(c));
+      // Under a focused dock the slider and the time-lapse still move the
+      // network, they just move it in outline.
+      layer.setStyle(dockFocus() ? EDGE_GHOST : styleFor(c));
     }
   });
   restackLayers();

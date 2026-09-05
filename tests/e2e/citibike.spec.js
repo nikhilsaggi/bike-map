@@ -132,11 +132,13 @@ test.describe('Citibike dock layer', () => {
     expect(await page.evaluate(() => rideView)).toBe(3);
     await expect(page.locator('#ride-view-bar')).toBeVisible();
     // The popup is how a reader walks the network, so tracing a pair must not
-    // close it the way a street popup's own ride row does -- and the straight
-    // dock-to-dock lines stay drawn underneath the cyan route.
+    // close it the way a street popup's own ride row does.
     await expect(popup.locator('.dock-head')).toHaveText('Home Dock & Main St');
-    expect(await page.evaluate(() => dockLinks.getLayers().length)).toBe(2);
     expect(await page.evaluate(() => dockSelected)).toBe(0);
+    // Home reaches two docks, but the links are the same cyan as the route:
+    // while a pair's ride is up, that pair's straight line is the only one
+    // drawn, so the route sits over its own trip and nothing else.
+    expect(await page.evaluate(() => dockLinks.getLayers().length)).toBe(1);
   });
 
   test('says when the recording holds more than the trip that was clicked', async ({ page }) => {
@@ -173,6 +175,8 @@ test.describe('Citibike dock layer', () => {
     expect(await page.evaluate(() => rideView)).toBe(null);
     await expect(page.locator('#ride-view-bar')).toBeHidden();
     await expect(trace).toHaveText('\u25b8 2 routes');
+    // The dock is a dock again: every partner it reaches, drawn once more.
+    expect(await page.evaluate(() => dockLinks.getLayers().length)).toBe(2);
     // ... and the row still hops docks afterwards, which is what it is for.
     await popup.locator('.ride-row', { hasText: 'Park Dock' }).click();
     await expect
@@ -182,23 +186,28 @@ test.describe('Citibike dock layer', () => {
       .toHaveText('Park Dock & 5 Ave');
   });
 
-  test('a row that loses ride view any other way says so', async ({ page }) => {
+  test('escape takes the route and the dock behind it together', async ({ page }) => {
     await gotoMap(page);
     await showDocks(page);
     await page.evaluate(() => dockMarkers[0].openPopup());
-    const popup = page.locator('.leaflet-popup-content');
-    const trace = popup.locator('.ride-row', { hasText: 'Park Dock' }).locator('.dock-trace');
-
+    const trace = page.locator('.leaflet-popup-content .ride-row', { hasText: 'Park Dock' })
+      .locator('.dock-trace');
     await trace.click();
     await expect(trace).toHaveText('\u25b8 route 1/2');
-    // Ride view is left from several places, so the row reads its state back
-    // rather than trusting what it last did.
+
+    // Leaflet's own keyboard handler closes the popup and the page's clears
+    // ride view, so one key backs all the way out of the detour rather than
+    // leaving a dock selected with nothing on it.
     await page.keyboard.press('Escape');
-    await expect(trace).toHaveText('\u25b8 2 routes');
-    await expect(popup.locator('.dock-trace-note')).toBeHidden();
-    // And the next click starts the cycle again rather than clearing nothing.
-    await trace.click();
-    expect(await page.evaluate(() => rideView)).toBe(3);
+    await expect.poll(() => page.evaluate(() => rideView)).toBe(null);
+    expect(await page.evaluate(() => [dockSelected, dockLinks])).toEqual([null, null]);
+
+    // Reopening the dock starts from the top of the cycle with every link
+    // back, because the popup is rebuilt from scratch each time.
+    await page.evaluate(() => dockMarkers[0].openPopup());
+    await expect(page.locator('.leaflet-popup-content .ride-row', { hasText: 'Park Dock' })
+      .locator('.dock-trace')).toHaveText('\u25b8 2 routes');
+    expect(await page.evaluate(() => dockLinks.getLayers().length)).toBe(2);
   });
 
   test('a recording is offered even where the far dock cannot be placed', async ({ page }) => {
@@ -251,6 +260,82 @@ test.describe('Citibike dock layer', () => {
       hi.dispatchEvent(new Event('input', { bubbles: true }));
     });
     await expect.poll(() => page.evaluate(() => dockLinks?.getLayers().length ?? 0)).toBe(1);
+  });
+
+  // The colour of every edge currently drawn. Ghosted edges are all #555;
+  // a live heatmap is plasma, and ride view adds one cyan.
+  const edgeColors = (page) => page.evaluate(() => {
+    const out = [];
+    geoLayer.eachLayer(l => { if (map.hasLayer(l)) out.push(l.options.color); });
+    return out;
+  });
+
+  const allGhosted = (colors) => colors.length > 0 && colors.every(c => c === '#555');
+
+  test('a dock in focus ghosts the heatmap, and closing it paints it back',
+    async ({ page }) => {
+      await gotoMap(page);
+      await showDocks(page);
+      expect(allGhosted(await edgeColors(page))).toBe(false);
+
+      // A handful of straight cyan lines over the whole plasma network is a
+      // haystack; the network stays drawn, in outline.
+      await page.evaluate(() => dockMarkers[0].openPopup());
+      const focused = await edgeColors(page);
+      expect(focused).toHaveLength(3);
+      expect(allGhosted(focused)).toBe(true);
+
+      await page.evaluate(() => map.closePopup());
+      await expect.poll(async () => allGhosted(await edgeColors(page))).toBe(false);
+    });
+
+  test('the ghost survives the slider moving under an open dock', async ({ page }) => {
+    await gotoMap(page);
+    await showDocks(page);
+    await page.evaluate(() => dockMarkers[0].openPopup());
+
+    // The slider and the time-lapse still move the network while a dock is
+    // focused -- they just move it in outline.
+    await page.evaluate(() => {
+      const hi = document.getElementById('range-hi');
+      hi.value = '1';
+      hi.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await expect.poll(async () => allGhosted(await edgeColors(page))).toBe(true);
+  });
+
+  test('leaving a traced route goes back to the ghost, not the heatmap', async ({ page }) => {
+    await gotoMap(page);
+    await showDocks(page);
+    await page.evaluate(() => dockMarkers[0].openPopup());
+    const popup = page.locator('.leaflet-popup-content');
+    const trace = popup.locator('.ride-row', { hasText: 'Park Dock' }).locator('.dock-trace');
+
+    // Ride view owns the styling while it is up: one cyan route, the rest
+    // ghosted by ride view's own rule.
+    await trace.click();
+    expect((await edgeColors(page)).filter(c => c === '#00e5ff')).toHaveLength(2);
+
+    // Two more clicks walk off the end of the cycle and clear ride view. The
+    // dock is still open, so the network goes back to outline.
+    await trace.click();
+    await trace.click();
+    expect(await page.evaluate(() => rideView)).toBe(null);
+    expect(allGhosted(await edgeColors(page))).toBe(true);
+  });
+
+  test('closing the dock while its route is up leaves ride view alone', async ({ page }) => {
+    await gotoMap(page);
+    await showDocks(page);
+    await page.evaluate(() => dockMarkers[0].openPopup());
+    await page.locator('.leaflet-popup-content .ride-row', { hasText: 'Park Dock' })
+      .locator('.dock-trace').click();
+
+    await page.evaluate(() => map.closePopup());
+    // The route is still the subject, so the popup closing must not repaint
+    // the heatmap over it.
+    expect(await page.evaluate(() => rideView)).toBe(3);
+    expect((await edgeColors(page)).filter(c => c === '#00e5ff')).toHaveLength(2);
   });
 
   test('turning the layer off clears the map', async ({ page }) => {
