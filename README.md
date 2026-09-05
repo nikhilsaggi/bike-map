@@ -6,7 +6,7 @@ zoomable map and static heatmaps.
 
 **[View the live map](https://nikhilsaggi.github.io/bike-map/)**
 
-![Frequency map](sample_output/bike_routes_frequency.png)
+![Pass frequency map](sample_output/bike_routes_frequency.png)
 
 ## Interactive Map
 
@@ -260,7 +260,7 @@ findings/           write-ups of what that analysis found
 tests/              pytest suite (synthetic grids) + Playwright e2e for docs/
 rides/              ride CSVs (gitignored -- personal GPS traces)
 cache/              everything the pipeline generates (gitignored)
-sample_output/      the PNGs the README and findings/ link to
+sample_output/      committed sample renders (the README's map image)
 update.py           fetch -> convert -> reprocess -> commit, in one command
 ```
 

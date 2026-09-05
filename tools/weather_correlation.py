@@ -6,10 +6,12 @@ weather for Central Park, then reports how temperature and precipitation
 affect ride probability and distance.
 
 Usage:
-    python tools/weather_correlation.py            # prints stats, writes chart
-    python tools/weather_correlation.py --no-chart # stats only
+    python tools/weather_correlation.py
 
-Outputs sample_output/weather_correlation.png unless --no-chart is given.
+Prints only.  The map's stats panel draws the same bands from
+properties.weather (bike_routes/weather.py), filtered by whatever date range
+is on screen, so a static chart of them added nothing but a second copy to
+keep current.
 """
 
 from __future__ import annotations
@@ -23,16 +25,10 @@ import urllib.request
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
-import matplotlib as mpl
-
-mpl.use("Agg")
-import matplotlib.pyplot as plt  # backend must be set before this import
-
 # This script lives in tools/, so anchor outputs to the repo root rather
 # than the working directory it happens to be launched from.
 ROOT = Path(__file__).resolve().parent.parent
 GEOJSON_PATH = ROOT / "docs/rides.geojson.gz"
-CHART_PATH = ROOT / "sample_output/weather_correlation.png"
 NYC_LAT, NYC_LON = 40.78, -73.97  # Central Park
 KM_TO_MI = 0.621371
 
@@ -52,7 +48,9 @@ def load_rides(path: Path) -> dict[str, float]:
         data = json.load(f)
     dates = data["properties"]["dates"]
     per_day: dict[str, float] = {}
-    for date_idx, _time, dist_km in data["properties"]["rides"]:
+    # Rows have grown a trailing field (the Citibike source flag); ignore any
+    # entry past the three this join needs rather than breaking on the next one.
+    for date_idx, _time, dist_km, *_rest in data["properties"]["rides"]:
         d = dates[date_idx]
         per_day[d] = per_day.get(d, 0.0) + (dist_km or 0.0) * KM_TO_MI
     return per_day
@@ -119,36 +117,10 @@ def summarize(
     return out
 
 
-def render_chart(summary: dict[str, dict[str, dict[str, float]]], path: Path) -> None:
-    """Save a two-panel bar chart of ride probability by temp and rain."""
-    fig, axes = plt.subplots(1, 2, figsize=(11, 4.5), facecolor="#0d0d0d")
-    panels = (
-        (axes[0], "temp", [b[2] for b in TEMP_BANDS], "Ride probability by max temperature"),
-        (axes[1], "rain", [b[2] for b in RAIN_BANDS], "Ride probability by precipitation"),
-    )
-    for ax, kind, labels, title in panels:
-        pcts = [summary[kind][label]["pct"] for label in labels]
-        ax.bar(labels, pcts, color="#7b3ff2")
-        ax.set_facecolor("#0d0d0d")
-        ax.set_title(title, color="white", fontsize=11)
-        ax.set_ylabel("% of days with a ride", color="#ccc", fontsize=9)
-        ax.tick_params(colors="#ccc", labelsize=9)
-        for spine in ax.spines.values():
-            spine.set_color("#444")
-        for i, pct in enumerate(pcts):
-            ax.text(i, pct + 1, f"{pct:.0f}%", ha="center", color="white", fontsize=9)
-        ax.set_ylim(0, 100)
-    fig.tight_layout()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(path, dpi=150, facecolor=fig.get_facecolor(), bbox_inches="tight")
-    print(f"Chart -> {path}")
-
-
 def main(argv: list[str] | None = None) -> None:
     """Run the weather correlation analysis."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--no-chart", action="store_true", help="print stats only")
-    args = parser.parse_args(argv)
+    parser.parse_args(argv)
 
     if not GEOJSON_PATH.exists():
         sys.exit(f"{GEOJSON_PATH} not found -- run the pipeline first")
@@ -175,9 +147,6 @@ def main(argv: list[str] | None = None) -> None:
                 f"   ({row['mi_per_ride_day']:.1f} mi per riding day)"
             )
         print()
-
-    if not args.no_chart:
-        render_chart(summary, CHART_PATH)
 
 
 if __name__ == "__main__":

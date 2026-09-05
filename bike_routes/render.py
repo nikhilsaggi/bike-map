@@ -227,28 +227,28 @@ def _render(
     sm.set_array([])
     cbar_ax = fig.add_axes([0.15, 0.06, 0.70, 0.015])
     cbar = fig.colorbar(sm, cax=cbar_ax, orientation="horizontal")
-    cbar.set_label("Number of rides", color="white", fontsize=11, labelpad=8)
+    cbar.set_label("Number of passes", color="white", fontsize=11, labelpad=8)
     cbar.ax.xaxis.set_tick_params(color="white")
     plt.setp(cbar.ax.xaxis.get_ticklabels(), color="white", fontsize=9)
     cbar.outline.set_edgecolor("white")
 
     legend_elements = [
-        Line2D([0], [0], color=cmap(scale(1)), linewidth=2, label="1 ride"),
+        Line2D([0], [0], color=cmap(scale(1)), linewidth=2, label="1 pass"),
         Line2D(
             [0],
             [0],
             color=cmap(scale(max(max_count // 4, 1))),
             linewidth=2,
-            label=f"~{max_count // 4} rides",
+            label=f"~{max_count // 4} passes",
         ),
         Line2D(
             [0],
             [0],
             color=cmap(scale(max_count // 2)),
             linewidth=2,
-            label=f"~{max_count // 2} rides",
+            label=f"~{max_count // 2} passes",
         ),
-        Line2D([0], [0], color=cmap(1.0), linewidth=2, label=f"{max_count} rides"),
+        Line2D([0], [0], color=cmap(1.0), linewidth=2, label=f"{max_count} passes"),
     ]
     legend = ax.legend(
         handles=legend_elements,
@@ -258,7 +258,7 @@ def _render(
         edgecolor="#555",
         labelcolor="white",
         fontsize=9,
-        title="Ride frequency",
+        title="Pass frequency",
         title_fontsize=9,
     )
     legend.get_title().set_color("white")
