@@ -89,9 +89,11 @@ RENDER_CACHE_PATH = CACHE_DIR / "render_cache.pkl"
 ROUTE_CACHE_PATH = CACHE_DIR / "route_cache.pkl"
 CACHE_VERSIONS_PATH = CACHE_DIR / "cache_versions.json"
 WEATHER_CACHE_PATH = CACHE_DIR / "weather_cache.json"
-# Citi Bike account export, normalised by ingest.citibike. Not matcher input
-# -- these trips have no GPS trace -- so it is not in _processing_config().
+# Citi Bike account export, normalised by ingest.citibike, plus the GBFS dock
+# list it resolves names against. Neither is matcher input -- these trips have
+# no GPS trace -- so neither is in _processing_config().
 CITIBIKE_TRIPS_PATH = CACHE_DIR / "citibike_trips.json"
+CITIBIKE_STATIONS_PATH = CACHE_DIR / "citibike_stations.json"
 
 
 RENDER_CACHE_FORMAT = "hw-name-v1"  # bump invalidates render_cache.pkl (rebuilt from the graph)

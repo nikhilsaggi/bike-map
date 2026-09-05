@@ -24,10 +24,11 @@ The pipeline exports a compressed GeoJSON that powers an interactive
 - Riding stats: distance/time totals, average speed, longest ride,
   miles and new-street miles per year, rides-by-hour and weekday
   histograms (data is stored metric; the UI displays miles)
-- Optional Citi Bike stats: dock trips from a Lyft account export, ranked by
-  which docks you only ever leave from or arrive at. Numbers only, no map
-  layer — these trips carry no GPS trace, so nothing here is drawn or counted
-  toward the passes or the coverage figure
+- Optional Citi Bike dock layer: markers sized by how much a dock was used in
+  the date range on screen, so the slider and the time-lapse move them the way
+  they move the streets. Click one to see where its trips actually went. The
+  trips carry no GPS trace, so no route between docks is ever drawn and none
+  of it counts toward the passes or the coverage figure
   ([why](findings/citibike-trips.md))
 
 To view locally:
@@ -80,8 +81,8 @@ Requires Python 3.9+.
    ```
 
    These are dock-to-dock records with no GPS trace, so they never join the
-   drawn edges or the coverage figure — they become a separate stats section
-   and nothing on the map. Once the cache exists, every later
+   drawn edges or the coverage figure — they become their own toggleable dock
+   layer plus a stats section. Once the cache exists, every later
    `python -m bike_routes` picks it up with no flag.
 
 5. Outputs:
@@ -222,8 +223,8 @@ part of it; `findings/` holds what they found:
 - [Traversal counting](findings/traversal-counting.md) — how a pass is
   detected from raw fixes, and why a corridor's members combine the way they do
 - [Citi Bike trips](findings/citibike-trips.md) — a second source with no
-  trace: why it has no speed, why it earned no map layer, and what the dock
-  counts show
+  trace: why it has no speed, why its routes are never drawn, and what two
+  discarded layers taught about the difference
 
 `tools/hmm_matcher_eval.py` compares the two matchers on real rides, and
 `tools/traversal_audit.py` checks pass counting against the raw traces.
@@ -261,6 +262,8 @@ gitignored):
   falls back to the last good copy
 - `cache/citibike_trips.json` — the normalised Citi Bike account export
   (written by `ingest.citibike`, absent until you run it)
+- `cache/citibike_stations.json` — GBFS dock coordinates, so a failed fetch
+  falls back to the last good copy
 
 Delete any cache file — or the whole directory — to force a rebuild.
 Changing processing parameters automatically triggers a full reprocess, and

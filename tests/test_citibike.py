@@ -7,7 +7,21 @@ import json
 import pytest
 
 from bike_routes.citibike import _citibike_summary
-from bike_routes.ingest.citibike import _is_ebike, _money, _normalise, ingest
+from bike_routes.ingest.citibike import (
+    _cache_well_formed,
+    _is_ebike,
+    _load_cached_stations,
+    _money,
+    _normalise,
+    _save_station_cache,
+    ingest,
+)
+
+# Two docks GBFS knows, so the layer can place them.
+STATIONS = {
+    "A St & 1 Ave": (40.70, -73.94),
+    "B St & 2 Ave": (40.75, -73.98),
+}
 
 
 def _record(ride_id, start_ms, a, b, *, dur=600_000, bike="100-0001", items=None):
@@ -28,9 +42,13 @@ def _record(ride_id, start_ms, a, b, *, dur=600_000, bike="100-0001", items=None
 
 @pytest.fixture
 def trips_path(tmp_path, monkeypatch):
-    """Point the trips cache at tmp_path."""
+    """Point both caches at tmp_path and stub the GBFS fetch."""
     path = tmp_path / "citibike_trips.json"
     monkeypatch.setattr("bike_routes.config.CITIBIKE_TRIPS_PATH", path)
+    monkeypatch.setattr(
+        "bike_routes.config.CITIBIKE_STATIONS_PATH", tmp_path / "citibike_stations.json"
+    )
+    monkeypatch.setattr("bike_routes.ingest.citibike._fetch_stations", lambda: STATIONS)
     return path
 
 
@@ -96,8 +114,9 @@ def test_summary_is_none_without_a_cache():
     assert _citibike_summary({}) is None
 
 
-def test_summary_rejects_a_future_format(trips_path):
-    trips_path.write_text(json.dumps({"format": 99, "trips": [{"t": 1}]}))
+def test_summary_rejects_a_stale_format(trips_path):
+    """A cache from before the dock layer has no coordinates to draw."""
+    trips_path.write_text(json.dumps({"format": 1, "trips": [{"t": 1}]}))
     assert _citibike_summary({}) is None
 
 
@@ -119,11 +138,11 @@ def test_summary_counts_docks_and_oddities(tmp_path):
     ingest(_write_export(tmp_path, records))
     s = _citibike_summary({})
 
-    assert s["trips"] == 6
+    assert len(s["trips"]) == 6
     assert s["aborted"] == 1
     assert s["bikes"] == 5
     assert s["repeat_bikes"] == 1
-    assert s["docks"] == 2
+    assert len(s["docks"]) == 2
     assert s["once_only"] == 0
     # A: four departures to B plus the aborted unlock that also started there,
     # against r4's arrival and the aborted unlock's own return. B is the mirror.
@@ -173,29 +192,99 @@ def test_summary_same_day_matches_ride_filenames(tmp_path):
     )
     ride_stats = {"2023-11-14_08-00-00_-0500.csv": {"dist_m": 5000.0}}
     s = _citibike_summary(ride_stats)
-    assert s["days"] == 2
+    assert len(s["days"]) == 2
     assert s["same_day"] == 1
     assert s["from"] == "2023-11-14"
     assert s["to"] == "2023-11-15"
 
 
 @pytest.mark.usefixtures("trips_path")
-def test_ingest_ships_no_coordinates(tmp_path):
-    """Nothing draws a dock, so nothing should be carrying its position.
+def test_trip_rows_index_into_the_dock_and_day_lists(tmp_path):
+    """The page filters docks by date, so each trip has to carry both.
 
-    The GBFS lookup that produced coordinates went out with the map layer;
-    a payload that grew them back would be dead weight in every download.
+    Indices rather than repeated strings: the rows are what makes the layer
+    respond to the slider, and there is one per trip.
     """
+    # 2023-11-14 and 2023-11-15, NYC local.
+    day1, day2 = 1_699_982_000_000, 1_700_068_400_000
+    ingest(
+        _write_export(
+            tmp_path,
+            [
+                _record("r1", day1, "A St & 1 Ave", "B St & 2 Ave"),
+                _record("r2", day2, "B St & 2 Ave", "A St & 1 Ave"),
+                _record("r3", day2, "A St & 1 Ave", "B St & 2 Ave"),
+            ],
+        )
+    )
+    s = _citibike_summary({})
+
+    assert s["days"] == ["2023-11-14", "2023-11-15"]
+    names = [d["name"] for d in s["docks"]]
+    # Busiest first: A has 2 out + 1 in, B has 1 out + 2 in -- tied at 3, so
+    # the name breaks it.
+    assert names == ["A St & 1 Ave", "B St & 2 Ave"]
+    assert s["trips"] == [[0, 1, 0], [1, 0, 1], [0, 1, 1]]
+    for a, b, d in s["trips"]:
+        assert names[a]
+        assert names[b]
+        assert s["days"][d]
+
+
+@pytest.mark.usefixtures("trips_path")
+def test_a_dock_gbfs_cannot_place_keeps_its_counts(tmp_path):
+    """No coordinate means it is not drawn, not that it stops existing.
+
+    Dropping it would quietly shrink the dock count and the totals in order
+    to tidy the map.
+    """
+    ingest(
+        _write_export(
+            tmp_path,
+            [
+                _record("r1", 1_000, "A St & 1 Ave", "B St & 2 Ave"),
+                _record("r2", 2_000, "A St & 1 Ave", "Gone St & Nowhere Ave"),
+            ],
+        )
+    )
+    s = _citibike_summary({})
+
+    assert len(s["docks"]) == 3
+    gone = next(d for d in s["docks"] if d["name"] == "Gone St & Nowhere Ave")
+    assert gone["at"] is None
+    assert (gone["out"], gone["in"]) == (0, 1)
+    assert all(d["at"] is not None for d in s["docks"] if d["name"] != gone["name"])
+    # Still a trip, still a day, still in the once-only count.
+    assert len(s["trips"]) == 2
+    assert s["once_only"] == 2  # B and Gone, each used once
+
+
+@pytest.mark.usefixtures("trips_path")
+def test_station_cache_round_trip_and_shape_guard(tmp_path):
+    _save_station_cache(STATIONS)
+    assert _load_cached_stations() == STATIONS
+
+    assert _cache_well_formed({"A": {"lat": 1.0, "lon": 2.0}})
+    assert not _cache_well_formed({"A": {"lat": 1.0}})  # no lon
+    assert not _cache_well_formed({"A": "somewhere"})
+    assert not _cache_well_formed({})
+    assert not _cache_well_formed([])
+
+    (tmp_path / "citibike_stations.json").write_text('{"A": {"lat": 1.0}}')
+    assert _load_cached_stations() is None
+
+
+@pytest.mark.usefixtures("trips_path")
+def test_ingest_falls_back_to_the_station_cache(tmp_path, monkeypatch):
+    """A GBFS outage must not lose the docks placed on the last run."""
+    _save_station_cache(STATIONS)
+
+    def boom():
+        msg = "gbfs down"
+        raise OSError(msg)
+
+    monkeypatch.setattr("bike_routes.ingest.citibike._fetch_stations", boom)
     payload = ingest(
         _write_export(tmp_path, [_record("r1", 1_000, "A St & 1 Ave", "B St & 2 Ave")])
     )
-    assert set(payload) == {"format", "source", "trips"}
-    assert all(
-        set(t) == {"t", "dur", "a", "b", "bike", "paid", "gross", "credit", "ebike"}
-        for t in payload["trips"]
-    )
-
-    s = _citibike_summary({})
-    assert "stations" not in s
-    assert "pairs" not in s
-    assert all(set(f) == {"name", "out", "in"} for f in s["flow"])
+    assert all(at is not None for at in payload["docks"].values())

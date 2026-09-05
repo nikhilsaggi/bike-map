@@ -246,7 +246,7 @@ def test_citibike_block_leaves_the_drawn_edges_alone(tmp_path, monkeypatch):
     trips.write_text(
         json.dumps(
             {
-                "format": 1,
+                "format": 2,
                 "trips": [
                     {
                         "t": 1_700_000_000_000,
@@ -260,6 +260,7 @@ def test_citibike_block_leaves_the_drawn_edges_alone(tmp_path, monkeypatch):
                         "ebike": False,
                     }
                 ],
+                "docks": {"A St": [-73.9, 40.7], "B St": [-73.95, 40.75]},
             }
         )
     )
@@ -277,8 +278,8 @@ def test_citibike_block_leaves_the_drawn_edges_alone(tmp_path, monkeypatch):
         data = json.load(f)
     props = data["properties"]
 
-    assert props["citibike"]["trips"] == 1
-    assert props["citibike"]["docks"] == 2
+    assert len(props["citibike"]["trips"]) == 1
+    assert len(props["citibike"]["docks"]) == 2
     # The measured side is untouched: one own-bike ride, one drawn edge, and
     # the features carry ride indices and nothing else.
     assert props["total_rides"] == 1

@@ -41,19 +41,35 @@ export const SPEED_BLOCK = {
   min_m: 250.0,
 };
 
-// Citi Bike dock trips: station-to-station, no trace, so this block carries
-// counts and never geometry -- there is no dock layer to feed. Arithmetic is
-// closed by hand: every trip has one departure and one arrival, so both
-// columns sum to 11 (out 6 + 1 + 4, in 6 + 5 + 0). `flow` is already ranked
-// by the pipeline, most departed-from first, and reaches both ends of the
-// range: Terminal is +4, Home is 0, Park is -4.
+// Citi Bike dock trips: dock-to-dock, no trace, so this block carries the
+// trips themselves and never a route -- the page filters the dock markers by
+// the same slider that filters the edges, and draws a dock's own trips only
+// on click. Arithmetic is closed by hand: every trip has one departure and
+// one arrival, so both columns sum to 5 (out 3 + 1 + 1, in 1 + 3 + 1).
+//
+// `days` deliberately straddles the ride dates: 2023-04-01 and 2024-05-01 are
+// also ride days, 2025-01-01 is past the last one, so filtering the slider to
+// 2023 must drop the later docks. Coordinates sit near the map centre so a
+// marker is on screen; Ghost Dock has none, the way a renamed dock does.
 export const CITIBIKE_BLOCK = {
-  trips: 11,
+  trips: [
+    [0, 1, 0],  // Home -> Park, 2023-04-01
+    [0, 1, 1],  // Home -> Park, 2024-05-01
+    [0, 2, 2],  // Home -> Terminal, 2025-01-01
+    [1, 0, 2],  // Park -> Home, 2025-01-01
+    [2, 3, 2],  // Terminal -> Ghost, 2025-01-01
+  ],
+  days: ['2023-04-01', '2024-05-01', '2025-01-01'],
+  docks: [
+    { name: 'Home Dock & Main St', at: [-73.955, 40.7325], out: 3, in: 1 },
+    { name: 'Park Dock & 5 Ave', at: [-73.965, 40.7375], out: 1, in: 3 },
+    { name: 'Terminal Dock & 42 St', at: [-73.95, 40.7425], out: 1, in: 1 },
+    { name: 'Ghost Dock & Gone St', at: null, out: 0, in: 1 },
+  ],
   hours: 2.0,
-  days: 6,
   from: '2023-04-01',
-  to: '2024-07-04',
-  same_day: 4,
+  to: '2025-01-01',
+  same_day: 2,
   median_min: 9.0,
   longest_min: 30,
   ebike_min: 3,
@@ -63,7 +79,6 @@ export const CITIBIKE_BLOCK = {
   aborted: 1,
   bikes: 8,
   repeat_bikes: 2,
-  docks: 3,
   once_only: 0,
   flow: [
     { name: 'Terminal Dock & 42 St', out: 4, in: 0 },

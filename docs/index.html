@@ -162,6 +162,19 @@
      A stats section with no map layer: the only things a dock trip could draw
      are a marker (which says nothing on its own) and a line to another dock
      (which is not a route), so it says its piece in text. */
+  #cb-toggle {
+    display: block; margin-top: 8px; padding-top: 8px; border-top: 1px solid #333;
+    color: #888; font-size: 11px; cursor: pointer; user-select: none;
+  }
+  #cb-toggle.hidden { display: none; }
+  #cb-toggle:hover { color: #ccc; }
+  #cb-check { vertical-align: -1px; margin-right: 3px; accent-color: #a8d8e8; }
+  /* The ride history starts in 2021 and the dock trips in 2025, so most of
+     the slider's range has no docks in it at all. Saying so here is the
+     difference between "nothing to show" and "this is broken". */
+  #cb-range { color: #555; font-size: 9px; }
+  .dock-head { color: #a8d8e8; font-weight: 600; }
+  .dock-sub { color: #666; font-size: 10px; margin-bottom: 3px; }
   #stat-citibike { line-height: 1.5; }
   #stat-citibike .r-row { margin: 1px 0; }
   .cb-flow-row { display: flex; align-items: baseline; gap: 6px; padding: 1px 0; }
@@ -304,6 +317,12 @@
     </div>
   </div>
   <div id="filter-dates"><span id="date-lo"></span><span id="date-hi"></span></div>
+  <!-- Revealed only when the payload carries a citibike block. Off by
+       default: the map opens as the map of rides it has always been. -->
+  <label id="cb-toggle" class="hidden">
+    <input type="checkbox" id="cb-check"> Citi Bike docks
+    <span id="cb-range"></span>
+  </label>
 </div>
 
 <script>
@@ -590,32 +609,216 @@ function renderSpeedSplits(speed) {
 }
 
 // -- Citi Bike ---------------------------------------------------------------
-// A second, weaker kind of evidence, and a stats section rather than a map
-// layer.  These trips are dock-to-dock with no GPS trace, so the route
+// A second, weaker kind of evidence, drawn as its own layer and never as
+// routes.  These trips are dock-to-dock with no GPS trace, so what happened
 // between two docks is unknown and nothing here contributes to the drawn
-// edges, their pass counts, or the coverage percentage.  A dock layer was
-// built and taken back out: a marker on its own says nothing the numbers do
-// not, and a straight line between two docks is not a route.  What the data
-// does know exactly is that a dock is one-way, which the matched-edge map
-// cannot say at all -- an edge has a direction but no origin.
+// edges, their pass counts, or the coverage percentage.  What is exact is
+// where a trip began, where it ended, and when -- so the layer is built to be
+// explored against the ride heatmap rather than to state a finding: markers
+// resize with the same date slider that filters the edges, and a dock's own
+// trips are drawn only when someone clicks it and asks.
 //
-// The rows are ranked in the pipeline (citibike._flow_extremes), not here,
-// the same way the speed corridors are.
+// Docks are a cool pale tone deliberately outside the plasma ramp, which
+// means pass frequency; size carries dock volume, so no second colour scale
+// competes with the first.  Cyan is the page's existing selection colour.
+const DOCK_COLOR = '#a8d8e8';
+const DOCK_SELECTED = '#00e5ff';
+const DOCK_R_MIN = 2.5;
+const DOCK_R_MAX = 13;
+
+let cbData = null;
+let dockLayer = null;      // markers with at least one trip in the date range
+let dockLinks = null;      // the selected dock's trips, drawn on demand
+let dockMarkers = [];      // index-aligned with cbData.docks
+let dockTrips = [];        // dock index -> indices into cbData.trips
+let dockSelected = null;   // dock index whose trips are drawn, if any
+let dockSqrtMax = 1;
+
+// The two sources share dates but not days: 32 of the Citi Bike days have no
+// own-bike ride, so there is no joint index to slide over.  Joining on the
+// ISO date string itself is exact and needs nothing precomputed.
+function dockDateBounds() {
+  const lo = dateList[filterLo] ?? '0000-00-00';
+  const hi = filterHi === Infinity ? '9999-99-99' : (dateList[filterHi] ?? '9999-99-99');
+  return [lo, hi];
+}
+
+function dockUseInRange(di, lo, hi) {
+  let out = 0, into = 0;
+  for (const ti of dockTrips[di]) {
+    const [a, b, d] = cbData.trips[ti];
+    const day = cbData.days[d];
+    if (day < lo || day > hi) continue;
+    // A trip that started and ended here counts once each way, as it should.
+    if (a === di) out++;
+    if (b === di) into++;
+  }
+  return [out, into];
+}
+
+// Where the selected dock's trips went, in range, busiest first.
+function dockPartners(di, lo, hi) {
+  const seen = new Map();
+  for (const ti of dockTrips[di]) {
+    const [a, b, d] = cbData.trips[ti];
+    if (cbData.days[d] < lo || cbData.days[d] > hi) continue;
+    const other = a === di ? b : a;
+    if (other === di) continue;  // an unlock re-docked where it started
+    const rec = seen.get(other) || { out: 0, into: 0 };
+    if (a === di) rec.out++; else rec.into++;
+    seen.set(other, rec);
+  }
+  return [...seen.entries()]
+    .map(([idx, r]) => ({ idx, ...r, n: r.out + r.into }))
+    .sort((x, y) => y.n - x.n);
+}
+
+function clearDockLinks() {
+  if (dockLinks) { map.removeLayer(dockLinks); dockLinks = null; }
+  const m = dockSelected === null ? null : dockMarkers[dockSelected];
+  if (m) m.setStyle({ fillColor: DOCK_COLOR });
+  dockSelected = null;
+}
+
+// Straight dock-to-dock, and only for the one dock a reader asked about.
+// A straight line cannot be mistaken for a claim about which streets the
+// trip used, and drawn on demand it answers a question instead of asserting
+// a shape over the whole city.
+function showDockLinks(di) {
+  clearDockLinks();
+  const [lo, hi] = dockDateBounds();
+  const from = cbData.docks[di];
+  if (!from.at) return;
+  dockLinks = L.layerGroup();
+  for (const p of dockPartners(di, lo, hi)) {
+    const to = cbData.docks[p.idx];
+    if (!to.at) continue;
+    L.polyline([[from.at[1], from.at[0]], [to.at[1], to.at[0]]], {
+      color: DOCK_SELECTED, weight: Math.min(4, 1 + p.n * 0.6),
+      opacity: 0.55, interactive: false,
+    }).addTo(dockLinks);
+  }
+  dockLinks.addTo(map);
+  dockSelected = di;
+  const m = dockMarkers[di];
+  if (m) { m.setStyle({ fillColor: DOCK_SELECTED }); m.bringToFront(); }
+}
+
+function dockPopup(di) {
+  const [lo, hi] = dockDateBounds();
+  const d = cbData.docks[di];
+  const [out, into] = dockUseInRange(di, lo, hi);
+  const partners = dockPartners(di, lo, hi);
+  const rows = partners.map(p => {
+    const name = cbData.docks[p.idx].name;
+    const bits = [];
+    if (p.out) bits.push(`&rarr;&nbsp;${p.out}`);
+    if (p.into) bits.push(`&larr;&nbsp;${p.into}`);
+    return `<div class="ride-row" title="${name}">${name} <span style="color:#666">${bits.join(' ')}</span></div>`;
+  });
+  const head = `<div class="dock-head">${d.name}</div>` +
+    `<div class="dock-sub">${out + into} trip${out + into !== 1 ? 's' : ''} &middot; ` +
+    `${out} out / ${into} in${partners.length ? ` &middot; ${partners.length} dock${partners.length !== 1 ? 's' : ''} reached` : ''}</div>`;
+  return `<div style="max-height:200px;overflow-y:auto">${head}${rows.join('')}</div>`;
+}
+
+// Mirrors applyFilter's own renormalise/freeze: the slider rescales to what
+// is in range, playback holds the full-history scale so docks grow.
+function applyDockFilter(renormalize = true) {
+  // Nothing to resize while the layer is off; the toggle refreshes it on the
+  // way back in, so skipping here cannot leave a stale radius on screen.
+  if (!dockLayer || !cbData || !map.hasLayer(dockLayer)) return;
+  const [lo, hi] = dockDateBounds();
+  let maxUse = 1;
+  for (let i = 0; i < dockMarkers.length; i++) {
+    const m = dockMarkers[i];
+    if (!m) continue;
+    const [out, into] = dockUseInRange(i, lo, hi);
+    m._use = out + into;
+    if (m._use > maxUse) maxUse = m._use;
+  }
+  if (renormalize) dockSqrtMax = Math.sqrt(maxUse);
+  for (const m of dockMarkers) {
+    if (!m) continue;
+    if (m._use === 0) {
+      dockLayer.removeLayer(m);
+      continue;
+    }
+    const t = Math.min(1, Math.sqrt(m._use) / dockSqrtMax);
+    m.setRadius(DOCK_R_MIN + (DOCK_R_MAX - DOCK_R_MIN) * t);
+    if (!dockLayer.hasLayer(m)) dockLayer.addLayer(m);
+  }
+  // The selected dock's partners depend on the range too, so redraw them.
+  if (dockSelected !== null) showDockLinks(dockSelected);
+}
+
+function buildDockLayer() {
+  dockLayer = L.layerGroup();
+  dockMarkers = cbData.docks.map((d, i) => {
+    if (!d.at) return null;  // a dock GBFS no longer lists; it still counts
+    const m = L.circleMarker([d.at[1], d.at[0]], {
+      radius: DOCK_R_MIN, fillColor: DOCK_COLOR, fillOpacity: 0.8,
+      // A ring in the basemap's own dark keeps a dock legible where it lands
+      // on top of a bright plasma segment.
+      color: '#0d0d0d', weight: 1.5,
+    });
+    m.bindTooltip(() => {
+      const [lo, hi] = dockDateBounds();
+      const [out, into] = dockUseInRange(i, lo, hi);
+      return `${d.name}<br>${out + into} trips (${out} out / ${into} in)`;
+    }, { sticky: true });
+    m.bindPopup(() => dockPopup(i), { className: 'ride-popup' });
+    m.on('popupopen', () => showDockLinks(i));
+    m.on('popupclose', clearDockLinks);
+    return m;
+  });
+}
+
+function initDockLayer(cb) {
+  if (!cb || !cb.docks?.some(d => d.at)) return;
+  cbData = cb;
+  dockTrips = cb.docks.map(() => []);
+  cb.trips.forEach(([a, b], ti) => {
+    dockTrips[a].push(ti);
+    if (b !== a) dockTrips[b].push(ti);
+  });
+  buildDockLayer();
+  const toggle = document.getElementById('cb-toggle');
+  const check = document.getElementById('cb-check');
+  const month = (iso) => new Date(`${iso}T12:00:00`).toLocaleDateString('en-US',
+    { month: 'short', year: 'numeric' });
+  document.getElementById('cb-range').textContent =
+    cb.from ? `(${month(cb.from)} on)` : '';
+  toggle.classList.remove('hidden');
+  check.addEventListener('change', () => {
+    if (check.checked) {
+      // On the map first: applyDockFilter is a no-op while the layer is off,
+      // so filtering before adding would leave an empty group.
+      dockLayer.addTo(map);
+      applyDockFilter();
+    } else {
+      clearDockLinks();
+      map.closePopup();
+      map.removeLayer(dockLayer);
+    }
+  });
+}
 
 function renderCitibike(cb) {
-  if (!cb || !cb.trips) return;
+  if (!cb || !cb.trips?.length) return;
   const el = document.getElementById('stat-citibike');
   el.innerHTML =
-    [['Trips', cb.trips.toLocaleString()],
+    [['Trips', cb.trips.length.toLocaleString()],
      ['Time', `${Math.round(cb.hours).toLocaleString()} h`],
-     ['Days out', cb.days.toLocaleString()],
+     ['Days out', cb.days.length.toLocaleString()],
      ['Typical trip', `${cb.median_min} min`]]
       .map(([k, v]) => `<div class="r-row"><span class="label">${k}</span><strong>${v}</strong></div>`)
       .join('') +
     `<div class="sub-title">One-way docks</div>`;
 
   // Both ends of the net-flow range, so the list reads as a balance rather
-  // than a leaderboard.
+  // than a leaderboard.  Ranked in the pipeline (citibike._flow_extremes),
+  // the same way the speed corridors are.
   const flows = document.createElement('div');
   for (const s of cb.flow || []) {
     const net = s.out - s.in;
@@ -640,11 +843,11 @@ function renderCitibike(cb) {
   note.className = 'cb-note';
   note.innerHTML =
     `Net departures minus arrivals, with out/in beside it. ` +
-    `<strong>${cb.same_day} of ${cb.days}</strong> Citi Bike days were days ` +
-    `with an own-bike ride too, so these are the one-way legs rather than a ` +
-    `substitute. ${cb.once_only} of ${cb.docks} docks were used once. ` +
-    `No trace is recorded between docks, so none of this is drawn on the map ` +
-    `or counted toward coverage.`;
+    `<strong>${cb.same_day} of ${cb.days.length}</strong> Citi Bike days were ` +
+    `days with an own-bike ride too. ${cb.once_only} of ${cb.docks.length} docks ` +
+    `were used once. Turn on <em>Citi Bike docks</em> in the legend to put them ` +
+    `on the map; no trace is recorded between docks, so nothing here is drawn ` +
+    `as a route or counted toward coverage.`;
   el.appendChild(note);
 
   const odd = document.createElement('div');
@@ -652,7 +855,7 @@ function renderCitibike(cb) {
   odd.textContent = [`${cb.aborted} unlocks re-docked within 2 min`,
     `${cb.repeat_bikes} of ${cb.bikes} bikes ridden more than once`,
     `at least ${cb.ebike_min} ebike trips`,
-    `$${cb.paid.toFixed(2)} paid of $${cb.charged.toFixed(2)} charged`].join(' \u00b7 ');
+    `$${cb.paid.toFixed(2)} paid of $${cb.charged.toFixed(2)} charged`].join(' · ');
   el.appendChild(odd);
 
   showChip('stat-citibike');
@@ -876,6 +1079,7 @@ function applyFilter(renormalize = true) {
     sqrtMax = Math.sqrt(filteredMax);
     document.getElementById('legend-max').textContent = filteredMax;
   }
+  applyDockFilter(renormalize);
   geoLayer.eachLayer(layer => {
     const c = layer._newCount;
     if (!renormalize && c === layer._filteredCount) return;
@@ -901,6 +1105,12 @@ function restackLayers() {
   geoLayer.eachLayer(l => { if (l._filteredCount > 0) visible.push(l); });
   visible.sort((a, b) => a._filteredCount - b._filteredCount);
   for (const l of visible) l.bringToFront();
+  // The edges above draw into the same canvas as the dock markers, so a
+  // filter change would otherwise bury the dock layer under them.
+  if (dockLayer && map.hasLayer(dockLayer)) {
+    dockLayer.eachLayer(l => l.bringToFront());
+    if (dockLinks) dockLinks.eachLayer(l => l.bringToFront());
+  }
 }
 
 // -- Date-range slider + time-lapse playback --------------------------------
@@ -1124,6 +1334,7 @@ fetch('rides.geojson.gz')
     renderStreets(data.properties ?? {});
     renderSpeedSplits(data.properties.speed);
     renderCitibike(data.properties?.citibike);
+    initDockLayer(data.properties?.citibike);
     restoreSection();
 
     sqrtMax = Math.sqrt(maxCount);

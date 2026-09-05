@@ -1,4 +1,4 @@
-"""Citi Bike trip stats for the interactive map sidebar.
+"""Citi Bike trip stats and dock layer for the interactive map.
 
 Reads the cache ``ingest.citibike`` writes and aggregates it into the
 ``properties.citibike`` block. Pure aggregation: no network, no state, no
@@ -7,13 +7,14 @@ the owner's.
 
 These trips are dock-to-dock with no GPS trace, so nothing here may reach
 ``edge_counts``, ``edge_traversals`` or ``coverage`` -- those carry a
-"measured" contract this data cannot honour. It is a stats block and only a
-stats block: there is no Citi Bike map layer, because the only two things
-that could be drawn are a dock's position (which says nothing on its own)
-and a line between two docks (which is not a route). What the numbers can
-say exactly is that a dock is one-way, and that is a fact about *trips* the
-matched-edge map has no way to express -- an edge has a direction but no
-origin.
+"measured" contract this data cannot honour, and no route between two docks
+is ever drawn. What is exact is where a trip began and where it ended, and
+when, so the block ships the trips themselves rather than a summary of them:
+the page places a dock per marker, sizes it by use within the date range the
+slider is showing, and draws a dock's own trips only when someone clicks it.
+The point is to be explorable next to the ride heatmap, not to state a
+finding -- a reader comparing where the bike goes against where the docks
+are is doing something no ranked list does for them.
 
 Speed is deliberately absent. Every duration in the export is a whole number
 of minutes and the end time is the start plus that duration, so at a median
@@ -33,9 +34,8 @@ from . import config
 # Reported on its own rather than silently folded into the totals.
 ABORT_MAX_MS = 120_000
 
-# How many docks from each end of the net-flow range the section lists.
-# Ranked here rather than in the browser, the way the speed corridors are:
-# the page gets the rows it draws, not the whole 216-dock table.
+# How many docks from each end of the net-flow range the stats section lists.
+# Ranked here rather than in the browser, the way the speed corridors are.
 FLOW_TOP = 3
 FLOW_BOTTOM = 2
 
@@ -62,8 +62,8 @@ def _load_trips() -> dict[str, Any] | None:
         return None
     if not isinstance(payload, dict) or not payload.get("trips"):
         return None
-    if payload.get("format") != 1:
-        print("  Citi Bike cache has an unexpected format; skipping trip stats")
+    if payload.get("format") != 2:
+        print("  Citi Bike cache predates the dock layer; re-run ingest.citibike")
         return None
     return payload
 
@@ -99,43 +99,61 @@ def _citibike_summary(
     if payload is None:
         return None
 
-    trips = payload["trips"]
+    raw = payload["trips"]
+    coords: dict[str, list[float] | None] = payload.get("docks", {})
 
     out_n: dict[str, int] = {}
     in_n: dict[str, int] = {}
-    for t in trips:
+    for t in raw:
         out_n[t["a"]] = out_n.get(t["a"], 0) + 1
         in_n[t["b"]] = in_n.get(t["b"], 0) + 1
-    names = sorted(set(out_n) | set(in_n))
+    # Busiest first, so the page can slice off the top without re-sorting and
+    # a marker's index is stable for the whole payload.
+    names = sorted(
+        out_n.keys() | in_n.keys(), key=lambda n: (-(out_n.get(n, 0) + in_n.get(n, 0)), n)
+    )
+    index = {n: i for i, n in enumerate(names)}
+    docks = [
+        {"name": n, "at": coords.get(n), "out": out_n.get(n, 0), "in": in_n.get(n, 0)}
+        for n in names
+    ]
 
-    dates = {_local_date(t["t"]) for t in trips}
+    # One row per trip, against a shared day list, so the page can filter the
+    # docks with the same slider that filters the ride edges. Dates are the
+    # only thing the two sources share, and comparing them as ISO strings
+    # avoids inventing a joint index over two different sets of days.
+    days = sorted({_local_date(t["t"]) for t in raw})
+    day_index = {d: i for i, d in enumerate(days)}
+    trips = [[index[t["a"]], index[t["b"]], day_index[_local_date(t["t"])]] for t in raw]
+
     own_days = {fname[:10] for fname in ride_stats}
-    minutes = [t["dur"] / 60_000 for t in trips]
+    minutes = [t["dur"] / 60_000 for t in raw]
     bikes: dict[str, int] = {}
-    for t in trips:
+    for t in raw:
         if t["bike"]:
             bikes[t["bike"]] = bikes.get(t["bike"], 0) + 1
 
     return {
-        "trips": len(trips),
+        # The page counts array length, the way it does for a feature's rides.
+        "trips": trips,
+        "docks": docks,
+        "days": days,
         "hours": round(sum(minutes) / 60, 1),
-        "days": len(dates),
-        "from": min(dates),
-        "to": max(dates),
+        "from": days[0],
+        "to": days[-1],
         # Citi Bike days that were also own-bike days: the number that says
         # this is a supplement to the GPS map, not a substitute for it.
-        "same_day": len(dates & own_days),
+        "same_day": len(set(days) & own_days),
         "median_min": round(_median(minutes), 1),
         "longest_min": round(max(minutes)),
         # A floor: a free ebike ride can carry no line item naming one.
-        "ebike_min": sum(1 for t in trips if t["ebike"]),
-        "paid": round(sum(t["paid"] for t in trips), 2),
-        "charged": round(sum(t["gross"] for t in trips), 2),
-        "credits": round(sum(t["credit"] for t in trips), 2),
-        "aborted": sum(1 for t in trips if t["a"] == t["b"] and t["dur"] <= ABORT_MAX_MS),
+        "ebike_min": sum(1 for t in raw if t["ebike"]),
+        "paid": round(sum(t["paid"] for t in raw), 2),
+        "charged": round(sum(t["gross"] for t in raw), 2),
+        "credits": round(sum(t["credit"] for t in raw), 2),
+        "aborted": sum(1 for t in raw if t["a"] == t["b"] and t["dur"] <= ABORT_MAX_MS),
         "bikes": len(bikes),
         "repeat_bikes": sum(1 for n in bikes.values() if n > 1),
-        "docks": len(names),
-        "once_only": sum(1 for n in names if out_n.get(n, 0) + in_n.get(n, 0) == 1),
+        "once_only": sum(1 for d in docks if d["out"] + d["in"] == 1),
         "flow": _flow_extremes(out_n, in_n, names),
     }

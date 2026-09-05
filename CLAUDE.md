@@ -112,14 +112,21 @@ reads everything from `rides.geojson.gz` top-level `properties`.
 - **Citi Bike trips are dock-to-dock with no GPS trace**, so they never enter
   `edge_counts`, `edge_traversals`, `edge_rides`, `coverage`, or `features[]`
   -- those all mean "a trace was matched here". They live only in
-  `properties.citibike` and **draw nothing on the map**: two layers were built
-  and taken back out (shortest-path routes between docks, then dock markers
-  and desire lines), because a route between docks is a guess and a marker
-  says nothing the numbers do not
-  ([why](findings/citibike-trips.md)). The block therefore ships no
-  coordinates at all, and `ingest.citibike` needs no network. No speed is
-  derived either -- the export's durations are whole minutes and its end
-  times are the start plus that duration.
+  `properties.citibike`. The dock layer draws **markers, and lines only for
+  the one dock a reader clicked**; a routed path between docks was built,
+  measured and rejected, because it makes a guess look like a trace
+  ([why](findings/citibike-trips.md)). No speed is derived either -- the
+  export's durations are whole minutes and its end times are the start plus
+  that duration.
+- **The dock layer is meant to be explored, not read.** Markers resize with
+  the same `filterLo`/`filterHi` range that filters the edges (`applyFilter`
+  calls `applyDockFilter`), so the slider and time-lapse move them too. The
+  two sources share dates but not days, so they are joined on the ISO date
+  string rather than a shared index. An earlier version replaced the layer
+  with a ranked text list on the grounds that the list "says it better";
+  that is the wrong test for this project -- the map is a medium to explore,
+  and a layer that can be filtered and drilled into beats a row that states
+  one finding.
 
 ### Edge passes (`edge_speed.py`)
 
