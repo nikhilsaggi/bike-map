@@ -9,7 +9,10 @@ test.describe('stats panel', () => {
     await expect(page.locator('#stat-ridden')).toHaveText('54');
     // 100 km of drawn street -> miles, rounded
     await expect(page.locator('#stat-km')).toHaveText('62');
-    await expect(page.locator('#stat-coverage')).toHaveText('12.3%');
+    // The tile is labelled "of NYC", so it shows the neighbourhood block's own
+    // totals -- 6,600 of 30,000 m -- rather than coverage.pct, whose
+    // denominator is every street in the graph, city or not.
+    await expect(page.locator('#stat-coverage')).toHaveText('22.0%');
     await expect(page.locator('#stat-updated')).toHaveText('2026-07-01');
   });
 
@@ -17,11 +20,14 @@ test.describe('stats panel', () => {
     await gotoMap(page);
     // total_edges lost its own row; it survives here.
     await expect(page.locator('#tile-km')).toHaveAttribute('title', '3 drawn street segments');
-    // 12.3% is measured over a different subset than the 62 drawn miles, so
-    // the tooltip says what it is a percentage of -- in words, since any
-    // mileage here would invite a division against those drawn miles.
+    // The percentage is measured over a different subset than the 62 drawn
+    // miles, so the tooltip says what it is a percentage of -- in words, since
+    // any mileage here would invite a division against those drawn miles. It
+    // also carries the wider figure, so both denominators are on the page.
     await expect(page.locator('#tile-coverage')).toHaveAttribute('title',
-      'Share of the rideable NYC street network; sidewalks, service roads and motorways excluded');
+      'Share of the rideable street network inside a NYC neighbourhood, as far as ' +
+      'the map reaches (12.3% of every street in the graph, which runs past the ' +
+      'city); sidewalks, service roads and motorways excluded');
   });
 
   test('shows the riding summary with hour and weekday histograms', async ({ page }) => {

@@ -11,6 +11,7 @@ from . import config
 from .citibike import SOURCE_UNKNOWN, _citibike_summary, ride_sources
 from .edge_speed import _speed_summary, ride_pass_dirs
 from .merge import _audit_merge, _geom_len_m, _merge_parallel_features
+from .neighborhoods import _neighborhood_summary, load_areas
 from .ride_stats import _riding_summary
 from .weather import _weather_summary
 
@@ -156,6 +157,13 @@ def _export_geojson(
 
     total_km = sum(_geom_len_m(f["geometry"]["coordinates"]) for f in features) / 1000
 
+    # Neighbourhoods, if the boundary cache is there. This also tags every
+    # feature with the area it sits in, so the block has to be built after
+    # the merge -- a corridor is placed by its own midpoint, not its members'.
+    neighborhoods = _neighborhood_summary(
+        load_areas(), edge_geom, edge_hw or {}, state, date_idx, features
+    )
+
     rides_per_year: dict[str, int] = {}
     for fname in all_fnames:
         rides_per_year[fname[:4]] = rides_per_year.get(fname[:4], 0) + 1
@@ -171,6 +179,7 @@ def _export_geojson(
             "rides_per_year": rides_per_year,
             "riding": _riding_summary(state.get("ride_stats", {})),
             "coverage": _coverage_summary(edge_geom, edge_hw or {}, state),
+            "neighborhoods": neighborhoods,
             "weather": _weather_summary(state.get("ride_stats", {})),
             "citibike": _citibike_summary(state.get("ride_stats", {}), ride_id),
             "speed": _speed_summary(state.get("edge_speed", {}), edge_geom, edge_name or {}),

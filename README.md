@@ -30,6 +30,12 @@ The pipeline exports a compressed GeoJSON that powers an interactive
 - Riding stats: distance/time totals, average speed, longest ride,
   miles and new-street miles per year, rides-by-hour and weekday
   histograms (data is stored metric; the UI displays miles)
+- Optional neighbourhood layer: NYC's 262 tabulation areas, each filled by
+  the share of its own streets ridden by the date on screen, so the slider and
+  the time-lapse fill the city in. Click one for its coverage and the passes
+  drawn inside it. Per area the story is different from the citywide one — a
+  third of Manhattan against 5% of the graph
+  ([why](findings/neighborhoods.md))
 - Optional Citibike dock layer: markers sized by how much a dock was used in
   the date range on screen, so the slider and the time-lapse move them the way
   they move the streets. Click one to see where its trips actually went. The
@@ -271,9 +277,15 @@ part of it; `findings/` holds what they found:
 - [Citibike trips](findings/citibike-trips.md) — a second source with no
   trace: why it has no speed, why its routes are never drawn, and what two
   discarded layers taught about the difference
+- [Rides by neighbourhood](findings/neighborhoods.md) — half the coverage
+  denominator was not New York City, what the per-area cut says instead, and
+  where assigning an edge by its midpoint goes wrong
 
-`tools/hmm_matcher_eval.py` compares the two matchers on real rides, and
-`tools/traversal_audit.py` checks pass counting against the raw traces.
+`tools/hmm_matcher_eval.py` compares the two matchers on real rides,
+`tools/traversal_audit.py` checks pass counting against the raw traces, and
+`tools/neighborhood_audit.py` cuts the coverage measurement into
+neighbourhoods (`--boundaries` also measures what midpoint assignment
+misplaces).
 `tools/render_readme_map.py` re-renders the image at the top of this file
 from the caches, when it should catch up with the rides.
 
@@ -312,6 +324,9 @@ gitignored):
   (written by `ingest.citibike`, absent until you run it)
 - `cache/citibike_stations.json` — GBFS dock coordinates, so a failed fetch
   falls back to the last good copy
+- `cache/nta_boundaries.geojson` — NYC neighbourhood boundaries, downloaded
+  once from NYC Open Data on the first run and never refreshed; delete it and
+  the map ships without the neighbourhood layer until the next run
 
 Delete any cache file — or the whole directory — to force a rebuild.
 Changing processing parameters automatically triggers a full reprocess, and

@@ -15,6 +15,9 @@ dependencies = [
     "scipy>=1.10",
     "leuvenmapmatching>=1.1",
     "rtree>=1.0",
+    # Point-in-polygon for the neighbourhood layer. Already installed
+    # transitively by osmnx; declared because bike_routes imports it directly.
+    "shapely>=2.0",
 ]
 
 [tool.setuptools]

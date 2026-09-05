@@ -23,6 +23,7 @@ from .gps import _load_and_resample
 from .graph import _load_graph
 from .hmm import _build_matcher_context, _match_one
 from .matching import _match_rides_parallel, _match_worker_count
+from .neighborhoods import ensure_boundaries
 from .render import _build_render_cache, _get_render_data, _render
 from .ride_stats import _backfill_ride_stats
 
@@ -134,8 +135,11 @@ def main(argv: list[str] | None = None) -> None:
         # _match_worker_count reads this; the env var also reaches workers
         os.environ["MATCH_WORKERS"] = str(args.workers)
 
-    # 1. Load state (relocating any caches left over from the flat layout)
+    # 1. Load state (relocating any caches left over from the flat layout).
+    # The neighbourhood boundaries are fetched here rather than at export
+    # time: it is a one-off 4.6 MB download, and the export stays offline.
     _migrate_legacy_caches()
+    ensure_boundaries()
     state = _load_state()
 
     # 2. Find new rides (exclude already-processed and already-skipped files)

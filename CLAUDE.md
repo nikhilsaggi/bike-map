@@ -32,7 +32,8 @@ interactive Leaflet map (`docs/`, served via GitHub Pages) plus static PNGs.
 - Analysis (real rides + caches, never the synthetic grids):
   `python tools/traversal_audit.py` before any `TRAVERSAL_*`/`SPEED_*`
   threshold change, `python tools/hmm_matcher_eval.py` before any matcher
-  change. Both read state; neither writes it.
+  change, `python tools/neighborhood_audit.py` before touching the
+  per-neighbourhood block. All read state; none writes it.
 
 ## Architecture
 
@@ -58,6 +59,11 @@ interactive Leaflet map (`docs/`, served via GitHub Pages) plus static PNGs.
 9. `citibike.py` -- Citibike dock-trip stats, same shape as `weather.py`:
    a top-level `properties` block computed inline in `export.py`, no stage,
    no state key, `None` when its cache is absent
+10. `neighborhoods.py` -- per-NTA coverage, same shape again. It also tags
+   each drawn feature with the area it sits in, so the block is built after
+   the merge. The boundary file is fetched once by `cli.main`, never by the
+   export: keeping the network out of `_export_geojson` is what keeps the
+   export tests offline
 
 `bike_routes/ingest/` is the front of the pipeline (`garmin_sync`, `gpx_to_csv`,
 `citibike`), run as `python -m bike_routes.ingest.<mod>`; it fills `rides/`
@@ -65,8 +71,9 @@ interactive Leaflet map (`docs/`, served via GitHub Pages) plus static PNGs.
 traces and must never land in `rides/`) and is not imported by any pipeline
 stage. `tools/` holds standalone analysis that is not
 part of the pipeline at all (`hmm_matcher_eval.py`, `weather_correlation.py`,
-`traversal_audit.py`), plus `render_readme_map.py`, which crops the README's
-image out of the same caches; all are run from the repo root. `findings/`
+`traversal_audit.py`, `neighborhood_audit.py`), plus `render_readme_map.py`,
+which crops the README's image out of the same caches; all are run from the
+repo root. `findings/`
 holds the write-ups of what that analysis found (moved out of the README to
 keep it about running the pipeline).
 
@@ -152,6 +159,23 @@ reads everything from `rides.geojson.gz` top-level `properties`.
   than counting them as own-bike. The 60s minimum overlap is not a tuned
   threshold: anything from 1s to 120s gives the same answer on the real
   rides.
+- **The map's coverage number has two denominators and both ship.**
+  `coverage.pct` is measured over every rideable edge in the graph, and the
+  graph is the rides' own bounding box -- half of it is not in New York City,
+  so riding further out *lowers* it. `properties.neighborhoods` carries the
+  same measurement over the part inside a NYC neighbourhood (9.1% against
+  5.1%), and that is what the "of NYC" tile shows, because that is what the
+  label claims. Neither is a share of the whole city: the box has never
+  reached Staten Island ([details](findings/neighborhoods.md)).
+- **A neighbourhood is filled by coverage as of the date on screen**, not
+  all-time, so the slider and the time-lapse move it the way they move the
+  edges and the dock markers. The export ships `new` -- [date index, metres
+  first ridden that day] -- and the page takes a running total up to
+  `filterHi`; it follows the range's upper end alone, because "how much had I
+  ridden by then" is a running total, and the popup says so. Areas are placed
+  by edge midpoint, which misplaces 4.9% of ridden metres, nearly all of it
+  on ten named bridges and waterfront paths -- fine for a fill colour, not
+  for anything stronger.
 - **The Citibike panel is a two-column comparison**, Citibike against own
   bike, on trips / time / days / typical length. The Citibike column is the
   export's own totals (every trip, including ones no GPS ride covers); the

@@ -94,6 +94,9 @@ WEATHER_CACHE_PATH = CACHE_DIR / "weather_cache.json"
 # no GPS trace -- so neither is in _processing_config().
 CITIBIKE_TRIPS_PATH = CACHE_DIR / "citibike_trips.json"
 CITIBIKE_STATIONS_PATH = CACHE_DIR / "citibike_stations.json"
+# NYC neighbourhood boundaries, fetched once from NYC Open Data and never
+# refreshed -- unlike the weather, they do not change between runs.
+NTA_CACHE_PATH = CACHE_DIR / "nta_boundaries.geojson"
 
 
 RENDER_CACHE_FORMAT = "hw-name-v1"  # bump invalidates render_cache.pkl (rebuilt from the graph)

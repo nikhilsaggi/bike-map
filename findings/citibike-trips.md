@@ -211,10 +211,21 @@ repeat.
 
 This map exists to be explored. A list states one finding its author already
 picked; a layer that filters with the slider and expands on click lets a
-reader find things nobody ranked — that Citibike trips cluster where the
-ride heatmap is thin, that the docks only appear in the last year of the
-time-lapse, that one dock reaches 87 others. Efficiency of communication is
-the criterion for a report. It is the wrong criterion here.
+reader find things nobody ranked — that the docks only appear in the last year
+of the time-lapse, that one dock reaches 87 others, that a dock's partners
+change completely between 2025 and 2026. Efficiency of communication is the
+criterion for a report. It is the wrong criterion here.
+
+This paragraph used to lead with "that Citibike trips cluster where the ride
+heatmap is thin", and that example was never checked. Cut into
+neighbourhoods it is false: every one of the 64 neighbourhoods with a dock
+endpoint also has ridden street, and dock volume correlates *positively* with
+coverage (Spearman +0.71) and with ridden kilometres (+0.79) — the busiest
+dock neighbourhoods are the best-covered ones
+([details](neighborhoods.md#the-citibike-claim-does-not-survive-at-this-resolution)).
+If the effect is real it is within a neighbourhood rather than between them,
+and nothing here has measured it. The point about layers stands; the example
+was an assertion dressed as one.
 
 What survived from that detour is the honesty rule, which is separate: no
 routes between docks, nothing in `edge_counts` or `coverage`, and no speed.

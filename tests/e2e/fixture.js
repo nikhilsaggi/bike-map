@@ -84,6 +84,47 @@ export const CITIBIKE_BLOCK = {
   own: { rides: 3, hours: 4.0, days: 2, median_min: 41.0 },
 };
 
+// Neighbourhoods: two areas splitting the three streets between them, so
+// every number the layer draws is hand-computable. Uptown Heights holds the
+// north street (lat 40.7395), Downtown Flats the centre and south ones --
+// a feature is placed by its middle coordinate, which for a two-point line
+// is its east end, so the boundary at 40.7375 decides all three.
+//
+// `new` is [date index, metres first ridden that day]: Downtown gains 1,250 m
+// on date 0 and 3,750 more on date 2, Uptown 1,600 m on date 1. The shares
+// are perfect squares because the fill runs on their square root -- 5,000 of
+// 20,000 is 25% and so 0.5 of the ramp, 1,600 of 10,000 is 16% and so 0.4,
+// and pulling the upper handle back to date 0 leaves Downtown at 1,250 of
+// 20,000, which is 6.25% and 0.25 of the ramp.
+export const NEIGHBORHOOD_BLOCK = {
+  source: 'NYC Neighborhood Tabulation Areas 2020 (9nt8-h7nd)',
+  net_m: 30000,
+  ridden_m: 6600,
+  areas: [
+    {
+      name: 'Downtown Flats',
+      boro: 'Bk',
+      net_m: 20000,
+      ridden_m: 5000,
+      new: [[0, 1250], [2, 3750]],
+      // polygon -> ring -> point, Leaflet's multi-polygon nesting.
+      rings: [[[
+        [-74.0, 40.725], [-73.9, 40.725], [-73.9, 40.7375], [-74.0, 40.7375], [-74.0, 40.725],
+      ]]],
+    },
+    {
+      name: 'Uptown Heights',
+      boro: 'Mn',
+      net_m: 10000,
+      ridden_m: 1600,
+      new: [[1, 1600]],
+      rings: [[[
+        [-74.0, 40.7375], [-73.9, 40.7375], [-73.9, 40.745], [-74.0, 40.745], [-74.0, 40.7375],
+      ]]],
+    },
+  ],
+};
+
 const line = (lat) => ({
   type: 'LineString',
   coordinates: [
@@ -153,13 +194,14 @@ export function buildFixture(propertyOverrides = {}) {
       top_segment: { name: 'Center Street', at: [-73.96, 40.745] },
       speed: SPEED_BLOCK,
       citibike: CITIBIKE_BLOCK,
+      neighborhoods: NEIGHBORHOOD_BLOCK,
       ...propertyOverrides,
     },
     // Sorted by ride count ascending, like the exporter.
     features: [
-      { type: 'Feature', geometry: line(EDGES.south.lat), properties: { rides: EDGES.south.rides } },
-      { type: 'Feature', geometry: line(EDGES.north.lat), properties: { rides: EDGES.north.rides } },
-      { type: 'Feature', geometry: line(EDGES.center.lat), properties: { rides: EDGES.center.rides } },
+      { type: 'Feature', geometry: line(EDGES.south.lat), properties: { rides: EDGES.south.rides, n: 0 } },
+      { type: 'Feature', geometry: line(EDGES.north.lat), properties: { rides: EDGES.north.rides, n: 1 } },
+      { type: 'Feature', geometry: line(EDGES.center.lat), properties: { rides: EDGES.center.rides, n: 0 } },
     ],
   };
 }

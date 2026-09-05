@@ -24,15 +24,19 @@ test.describe('streets', () => {
     await gotoMap(page);
     await openSection(page, STREETS);
     const rows = page.locator('#streets-totals .r-row');
-    await expect(rows).toHaveCount(4);
+    await expect(rows).toHaveCount(5);
     await expect(rows.nth(0)).toContainText('Drawn');
     await expect(rows.nth(0)).toContainText('62 mi'); // 100 km
     await expect(rows.nth(1)).toContainText('Segments');
     await expect(rows.nth(1)).toContainText('3');
+    // Both denominators, narrower first: the city, then the graph that runs
+    // past it. 6,600 of 30,000 m against coverage.pct's 12.3%.
     await expect(rows.nth(2)).toContainText('Of rideable NYC');
-    await expect(rows.nth(2)).toContainText('12.3%');
-    await expect(rows.nth(3)).toContainText('Most-ridden segment');
-    await expect(rows.nth(3)).toContainText('4×');
+    await expect(rows.nth(2)).toContainText('22.0%');
+    await expect(rows.nth(3)).toContainText('Of the whole graph');
+    await expect(rows.nth(3)).toContainText('12.3%');
+    await expect(rows.nth(4)).toContainText('Most-ridden segment');
+    await expect(rows.nth(4)).toContainText('4×');
     // The count says how often; the name says what.
     await expect(page.locator('#streets-totals .r-link')).toHaveText('Center Street');
   });
@@ -68,7 +72,7 @@ test.describe('streets', () => {
   test('an unnamed top segment leaves the count on its own', async ({ page }) => {
     await gotoMap(page, buildFixture({ top_segment: { name: null, at: [-73.96, 40.745] } }));
     await openSection(page, STREETS);
-    await expect(page.locator('#streets-totals .r-row').nth(3)).toContainText('4×');
+    await expect(page.locator('#streets-totals .r-row').nth(4)).toContainText('4×');
     await expect(page.locator('#streets-totals .r-link')).toHaveCount(0);
   });
 
@@ -117,10 +121,12 @@ test.describe('streets', () => {
       coverage: { pct: 12.3, ridden_km: 45.5, network_km: 370, new_km_by_year: {} },
     }));
     await openSection(page, STREETS);
-    // Nothing to qualify and no mileage to fall back on, so the row is bare.
-    // The one remaining sub-line belongs to the most-ridden segment.
+    // Nothing to qualify and no mileage to fall back on, so the coverage row
+    // is bare. The two remaining sub-lines belong to the wider denominator
+    // and to the most-ridden segment.
     const subs = page.locator('#streets-totals .r-sub');
-    await expect(subs).toHaveCount(1);
+    await expect(subs).toHaveCount(2);
+    await expect(subs.nth(0)).toHaveText('which reaches past the city');
     await expect(subs.locator('.r-link')).toHaveCount(1);
   });
 
@@ -263,7 +269,7 @@ test.describe('streets', () => {
     await expect(chip(page, STREETS)).toBeVisible();
     await openSection(page, STREETS);
     await expect(page.locator('#speed-block')).toBeHidden();
-    await expect(page.locator('#streets-totals .r-row')).toHaveCount(4);
+    await expect(page.locator('#streets-totals .r-row')).toHaveCount(5);
   });
 
   test('an empty corridor list drops the ranking too', async ({ page }) => {

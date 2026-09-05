@@ -190,6 +190,26 @@
   #cb-toggle.hidden { display: none; }
   #cb-toggle:hover { color: #ccc; }
   #cb-check { vertical-align: -1px; margin-right: 3px; accent-color: #a8d8e8; }
+
+  /* -- Neighbourhoods ----------------------------------------------------
+     A second toggle under the dock one, so the two optional layers read as
+     a pair. Its own row rather than the same one: the labels are long and
+     each carries a note. */
+  #nb-toggle {
+    display: block; margin-top: 6px; color: #888; font-size: 11px;
+    cursor: pointer; user-select: none;
+  }
+  #nb-toggle.hidden { display: none; }
+  #nb-toggle:hover { color: #ccc; }
+  #nb-check { vertical-align: -1px; margin-right: 3px; accent-color: #cfc3a8; }
+  #nb-note { color: #555; font-size: 9px; line-height: 1.4; margin: 2px 0 0 17px; }
+  .nb-popup { min-width: 150px; }
+  .nb-head { color: #e8dcc0; font-weight: 600; }
+  .nb-sub { color: #666; font-size: 10px; margin-bottom: 4px; }
+  .nb-row { display: flex; justify-content: space-between; gap: 14px; font-size: 12px; }
+  .nb-row .v { color: #fff; font-variant-numeric: tabular-nums; }
+  .nb-row .label { color: #888; }
+  .nb-asof { color: #777; font-size: 9px; line-height: 1.4; margin-top: 4px; }
   /* The ride history starts in 2021 and the dock trips in 2025, so most of
      the slider's range has no docks in it at all. Saying so here is the
      difference between "nothing to show" and "this is broken". */
@@ -402,6 +422,10 @@
     <input type="checkbox" id="cb-check"> Citibike docks
     <span id="cb-range"></span>
   </label>
+  <label id="nb-toggle" class="hidden">
+    <input type="checkbox" id="nb-check"> Neighbourhoods
+  </label>
+  <div id="nb-note"></div>
 </div>
 
 <script>
@@ -648,12 +672,24 @@ function renderStreets(props) {
     rows.push(['Segments', props.total_edges.toLocaleString()]);
   }
   const cov = props.coverage;
+  const nb = props.neighborhoods;
   if (cov) {
     // Only the percentage is shown. Its numerator is the drawn miles minus
     // the excluded tags -- a smaller number nobody actually rode, which read
     // as contradicting the Drawn row directly above it. The exclusions are
     // what "rideable" means here, so those stay; the mileage does not.
-    rows.push(['Of rideable NYC', `${cov.pct}%`, excludedLabel(cov) || null]);
+    //
+    // Both denominators, one under the other, because the gap between them
+    // is itself a finding: the graph is the rides' own bounding box, so it
+    // holds thousands of km of Long Island and New Jersey that no
+    // neighbourhood does. Ride further out and the wider figure falls.
+    if (nb && nb.net_m) {
+      rows.push(['Of rideable NYC', `${(100 * nb.ridden_m / nb.net_m).toFixed(1)}%`,
+        excludedLabel(cov) || null]);
+      rows.push(['Of the whole graph', `${cov.pct}%`, 'which reaches past the city']);
+    } else {
+      rows.push(['Of rideable NYC', `${cov.pct}%`, excludedLabel(cov) || null]);
+    }
   }
   const top = props.top_segment;
   if (props.max_count != null) {
@@ -1117,6 +1153,180 @@ function renderCitibike(cb) {
   showChip('stat-citibike');
 }
 
+// -- Neighbourhoods ---------------------------------------------------------
+// The map's other geographic number is one percentage of "the network", and
+// half of that network is not in New York City -- the graph is built from the
+// rides' own bounding box, so a single ride out to Long Island enlarges the
+// denominator. Cut into neighbourhoods the question does not arise, and the
+// answer is a different sentence: a third of Manhattan's streets against 5%
+// of the graph.
+//
+// Fill is the share of a neighbourhood's rideable streets ridden by the end
+// of the visible date range, so the slider and the time-lapse fill the city
+// in rather than leaving 240 polygons sitting still. One neutral tone at
+// varying opacity, not a third colour scale: plasma already means passes and
+// the docks already took the pale blue.
+const BOROUGHS = {
+  Mn: 'Manhattan', Bk: 'Brooklyn', Qn: 'Queens', Bx: 'the Bronx', SI: 'Staten Island',
+};
+
+const NB_COLOR = '#e8dcc0';
+// Fill runs on the square root of the share, the way the edge colours run on
+// the square root of the pass count and for the same reason: the shares are
+// heavily skewed (median 6%, top 61% on the real rides), so a linear ramp
+// leaves three quarters of the city as one indistinguishable dark wash. The
+// scale is fixed rather than renormalised to what is on screen, so an area's
+// tone means the same thing at every position of the slider.
+const NB_MIN_FILL = 0.02;
+const NB_MAX_FILL = 0.45;
+
+let nbData = null;
+let nbLayer = null;
+let nbShapes = [];    // polygons, index-aligned with nbData.areas
+let nbDays = [];      // per area: the date indices new ground was gained on
+let nbCum = [];       // per area: metres ridden by the end of each of those
+let nbSelected = null;
+
+// Metres of an area first ridden on or before a date index. The export ships
+// the days new ground was gained rather than a total, so this is a prefix sum
+// over a handful of entries -- no walk of the edges, and it answers the
+// question the slider is actually asking.
+function nbRiddenBy(ai, hi) {
+  const days = nbDays[ai];
+  const cum = nbCum[ai];
+  if (!days.length) return 0;
+  if (hi === Infinity) return cum[cum.length - 1];
+  let lo = 0, high = days.length - 1, found = -1;
+  while (lo <= high) {
+    const mid = (lo + high) >> 1;
+    if (days[mid] <= hi) { found = mid; lo = mid + 1; } else high = mid - 1;
+  }
+  return found < 0 ? 0 : cum[found];
+}
+
+function nbStyle(ai) {
+  const a = nbData.areas[ai];
+  const share = a.net_m ? nbRiddenBy(ai, filterHi) / a.net_m : 0;
+  return {
+    fillColor: NB_COLOR,
+    fillOpacity: NB_MIN_FILL + NB_MAX_FILL * Math.sqrt(Math.min(1, share)),
+    color: ai === nbSelected ? NB_COLOR : '#7d776a',
+    weight: ai === nbSelected ? 1.8 : 0.7,
+    opacity: ai === nbSelected ? 0.95 : 0.6,
+  };
+}
+
+// Restyled on every filter change, like the edges and the dock markers. The
+// fill answers "how much of this had I ridden by then", which is a running
+// total, so it follows filterHi and ignores filterLo -- the popup says so
+// rather than leaving the reader to infer it.
+function applyNbFilter() {
+  if (!nbLayer || !map.hasLayer(nbLayer)) return;
+  for (let i = 0; i < nbShapes.length; i++) nbShapes[i].setStyle(nbStyle(i));
+}
+
+// Passes drawn inside one area, in the visible range. Counted on the click
+// that asks rather than kept as an array applyFilter has to maintain: one
+// walk of the features costs nothing next to the redraw a popup already
+// triggers, and there is no cached total to go stale.
+function nbPassesIn(ai) {
+  let n = 0;
+  geoLayer.eachLayer(layer => {
+    if (layer.feature.properties.n === ai) {
+      n += countInRange(layer.feature.properties.rides || []);
+    }
+  });
+  return n;
+}
+
+function nbPopup(ai) {
+  const a = nbData.areas[ai];
+  const ridden = nbRiddenBy(ai, filterHi);
+  const share = a.net_m ? Math.round((100 * ridden) / a.net_m) : 0;
+  const asOf = filterHi === Infinity ? dateList[dateList.length - 1] : dateList[filterHi];
+  const box = document.createElement('div');
+  box.className = 'nb-popup';
+  const head = document.createElement('div');
+  head.className = 'nb-head';
+  head.textContent = a.name;  // textContent: this is city open data
+  const sub = document.createElement('div');
+  sub.className = 'nb-sub';
+  sub.textContent = BOROUGHS[a.boro] || a.boro;
+  const rows = [
+    ['Streets ridden', `${mi(ridden / 1000).toFixed(1)} of ${mi(a.net_m / 1000).toFixed(1)} mi`],
+    ['Of its network', `${share}%`],
+    ['Passes', nbPassesIn(ai).toLocaleString()],
+  ];
+  box.append(head, sub);
+  for (const [k, v] of rows) {
+    const row = document.createElement('div');
+    row.className = 'nb-row';
+    row.innerHTML = `<span class="label">${k}</span><span class="v">${v}</span>`;
+    box.appendChild(row);
+  }
+  const note = document.createElement('div');
+  note.className = 'nb-asof';
+  // Two different questions on one card: coverage is everything ridden up to
+  // the date on screen, passes are what the slider has selected. Saying which
+  // is which is cheaper than making them agree.
+  note.textContent = `Ridden by ${asOf}; passes within the selected range.`;
+  box.appendChild(note);
+  return box;
+}
+
+function initNeighborhoods(nb) {
+  if (!nb || !nb.areas?.length) return;
+  nbData = nb;
+  nbDays = [];
+  nbCum = [];
+  for (const a of nb.areas) {
+    const days = [];
+    const cum = [];
+    let total = 0;
+    for (const [d, m] of a.new || []) { total += m; days.push(d); cum.push(total); }
+    nbDays.push(days);
+    nbCum.push(cum);
+  }
+  nbLayer = L.layerGroup();
+  nbShapes = nb.areas.map((a, i) => {
+    // Rings arrive as [lon, lat]; Leaflet wants [lat, lng]. The nesting is
+    // polygon -> ring -> point, which is Leaflet's multi-polygon shape: a
+    // neighbourhood that is several disjoint pieces must not read as one
+    // piece with holes punched in it.
+    const rings = a.rings.map(poly => poly.map(r => r.map(([lon, lat]) => [lat, lon])));
+    const poly = L.polygon(rings, nbStyle(i));
+    poly.bindTooltip(() => {
+      const share = a.net_m ? Math.round((100 * nbRiddenBy(i, filterHi)) / a.net_m) : 0;
+      return `${a.name}<br>${share}% of its streets ridden`;
+    }, { sticky: true });
+    poly.bindPopup(() => nbPopup(i), { className: 'ride-popup' });
+    poly.on('popupopen', () => { nbSelected = i; applyNbFilter(); });
+    poly.on('popupclose', () => { nbSelected = null; applyNbFilter(); });
+    nbLayer.addLayer(poly);
+    return poly;
+  });
+  document.getElementById('nb-note').textContent =
+    `${nb.areas.length} tabulation areas · filled by streets ridden by the ` +
+    `date on screen`;
+  const toggle = document.getElementById('nb-toggle');
+  const check = document.getElementById('nb-check');
+  toggle.classList.remove('hidden');
+  check.addEventListener('change', () => {
+    if (check.checked) {
+      nbLayer.addTo(map);
+      applyNbFilter();
+      // Under the streets, which are the subject: the neighbourhoods are
+      // ground for them. Once, because every later filter change ends in
+      // restackLayers, which lifts the edges back over anything below.
+      nbLayer.eachLayer(l => l.bringToBack());
+    } else {
+      map.closePopup();
+      map.removeLayer(nbLayer);
+      nbSelected = null;
+    }
+  });
+}
+
 // What an edge looks like when something else is the subject: ride view's
 // unselected streets, and the whole network while a dock is in focus. One
 // style, because they mean the same thing -- the network is context now.
@@ -1467,6 +1677,7 @@ function applyFilter(renormalize = true) {
     document.getElementById('legend-max').textContent = filteredMax;
   }
   applyDockFilter(renormalize);
+  applyNbFilter();
   geoLayer.eachLayer(layer => {
     const c = layer._newCount;
     if (!renormalize && c === layer._filteredCount) return;
@@ -1670,11 +1881,23 @@ fetch('rides.geojson.gz')
     // drawn miles that does not hold, so the tooltip qualifies the network
     // in words and ships no second mileage to compare against.
     if (coverage) {
-      document.getElementById('stat-coverage').textContent = `${coverage.pct}%`;
       const tile = document.getElementById('tile-coverage');
       const excl = excludedLabel(coverage);
-      tile.title =
-        `Share of the rideable NYC street network` + (excl ? `; ${excl}` : '');
+      // A tile labelled "of NYC" has to be of NYC. coverage.pct is measured
+      // against every edge in the graph, and the graph is the rides' own
+      // bounding box -- half of it is Long Island and New Jersey, which drags
+      // the percentage down for riding further out rather than less. When the
+      // neighbourhood block is there it gives the same measurement over the
+      // part of the graph inside a NYC neighbourhood, which is the number the
+      // label has always claimed.
+      const nb = data.properties?.neighborhoods;
+      document.getElementById('stat-coverage').textContent =
+        nb && nb.net_m ? `${(100 * nb.ridden_m / nb.net_m).toFixed(1)}%` : `${coverage.pct}%`;
+      tile.title = (nb && nb.net_m
+        ? 'Share of the rideable street network inside a NYC neighbourhood, ' +
+          `as far as the map reaches (${coverage.pct}% of every street in the graph, ` +
+          'which runs past the city)'
+        : 'Share of the rideable NYC street network') + (excl ? `; ${excl}` : '');
       tile.classList.remove('hidden');
     }
     if (ridesPerYear && Object.keys(ridesPerYear).length) {
@@ -1753,6 +1976,7 @@ fetch('rides.geojson.gz')
     renderSpeedSplits(data.properties.speed);
     renderCitibike(data.properties?.citibike);
     initDockLayer(data.properties?.citibike);
+    initNeighborhoods(data.properties?.neighborhoods);
     restoreSection();
 
     sqrtMax = Math.sqrt(maxCount);
