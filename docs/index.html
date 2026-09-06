@@ -324,9 +324,10 @@
   }
   .cb-help:hover { color: #fff; border-color: #888; }
   /* The fleet turning over: one stacked bar per year, two ordered categories.
-     Two steps of the dock layer's own tone rather than two hues -- older and
-     newer are a sequence, not two identities, and a second hue here would
-     compete with the plasma ramp the map already spends colour on. */
+     Two steps of the map's own plasma ramp rather than two unrelated hues --
+     older and newer are a sequence, not two identities, so they take the
+     ramp's magenta and its yellow (PLASMA at t = 0.45 and t = 0.9) and run in
+     the direction the map already reads in. */
   .cb-gen-row { display: flex; align-items: center; gap: 6px; margin: 2px 0; }
   .cb-gen-year {
     width: 24px; text-align: right; color: #888; font-size: 10px; flex: none;
@@ -335,8 +336,8 @@
   .cb-gen-track { display: flex; flex: 1; height: 9px; gap: 2px; }
   /* A 2px gap between the segments, not a border: a border would add width
      to the thing whose width is the measurement. */
-  .cb-gen-old { background: #3d5a63; }
-  .cb-gen-new { background: #a8d8e8; }
+  .cb-gen-old { background: #b42282; }
+  .cb-gen-new { background: #fcc202; }
   /* A share on each side, each against the segment it belongs to, so the bar
      is read outwards from its own split rather than against one axis end.
      Both wear the panel's text colour rather than their series' -- a number
