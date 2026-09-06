@@ -36,7 +36,7 @@ The pipeline exports a compressed GeoJSON that powers an interactive
   through it, and the measured distance and time ridden inside it
 - A Neighborhoods stats section rolling those up per borough — a third of
   Manhattan's streets ridden against 4% of Queens', both hidden inside one
-  citywide 9.1% ([why](findings/neighborhoods.md))
+  citywide 11.8% ([why](findings/neighborhoods.md))
 - Optional Citibike dock layer: markers sized by how much a dock was used in
   the date range on screen, so the slider and the time-lapse move them the way
   they move the streets. Click one to see where its trips actually went. The
@@ -204,6 +204,17 @@ the GPS track length vs ~2x with the previous heuristic. Stretches the
 model cannot explain (off-network riding, GPS teleports) are retried with a
 wider beam, then skipped, and matching resumes past them.
 
+The network the matcher chooses from is not the whole graph. OSM maps the
+pavements either side of a street as their own `footway` ways, and the
+composed walk network contributes two thirds of the graph's edges, so a
+matcher with no notion of rideability puts a great deal of riding on the
+sidewalk — 43% of drawn kilometres, before this filter. A `footway` or
+`steps` edge with a roadway running parallel closer than
+`SIDEWALK_PARALLEL_M` is treated as a sidewalk and kept out of the matching
+map; the full graph still supplies geometry, coverage and drawing, so a ride
+that really was on a footway still draws there
+([details](findings/sidewalk-matching.md)).
+
 The original heuristic matcher (heading-aware edge snapping with
 highway-type penalties, shortest-path routing, and loop removal) is kept
 and selectable with `MATCHER = "heuristic"` in `bike_routes/config.py`.
@@ -221,6 +232,7 @@ worth knowing about:
 | `HMM_MAX_DIST` | 80 | Max GPS-to-edge distance considered (meters) |
 | `HMM_OBS_NOISE` | 15 | Expected GPS noise (meters) |
 | `HMM_LATTICE_WIDTH` | 8 | Viterbi beam width (widened to 24 on retry) |
+| `SIDEWALK_PARALLEL_M` | 12 | A footway this close to a parallel roadway is a sidewalk, and is kept out of the matcher |
 | `RESAMPLE_SPACING_M` | 20 | Resample GPS points to this spacing (meters) |
 | `MAX_GPS_GAP_M` | 300 | Split ride into segments at gaps larger than this |
 | `NETWORK_TYPES` | bike, drive, walk | OSM network types to fetch |
@@ -293,6 +305,9 @@ part of it; `findings/` holds what they found:
 - [Bike re-encounters](findings/bike-reencounters.md) —
   `tools/bike_reencounters.py`, on whether meeting the same Citibike twice
   beats chance (it does not, once the round trips come out)
+- [Sidewalks in the matching map](findings/sidewalk-matching.md) — why 43%
+  of drawn kilometres were pavement, and how a sidewalk is told from a
+  greenway without asking OSM
 - [Rides by neighborhood](findings/neighborhoods.md) — half the coverage
   denominator was not New York City, what the per-area cut says instead, and
   where assigning an edge by its midpoint goes wrong

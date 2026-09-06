@@ -19,6 +19,7 @@ worker processes skip both the OSM graph load and the index build.
 
 from __future__ import annotations
 
+import math
 import pickle
 from typing import TYPE_CHECKING, Any
 
@@ -31,7 +32,11 @@ if TYPE_CHECKING:
     import networkx as nx
     import numpy as np
 
-HMM_MAP_CACHE_FORMAT = "latlon-v1"
+HMM_MAP_CACHE_FORMAT = "latlon-v2"  # v2: sidewalk-class edges filtered out
+
+# A (lon, lat) point and an edge polyline of them.
+Point = tuple[float, float]
+Line = list[Point]
 
 
 def _inmem_map_from_graph(
@@ -46,19 +51,146 @@ def _inmem_map_from_graph(
     return InMemMap("osm", graph=graph, use_latlon=True, use_rtree=True, index_edges=True)
 
 
+def _sidewalk_params() -> dict[str, Any]:
+    """Return the filter settings a matching map was built with.
+
+    Both the cached index and the processing-config hash key off this: the
+    map cache is otherwise only invalidated by its format and the graph's
+    mtime, so a changed threshold would rematch every ride against a map
+    still filtered the old way.
+    """
+    return {
+        "parallel_m": config.SIDEWALK_PARALLEL_M,
+        "heading_deg": config.SIDEWALK_HEADING_DEG,
+        "tags": sorted(config.SIDEWALK_TAGS),
+        "street_tags": sorted(config.SIDEWALK_STREET_TAGS),
+    }
+
+
+def _canon(u: int, v: int) -> tuple[int, int]:
+    """Canonical (min, max) node-pair key, as used everywhere else."""
+    return (u, v) if u < v else (v, u)
+
+
+def _bearing(a: Point, b: Point) -> float:
+    """Bearing of a (lon, lat) segment in degrees, mod 180 (undirected)."""
+    dx = (b[0] - a[0]) * config.M_PER_LON
+    dy = (b[1] - a[1]) * config.M_PER_LAT
+    return math.degrees(math.atan2(dx, dy)) % 180
+
+
+def _point_seg_m(p: Point, a: Point, b: Point) -> float:
+    """Distance in metres from (lon, lat) p to segment a-b."""
+    px, py = p[0] * config.M_PER_LON, p[1] * config.M_PER_LAT
+    ax, ay = a[0] * config.M_PER_LON, a[1] * config.M_PER_LAT
+    dx = b[0] * config.M_PER_LON - ax
+    dy = b[1] * config.M_PER_LAT - ay
+    span = dx * dx + dy * dy
+    t = 0.0 if span == 0 else max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / span))
+    return math.hypot(px - (ax + t * dx), py - (ay + t * dy))
+
+
+def _edge_lines(G: nx.MultiDiGraph) -> dict[tuple[int, int], tuple[str, Line]]:
+    """One highway tag and (lon, lat) polyline per canonical node pair."""
+    lines: dict[tuple[int, int], list[tuple[float, float]]] = {}
+    tags: dict[tuple[int, int], str] = {}
+    for u, v, data in G.edges(data=True):
+        key = _canon(int(u), int(v))
+        hw = data.get("highway", "")
+        if isinstance(hw, list):
+            hw = hw[0] if hw else ""
+        tags.setdefault(key, hw)
+        if key in lines:
+            continue
+        if "geometry" in data:
+            xs, ys = data["geometry"].xy
+            lines[key] = list(zip(xs, ys))
+        else:
+            lines[key] = [
+                (G.nodes[u]["x"], G.nodes[u]["y"]),
+                (G.nodes[v]["x"], G.nodes[v]["y"]),
+            ]
+    return {k: (tags[k], line) for k, line in lines.items()}
+
+
+def _sidewalk_edges(G: nx.MultiDiGraph) -> set[tuple[int, int]]:
+    """Canonical keys of footway/steps edges that a roadway runs beside.
+
+    A sidewalk is defined by the roadway it accompanies -- parallel, and
+    within config.SIDEWALK_PARALLEL_M for most of its length -- which is what
+    separates it from a greenway, an esplanade or a park path.  Only actual
+    roadways count as that accompaniment (config.SIDEWALK_STREET_TAGS); pier
+    access ways run alongside the Hudson River Park Esplanade and a bridleway
+    alongside Central Park's West Drive, so letting service ways or other
+    paths vote classes both as sidewalk at every threshold.
+
+    Roadway segments go into a fixed-cell grid whose cells are wider than the
+    threshold, so the 3x3 neighbourhood around a point contains every segment
+    that could be within it.
+    """
+    cell = 0.00035  # ~30m: comfortably wider than SIDEWALK_PARALLEL_M
+    lines = _edge_lines(G)
+    grid: dict[tuple[int, int], list[tuple[Point, Point, float]]] = {}
+    for hw, line in lines.values():
+        if hw not in config.SIDEWALK_STREET_TAGS:
+            continue
+        for a, b in zip(line, line[1:]):
+            entry = (a, b, _bearing(a, b))
+            for x, y in (a, b, ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)):
+                grid.setdefault((int(x / cell), int(y / cell)), []).append(entry)
+
+    def parallel_dist(mid: Point, heading: float) -> float:
+        """Distance to the nearest roughly-parallel roadway segment."""
+        cx, cy = int(mid[0] / cell), int(mid[1] / cell)
+        best = float("inf")
+        for i in (-1, 0, 1):
+            for j in (-1, 0, 1):
+                for a, b, bearing in grid.get((cx + i, cy + j), ()):
+                    off = abs(bearing - heading) % 180
+                    if min(off, 180 - off) > config.SIDEWALK_HEADING_DEG:
+                        continue
+                    best = min(best, _point_seg_m(mid, a, b))
+        return best
+
+    sidewalks: set[tuple[int, int]] = set()
+    for key, (hw, line) in lines.items():
+        if hw not in config.SIDEWALK_TAGS:
+            continue
+        dists = sorted(
+            parallel_dist(((a[0] + b[0]) / 2, (a[1] + b[1]) / 2), _bearing(a, b))
+            for a, b in zip(line, line[1:])
+        )
+        if dists and dists[len(dists) // 2] <= config.SIDEWALK_PARALLEL_M:
+            sidewalks.add(key)
+    return sidewalks
+
+
 def _build_inmem_map(G: nx.MultiDiGraph) -> InMemMap:
-    """Build the leuvenmapmatching graph index from the OSM graph."""
+    """Build the leuvenmapmatching graph index from the OSM graph.
+
+    Sidewalk-class edges are left out: see _sidewalk_edges.  Nodes are kept
+    whatever happens to their edges, so the index still has one entry per
+    graph node and the cache's size check stays meaningful.
+    """
     print("Building HMM map index...")
+    sidewalks = _sidewalk_edges(G)
     graph: dict[int, tuple[tuple[float, float], list[int]]] = {}
     for nid, data in G.nodes(data=True):
         graph[int(nid)] = ((data["y"], data["x"]), [])
+    dropped = 0
     for u, v in G.edges():
-        nbrs = graph[int(u)][1]
-        vi = int(v)
+        ui, vi = int(u), int(v)
+        if _canon(ui, vi) in sidewalks:
+            dropped += 1
+            continue
+        nbrs = graph[ui][1]
         if vi not in nbrs:
             nbrs.append(vi)
     mmap = _inmem_map_from_graph(graph)
-    print(f"  {G.number_of_nodes():,} nodes indexed")
+    print(
+        f"  {G.number_of_nodes():,} nodes indexed, "
+        f"{len(sidewalks):,} sidewalk edges left out ({dropped:,} directed)"
+    )
     return mmap
 
 
@@ -68,7 +200,11 @@ def _save_inmem_map_cache(mmap: InMemMap) -> None:
         config.HMM_MAP_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
         with config.HMM_MAP_CACHE_PATH.open("wb") as f:
             pickle.dump(
-                {"format": HMM_MAP_CACHE_FORMAT, "graph": mmap.graph},
+                {
+                    "format": HMM_MAP_CACHE_FORMAT,
+                    "sidewalk": _sidewalk_params(),
+                    "graph": mmap.graph,
+                },
                 f,
                 protocol=pickle.HIGHEST_PROTOCOL,
             )
@@ -90,6 +226,8 @@ def _load_cached_inmem_map() -> InMemMap | None:
         with path.open("rb") as f:
             payload = pickle.load(f)
         if payload.get("format") != HMM_MAP_CACHE_FORMAT:
+            return None
+        if payload.get("sidewalk") != _sidewalk_params():
             return None
         return _inmem_map_from_graph(payload["graph"])
     except Exception:
