@@ -135,7 +135,7 @@ running 41% of trips in 2021 and 90% in 2026
 has to be read at the top: this test is the direct measurement of the bias
 that inflates its bottom row.
 
-A bike carries a lifetime. It does not carry a neighbourhood.
+A bike carries a lifetime. It does not carry a neighborhood.
 
 ## The ebike trap
 
@@ -166,7 +166,7 @@ ridden was longer:
 | 8 Ave & W 49 St | 94 | 4 | 2.7 | 1.46 |
 
 Bushwick runs half again its share and Midtown runs under. That is the shape
-you would expect — a neighbourhood dock recirculating its own bikes, a
+you would expect — a neighborhood dock recirculating its own bikes, a
 commuter dock flushed daily by the whole system — and 12 against 8.2 is not
 enough events to claim it. It is the one thread here worth pulling if the
 export ever doubles in size.

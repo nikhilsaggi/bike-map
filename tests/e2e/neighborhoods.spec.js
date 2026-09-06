@@ -1,7 +1,7 @@
-import { test, expect, gotoMap, openSection } from './helpers.js';
+import { test, expect, gotoMap, openSection, chip } from './helpers.js';
 import { buildFixture } from './fixture.js';
 
-/** Turn the neighbourhood layer on and wait for the polygons to land. */
+/** Turn the neighborhood layer on and wait for the polygons to land. */
 async function showAreas(page) {
   await page.locator('#nb-check').check();
   await expect.poll(() => page.evaluate(() => map.hasLayer(nbLayer))).toBe(true);
@@ -30,12 +30,13 @@ async function setHi(page, value) {
   }, value);
 }
 
-test.describe('Neighbourhood layer', () => {
+test.describe('Neighborhood layer', () => {
   test('is off until asked for, then draws one polygon per area', async ({ page }) => {
     await gotoMap(page);
     await expect(page.locator('#nb-check')).not.toBeChecked();
     expect(await page.evaluate(() => map.hasLayer(nbLayer))).toBe(false);
-    await expect(page.locator('#nb-note')).toHaveText(/2 tabulation areas/);
+    // What the fill means lives on the control, not in a caption under it.
+    await expect(page.locator('#nb-toggle')).toHaveAttribute('title', /2 NYC tabulation areas/);
 
     await showAreas(page);
     expect(await page.evaluate(() => nbLayer.getLayers().length)).toBe(2);
@@ -68,7 +69,7 @@ test.describe('Neighbourhood layer', () => {
     await expectFill(page, 0, 0.5);
   });
 
-  test('a popup gives the area its own coverage and passes', async ({ page }) => {
+  test('a popup gives the area its own coverage and rides', async ({ page }) => {
     await gotoMap(page);
     await showAreas(page);
     await page.evaluate(() => nbShapes[0].openPopup());
@@ -78,12 +79,47 @@ test.describe('Neighbourhood layer', () => {
     // 5,000 m of 20,000 m in miles, and the share of its own network.
     await expect(popup).toContainText('3.1 of 12.4 mi');
     await expect(popup).toContainText('25%');
-    // Passes counts only the features tagged to this area: the centre street
-    // (4 passes) and the south one (2), never the north street's 2.
-    await expect(popup.locator('.nb-row').nth(2)).toContainText('6');
+    // Rides, not passes: the centre street carries rides 0-3 and the south one
+    // ride 3 twice, so four distinct rides touched this area -- never the
+    // north street's, which belongs to Uptown. Summing passes would say 6.
+    await expect(popup.locator('.nb-row').nth(2)).toContainText('Rides through');
+    await expect(popup.locator('.nb-row').nth(2)).toContainText('4');
+    // 5,400 measured seconds on Downtown's streets, all-time.
+    await expect(popup.locator('.nb-row').nth(3)).toContainText('Time here');
+    await expect(popup.locator('.nb-row').nth(3)).toContainText('1.5 h');
   });
 
-  test('a popup counts passes within the date range only', async ({ page }) => {
+  test('the stats section rolls the areas up by borough', async ({ page }) => {
+    await gotoMap(page);
+    await openSection(page, 'stat-places');
+    const cells = page.locator('#stat-places .pl-grid > span');
+    // Header is three cells, then one row of three per borough, Brooklyn
+    // first because it holds the most ridden metres.
+    await expect(cells.nth(3)).toHaveText('Brooklyn');
+    await expect(cells.nth(4)).toHaveText('25.0%');   // 5,000 of 20,000 m
+    await expect(cells.nth(5)).toHaveText('1.5 h');   // 5,400 s
+    await expect(cells.nth(6)).toHaveText('Manhattan');
+    await expect(cells.nth(7)).toHaveText('16.0%');   // 1,600 of 10,000 m
+    await expect(cells.nth(8)).toHaveText('30 min');  // 1,800 s
+  });
+
+  test('a row in the section puts its neighborhood on the map', async ({ page }) => {
+    await gotoMap(page);
+    await openSection(page, 'stat-places');
+    await expect(page.locator('#stat-places .pl-name').first()).toHaveText('Downtown Flats');
+    // The layer is off; clicking a row turns it on and opens that popup.
+    await expect(page.locator('#nb-check')).not.toBeChecked();
+    await page.locator('#stat-places .pl-row').first().click();
+    await expect(page.locator('#nb-check')).toBeChecked();
+    await expect(page.locator('.nb-popup .nb-head')).toHaveText('Downtown Flats');
+  });
+
+  test('no block means no section', async ({ page }) => {
+    await gotoMap(page, buildFixture({ neighborhoods: null }));
+    await expect(chip(page, 'stat-places')).toBeHidden();
+  });
+
+  test('a popup counts rides within the date range only', async ({ page }) => {
     await gotoMap(page);
     await showAreas(page);
     // To 2023-06-15: the centre street keeps rides 0 and 1, the south street's
@@ -91,7 +127,10 @@ test.describe('Neighbourhood layer', () => {
     await setHi(page, 1);
     await page.evaluate(() => nbShapes[0].openPopup());
     await expect(page.locator('.nb-popup .nb-row').nth(2)).toContainText('2');
-    await expect(page.locator('.nb-popup')).toContainText('Ridden by 2023-06-15');
+    await expect(page.locator('.nb-popup .nb-row').nth(2)).toContainText('Rides through');
+    // Coverage is still a running total to the upper date, so it keeps
+    // Downtown's first 1,250 m rather than following the range at both ends.
+    await expect(page.locator('.nb-popup .nb-row').nth(0)).toContainText('0.8 of 12.4 mi');
   });
 
   test('the coverage tile reports NYC, not the whole graph', async ({ page }) => {

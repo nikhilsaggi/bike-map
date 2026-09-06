@@ -33,7 +33,7 @@ interactive Leaflet map (`docs/`, served via GitHub Pages) plus static PNGs.
   `python tools/traversal_audit.py` before any `TRAVERSAL_*`/`SPEED_*`
   threshold change, `python tools/hmm_matcher_eval.py` before any matcher
   change, `python tools/neighborhood_audit.py` before touching the
-  per-neighbourhood block. All read state; none writes it.
+  per-neighborhood block. All read state; none writes it.
 
 ## Architecture
 
@@ -165,19 +165,41 @@ reads everything from `rides.geojson.gz` top-level `properties`.
   `coverage.pct` is measured over every rideable edge in the graph, and the
   graph is the rides' own bounding box -- half of it is not in New York City,
   so riding further out *lowers* it. `properties.neighborhoods` carries the
-  same measurement over the part inside a NYC neighbourhood (9.1% against
+  same measurement over the part inside a NYC neighborhood (9.1% against
   5.1%), and that is what the "of NYC" tile shows, because that is what the
   label claims. Neither is a share of the whole city: the box has never
   reached Staten Island ([details](findings/neighborhoods.md)).
-- **A neighbourhood is filled by coverage as of the date on screen**, not
+- **A neighborhood is filled by coverage as of the date on screen**, not
   all-time, so the slider and the time-lapse move it the way they move the
   edges and the dock markers. The export ships `new` -- [date index, metres
   first ridden that day] -- and the page takes a running total up to
   `filterHi`; it follows the range's upper end alone, because "how much had I
-  ridden by then" is a running total, and the popup says so. Areas are placed
-  by edge midpoint, which misplaces 4.9% of ridden metres, nearly all of it
-  on ten named bridges and waterfront paths -- fine for a fill colour, not
-  for anything stronger.
+  ridden by then" is a running total. Areas are placed by edge midpoint,
+  which misplaces 4.9% of ridden metres, nearly all of it on ten named
+  bridges and waterfront paths -- fine for a fill colour, not for anything
+  stronger.
+- **An area popup counts rides, never passes.** A pass belongs to one stretch
+  of street: "4 passes" on a street popup means that stretch was ridden four
+  times. Summed over an area it counts segment-crossings instead, and Forest
+  Hills -- 104 drawn segments each ridden once, by the same two rides -- read
+  "104", which is what being there 104 times would read like. `nbRidesIn`
+  counts distinct rides in range. There is no honest area-level pass count:
+  how many times a ride entered and left would be the real one, and a
+  feature's `rides` carry no order and no clock.
+- **Per-area time is measured, all-time, and a floor.** `time_s` sums
+  `edge_speed`'s elapsed seconds over the area's edges -- real timestamps on
+  known geometry, not distance over an assumed speed. It counts every timed
+  edge whatever its highway tag, because time on a park path is still time
+  spent there, which makes it the one figure in the block not restricted to
+  `COVERAGE_EXCLUDE`-filtered edges. It cannot follow the slider:
+  `edge_speed` has no per-ride breakdown. And it is a floor -- the detector
+  places ~357 of the ~519 recorded hours, the rest being off-network, inside
+  a gap, or on a pass too short to admit.
+- **The Neighborhoods stats section is all-time**, like every other section
+  of that panel; the layer is the part that moves with the slider. It rolls
+  the areas up per borough (Manhattan 32.4% against Queens 4.4% -- the spread
+  the one citywide number hides) and lists the most-ridden areas, each row
+  opening its own polygon on the map.
 - **The Citibike panel is a two-column comparison**, Citibike against own
   bike, on trips / time / days / typical length. The Citibike column is the
   export's own totals (every trip, including ones no GPS ride covers); the

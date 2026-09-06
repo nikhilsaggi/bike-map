@@ -1,4 +1,4 @@
-"""Audit the ridden map by neighbourhood, against the citywide coverage figure.
+"""Audit the ridden map by neighborhood, against the citywide coverage figure.
 
 The map's one geographic statistic is a single percentage of "the network",
 and that network is built from the rides' own bounding box -- so it includes
@@ -11,9 +11,9 @@ Tabulation Areas and reports what the single number hides:
    `neighborhoods.BOUNDARY_TOLERANCE_M` from all of them is outside the city,
    and the difference between the two percentages is the answer.
 
-2. **Where the riding actually is**, per neighbourhood and per borough, by
+2. **Where the riding actually is**, per neighborhood and per borough, by
    unique kilometres and by passes.  The two rankings mostly agree, and where
-   they disagree is a corridor ridden over and over against a neighbourhood
+   they disagree is a corridor ridden over and over against a neighborhood
    explored once.
 
 3. **Whether midpoint assignment is good enough.**  `--boundaries` splits
@@ -22,7 +22,7 @@ Tabulation Areas and reports what the single number hides:
    noise; bridges and waterfront paths are neither.
 
 4. **Whether the Citibike docks really do fill in where the rides are thin**,
-   which is what `findings/citibike-trips.md` claims.  Per neighbourhood they
+   which is what `findings/citibike-trips.md` claims.  Per neighborhood they
    do the opposite.
 
 Reads cache/render_cache.pkl, cache/state.pkl, cache/nta_boundaries.geojson
@@ -84,15 +84,15 @@ def _report_totals(rows: list[dict[str, Any]], citywide: dict[str, Any] | None) 
     print(f"  coverage of New York City      {100 * ridden / max(net, 1):9.2f}%")
     if citywide:
         outside = citywide["network_km"] - net
-        print(f"  -> {outside:,.0f} km of the denominator is not in a NYC neighbourhood")
+        print(f"  -> {outside:,.0f} km of the denominator is not in a NYC neighborhood")
 
 
 def _report_areas(rows: list[dict[str, Any]], top: int) -> None:
-    """Rank neighbourhoods by ridden km, and again by passes."""
+    """Rank neighborhoods by ridden km, and again by passes."""
     touched = [r for r in rows if r["ridden_m"] > 0]
     have_net = [r for r in rows if r["net_m"] > 0]
     lengths = sorted(r["ridden_m"] for r in touched)
-    print(f"\nNeighbourhoods with any ridden street: {len(touched)}/{len(have_net)} in the graph")
+    print(f"\nNeighborhoods with any ridden street: {len(touched)}/{len(have_net)} in the graph")
     if touched:
         print(f"  median ridden in one:     {lengths[len(lengths) // 2] / 1000:.2f} km")
         print(f"  under 500 m:              {sum(1 for m in lengths if m < 500)}")
@@ -106,7 +106,7 @@ def _report_areas(rows: list[dict[str, Any]], top: int) -> None:
     # counts every drawn corridor in the area, sidewalks and service roads
     # included, and is roughly 3x larger for it.
     print(f"\nTop {top} by ridden km (passes over rideable edges only):")
-    print(f"  {'neighbourhood':44} {'bo':2} {'ridden':>8} {'of it':>6} {'rides':>6} {'passes':>7}")
+    print(f"  {'neighborhood':44} {'bo':2} {'ridden':>8} {'of it':>6} {'rides':>6} {'passes':>7}")
     for r in sorted(touched, key=lambda r: -r["ridden_m"])[:top]:
         pct = 100 * r["ridden_m"] / r["net_m"]
         print(
@@ -115,7 +115,7 @@ def _report_areas(rows: list[dict[str, Any]], top: int) -> None:
         )
 
     # Passes per ridden km separates a corridor ridden daily from a
-    # neighbourhood ridden across once. Both ends are worth seeing: the
+    # neighborhood ridden across once. Both ends are worth seeing: the
     # question is whether "rode through" and "explored" are different shapes
     # in this data or the same one.
     ranked = sorted(
@@ -195,7 +195,7 @@ def _report_boundaries(
     print(f"\nMidpoint assignment, over {total / 1000:,.1f} km of ridden street:")
     print(f"  {crossers:,} edges cross a boundary")
     print(f"  {misplaced / 1000:,.1f} km ({100 * misplaced / max(total, 1):.2f}%) of ridden length")
-    print("  sits outside the neighbourhood its midpoint fell in.")
+    print("  sits outside the neighborhood its midpoint fell in.")
     print("\n  Worst placed -- these are the ones splitting would fix:")
     for out_m, length, name, home in sorted(worst, reverse=True)[:10]:
         print(f"    {out_m:6.0f} m of {length:7.0f} m  {name[:42]:42} -> {home}")
@@ -223,17 +223,17 @@ def _report_citibike(areas: neighborhoods.Areas, rows: list[dict[str, Any]], top
 
     unplaced = len(trips.get("docks", ())) - len(names)
     empty = [i for i in ends if rows[i]["ridden_m"] == 0]
-    print(f"\nCitibike docks by neighbourhood ({unplaced} docks have no coordinates):")
-    print(f"  {len(ends)} neighbourhoods have a dock endpoint")
+    print(f"\nCitibike docks by neighborhood ({unplaced} docks have no coordinates):")
+    print(f"  {len(ends)} neighborhoods have a dock endpoint")
     print(f"  of those, with no ridden street at all: {len(empty)}")
-    print(f"\n  {'neighbourhood':40} {'bo':2} {'dock ends':>9} {'ridden':>8} {'covered':>8}")
+    print(f"\n  {'neighborhood':40} {'bo':2} {'dock ends':>9} {'ridden':>8} {'covered':>8}")
     for area, n in sorted(ends.items(), key=lambda kv: -kv[1])[:top]:
         r = rows[area]
         pct = 100 * r["ridden_m"] / r["net_m"] if r["net_m"] else 0
         print(
             f"  {r['name'][:40]:40} {r['boro']:2} {n:9,} {r['ridden_m'] / 1000:6.1f} km {pct:7.1f}%"
         )
-    print("\n  Spearman against the busiest dock neighbourhoods:")
+    print("\n  Spearman against the busiest dock neighborhoods:")
     pairs = sorted(ends.items(), key=lambda kv: -kv[1])
     counts = [n for _, n in pairs]
     print(f"    vs coverage %  {_spearman(counts, [_pct(rows[i]) for i, _ in pairs]):+.3f}")
@@ -242,7 +242,7 @@ def _report_citibike(areas: neighborhoods.Areas, rows: list[dict[str, Any]], top
 
 
 def _pct(row: dict[str, Any]) -> float:
-    """Share of a neighbourhood's rideable network that has been ridden."""
+    """Share of a neighborhood's rideable network that has been ridden."""
     return 100 * row["ridden_m"] / row["net_m"] if row["net_m"] else 0.0
 
 
@@ -256,7 +256,7 @@ def _spearman(a: list[float], b: list[float]) -> float:
 
 
 def main() -> None:
-    """Measure the ridden map per neighbourhood and report on it."""
+    """Measure the ridden map per neighborhood and report on it."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--top", type=int, default=TOP_N, metavar="N", help="rows per ranking")
     parser.add_argument(
@@ -280,7 +280,7 @@ def main() -> None:
         raise SystemExit(msg)
     _fmt, edge_geom, edge_hw, edge_name = cached
 
-    print(f"Placing {len(edge_geom):,} edges in {len(areas)} neighbourhoods...")
+    print(f"Placing {len(edge_geom):,} edges in {len(areas)} neighborhoods...")
     rows = neighborhoods.measure(areas, edge_geom, edge_hw, state)
 
     # measure() carries the ride set; passes need the traversal counts, which

@@ -30,12 +30,13 @@ The pipeline exports a compressed GeoJSON that powers an interactive
 - Riding stats: distance/time totals, average speed, longest ride,
   miles and new-street miles per year, rides-by-hour and weekday
   histograms (data is stored metric; the UI displays miles)
-- Optional neighbourhood layer: NYC's 262 tabulation areas, each filled by
-  the share of its own streets ridden by the date on screen, so the slider and
-  the time-lapse fill the city in. Click one for its coverage and the passes
-  drawn inside it. Per area the story is different from the citywide one — a
-  third of Manhattan against 5% of the graph
-  ([why](findings/neighborhoods.md))
+- Optional neighborhood layer: NYC's tabulation areas, each filled by the
+  share of its own streets ridden by the date on screen, so the slider and the
+  time-lapse fill the city in. Click one for its coverage, the rides that went
+  through it, and the measured time spent on its streets
+- A Neighborhoods stats section rolling those up per borough — a third of
+  Manhattan's streets ridden against 4% of Queens', both hidden inside one
+  citywide 9.1% ([why](findings/neighborhoods.md))
 - Optional Citibike dock layer: markers sized by how much a dock was used in
   the date range on screen, so the slider and the time-lapse move them the way
   they move the streets. Click one to see where its trips actually went. The
@@ -289,14 +290,14 @@ part of it; `findings/` holds what they found:
 - [Bike re-encounters](findings/bike-reencounters.md) —
   `tools/bike_reencounters.py`, on whether meeting the same Citibike twice
   beats chance (it does not, once the round trips come out)
-- [Rides by neighbourhood](findings/neighborhoods.md) — half the coverage
+- [Rides by neighborhood](findings/neighborhoods.md) — half the coverage
   denominator was not New York City, what the per-area cut says instead, and
   where assigning an edge by its midpoint goes wrong
 
 `tools/hmm_matcher_eval.py` compares the two matchers on real rides,
 `tools/traversal_audit.py` checks pass counting against the raw traces, and
 `tools/neighborhood_audit.py` cuts the coverage measurement into
-neighbourhoods (`--boundaries` also measures what midpoint assignment
+neighborhoods (`--boundaries` also measures what midpoint assignment
 misplaces). `tools/bike_reencounters.py` re-derives the Citibike panel's
 re-encounter list from `cache/citibike_trips.json` alone, and tests it against
 chance — the two permutation tests the panel does not draw.
@@ -338,9 +339,9 @@ gitignored):
   (written by `ingest.citibike`, absent until you run it)
 - `cache/citibike_stations.json` — GBFS dock coordinates, so a failed fetch
   falls back to the last good copy
-- `cache/nta_boundaries.geojson` — NYC neighbourhood boundaries, downloaded
+- `cache/nta_boundaries.geojson` — NYC neighborhood boundaries, downloaded
   once from NYC Open Data on the first run and never refreshed; delete it and
-  the map ships without the neighbourhood layer until the next run
+  the map ships without the neighborhood layer until the next run
 
 Delete any cache file — or the whole directory — to force a rebuild.
 Changing processing parameters automatically triggers a full reprocess, and

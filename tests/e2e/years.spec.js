@@ -53,7 +53,7 @@ test.describe('per-year table', () => {
     await expect(rows.nth(0)).toContainText('25 mi'); // 40 km
     await expect(rows.nth(1)).toContainText('Biggest month');
     await expect(rows.nth(1)).toContainText('May');
-    await expect(rows.nth(2)).toContainText('Favourite time');
+    await expect(rows.nth(2)).toContainText('Favorite time');
     await expect(rows.nth(2)).toContainText('Wednesdays');
     await expect(rows.nth(2)).toContainText('9am');
 

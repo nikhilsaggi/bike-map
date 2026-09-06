@@ -105,7 +105,7 @@ export const CITIBIKE_BLOCK = {
   own: { rides: 3, hours: 4.0, days: 2, median_min: 41.0 },
 };
 
-// Neighbourhoods: two areas splitting the three streets between them, so
+// Neighborhoods: two areas splitting the three streets between them, so
 // every number the layer draws is hand-computable. Uptown Heights holds the
 // north street (lat 40.7395), Downtown Flats the centre and south ones --
 // a feature is placed by its middle coordinate, which for a two-point line
@@ -117,16 +117,22 @@ export const CITIBIKE_BLOCK = {
 // 20,000 is 25% and so 0.5 of the ramp, 1,600 of 10,000 is 16% and so 0.4,
 // and pulling the upper handle back to date 0 leaves Downtown at 1,250 of
 // 20,000, which is 6.25% and 0.25 of the ramp.
+//
+// `time_s` is measured on-street seconds, all-time and not date-filtered:
+// 5,400 s is 1.5 h in Downtown (Brooklyn), 1,800 s is 30 min in Uptown
+// (Manhattan), so the borough table reads "1.5 h" and "30 min".
 export const NEIGHBORHOOD_BLOCK = {
   source: 'NYC Neighborhood Tabulation Areas 2020 (9nt8-h7nd)',
   net_m: 30000,
   ridden_m: 6600,
+  time_s: 7200,
   areas: [
     {
       name: 'Downtown Flats',
       boro: 'Bk',
       net_m: 20000,
       ridden_m: 5000,
+      time_s: 5400,
       new: [[0, 1250], [2, 3750]],
       // polygon -> ring -> point, Leaflet's multi-polygon nesting.
       rings: [[[
@@ -138,6 +144,7 @@ export const NEIGHBORHOOD_BLOCK = {
       boro: 'Mn',
       net_m: 10000,
       ridden_m: 1600,
+      time_s: 1800,
       new: [[1, 1600]],
       rings: [[[
         [-74.0, 40.7375], [-73.9, 40.7375], [-73.9, 40.745], [-74.0, 40.745], [-74.0, 40.7375],

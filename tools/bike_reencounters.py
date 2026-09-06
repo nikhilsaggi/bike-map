@@ -23,7 +23,7 @@ is the evidence for what that number actually is, and it takes three steps:
    permutation tests hold the re-encounters fixed and ask what is special
    about the bike that was met: is it nearer to where it was left than a
    random bike you had ridden by then (space), and is it one you rode more
-   recently (time)?  Those answer "do bikes stay in a neighbourhood" and "do
+   recently (time)?  Those answer "do bikes stay in a neighborhood" and "do
    bikes leave the fleet" without any model of the system at all.
 
 Reads cache/citibike_trips.json; writes nothing.  The findings are written up
