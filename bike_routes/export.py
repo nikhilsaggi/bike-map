@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import gzip
 import json
-from datetime import datetime, timezone
 from typing import Any
 
 from . import config
@@ -185,7 +184,9 @@ def _export_geojson(
             "speed": _speed_summary(state.get("edge_speed", {}), edge_geom, edge_name or {}),
             "dates": all_dates,
             "rides": rides_meta,
-            "updated": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+            # The last day a ride was recorded, not when the pipeline ran: a
+            # rerun over unchanged rides must not look like new data.
+            "updated": all_dates[-1] if all_dates else None,
         },
         "features": features,
     }

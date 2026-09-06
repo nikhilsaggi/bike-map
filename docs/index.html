@@ -669,6 +669,16 @@ function fmtDuration(seconds) {
   return `${h < 10 ? h.toFixed(1) : Math.round(h).toLocaleString()} h`;
 }
 
+// The export's ride times are 24h "HH:MM"; the page reads them back as
+// "8:30am", matching hourLabel's lower-case, spaceless clock.  Anything that
+// is not a clock (an older payload, a blank) is passed through untouched.
+function clockLabel(hm) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(hm || '');
+  if (!m) return hm || '';
+  const h = +m[1];
+  return `${h % 12 || 12}:${m[2]}${h < 12 ? 'am' : 'pm'}`;
+}
+
 let dateList = [];
 let rideList = [];
 let rideDateIdx = [];
@@ -1822,7 +1832,7 @@ function popupContent(rideIds) {
     while (i + 1 < rideIds.length && rideIds[i + 1] === ri) { n++; i++; }
     passes += n;
     const d = dateList[di] ?? '';
-    const t = rideList[ri]?.[1] || '';
+    const t = clockLabel(rideList[ri]?.[1]);
     rows.push(
       `<div class="ride-row" onclick="viewRide(${ri})" title="Show this ride's route">` +
       `${d}${t ? ` &middot; ${t}` : ''}${n > 1 ? ` &times;${n}` : ''}` +
@@ -1917,7 +1927,7 @@ function viewRide(ri, keepPopup = false) {
   rideView = ri;
   if (!keepPopup) { map.closePopup(); dockTrace = null; }
   const d = dateList[rideDateIdx[ri]] ?? '';
-  const t = rideList[ri]?.[1] || '';
+  const t = clockLabel(rideList[ri]?.[1]);
   const label = document.getElementById('ride-view-label');
   // Stepping a dock pair's recordings is the one ride view you can be several
   // clicks into, so the bar carries the position the way the row does.

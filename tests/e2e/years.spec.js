@@ -144,7 +144,7 @@ test.describe('per-year table', () => {
     await page.locator('#stat-years .year-row').nth(1).click();
     await page.locator('.yd-link').click();
     await expect(page.locator('#ride-view-bar')).toBeVisible();
-    await expect(page.locator('#ride-view-label')).toHaveText('2024-07-04 14:45 · 2 Citibike trips');
+    await expect(page.locator('#ride-view-label')).toHaveText('2024-07-04 2:45pm · 2 Citibike trips');
 
     const tooltip = await hoverEdge(page, EDGES.south.lat);
     await expect(tooltip).toBeVisible();

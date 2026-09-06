@@ -1,5 +1,5 @@
 import { test, expect, gotoMap, hoverEdge, clickEdge } from './helpers.js';
-import { EDGES } from './fixture.js';
+import { buildFixture, EDGES } from './fixture.js';
 
 test.describe('street tooltips and popups', () => {
   test('hovering a street shows its pass count', async ({ page }) => {
@@ -21,9 +21,28 @@ test.describe('street tooltips and popups', () => {
     const rows = popup.locator('.ride-row');
     await expect(rows).toHaveCount(4);
     await expect(rows.nth(0)).toContainText('2023-04-01');
-    await expect(rows.nth(0)).toContainText('08:30');
+    await expect(rows.nth(0)).toContainText('8:30am');
     await expect(rows.nth(3)).toContainText('2024-07-04');
-    await expect(rows.nth(3)).toContainText('14:45');
+    await expect(rows.nth(3)).toContainText('2:45pm');
+  });
+
+  // The two hours a 12-hour clock gets wrong if it just subtracts 12:
+  // 00:xx is 12am, not 0am, and 12:xx is 12pm, not 0pm.
+  test('midnight and noon read as 12am and 12pm', async ({ page }) => {
+    await gotoMap(page, buildFixture({
+      rides: [
+        [0, '00:05', 10.0, -1],
+        [1, '12:00', 25.0, -1],
+        [2, '09:15', 12.5, -1],
+        [3, '23:59', 40.0, -1],
+      ],
+    }));
+    await clickEdge(page, EDGES.center.lat);
+    const rows = page.locator('.ride-popup .ride-row');
+    await expect(rows.nth(0)).toContainText('12:05am');
+    await expect(rows.nth(1)).toContainText('12:00pm');
+    await expect(rows.nth(2)).toContainText('9:15am');
+    await expect(rows.nth(3)).toContainText('11:59pm');
   });
 
   test('a repeated ride is one row marked with its pass count', async ({ page }) => {
@@ -33,7 +52,7 @@ test.describe('street tooltips and popups', () => {
     await expect(popup).toContainText('2 passes across 1 ride');
     const rows = popup.locator('.ride-row');
     await expect(rows).toHaveCount(1);
-    await expect(rows.nth(0)).toHaveText('2024-07-04 · 14:45 ×2 · 2 Citibike trips');
+    await expect(rows.nth(0)).toHaveText('2024-07-04 · 2:45pm ×2 · 2 Citibike trips');
   });
 });
 
@@ -45,7 +64,7 @@ test.describe('single-ride view', () => {
 
     const bar = page.locator('#ride-view-bar');
     await expect(bar).toBeVisible();
-    await expect(page.locator('#ride-view-label')).toHaveText('2023-04-01 08:30');
+    await expect(page.locator('#ride-view-label')).toHaveText('2023-04-01 8:30am');
     // popup closes when entering ride view
     await expect(page.locator('.ride-popup')).toHaveCount(0);
 
@@ -57,7 +76,7 @@ test.describe('single-ride view', () => {
     await gotoMap(page);
     await clickEdge(page, EDGES.center.lat);
     await page.locator('.ride-popup .ride-row').last().click();
-    await expect(page.locator('#ride-view-label')).toHaveText('2024-07-04 14:45 · 2 Citibike trips');
+    await expect(page.locator('#ride-view-label')).toHaveText('2024-07-04 2:45pm · 2 Citibike trips');
 
     await page.locator('#ride-view-exit').click();
     await expect(page.locator('#ride-view-bar')).toBeHidden();
