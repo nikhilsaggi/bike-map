@@ -51,6 +51,15 @@ The pipeline exports a compressed GeoJSON that powers an interactive
   down arrow keys step through them, newest first, and the bar at the top says
   which one is drawn. A recording can hold several trips, and the row says
   when the one on screen does
+- Bike re-encounters: the panel lists every Citibike unlocked again after it
+  had moved on — 88 of them, against 200 repeats that were only the bike
+  parked and taken straight back. Each row gives the number of separate
+  occasions and the days between them, and clicking one plays that bike's
+  recordings through the same cycle a dock row uses
+  ([what counts as one](findings/bike-reencounters.md))
+- Fleet generation: trips per year stacked by which fleet the bike came from,
+  read off the id shape — the newer bikes go from 41% of unlocks in 2021 to
+  90% in 2026 ([what the id does and does not say](findings/citibike-trips.md))
 - Ride source: each GPS ride is matched to Citibike trips by clock overlap and
   labelled where it appears, and the legend can filter the whole network to
   Citibike or own-bike rides. Rides outside the Citibike history are left
@@ -278,6 +287,9 @@ part of it; `findings/` holds what they found:
 - [Citibike trips](findings/citibike-trips.md) — a second source with no
   trace: why it has no speed, why its routes are never drawn, and what two
   discarded layers taught about the difference
+- [Bike re-encounters](findings/bike-reencounters.md) —
+  `tools/bike_reencounters.py`, on whether meeting the same Citibike twice
+  beats chance (it does not, once the round trips come out)
 - [Rides by neighborhood](findings/neighborhoods.md) — half the coverage
   denominator was not New York City, what the per-area cut says instead, and
   where assigning an edge by its midpoint goes wrong
@@ -286,7 +298,9 @@ part of it; `findings/` holds what they found:
 `tools/traversal_audit.py` checks pass counting against the raw traces, and
 `tools/neighborhood_audit.py` cuts the coverage measurement into
 neighborhoods (`--boundaries` also measures what midpoint assignment
-misplaces).
+misplaces). `tools/bike_reencounters.py` re-derives the Citibike panel's
+re-encounter list from `cache/citibike_trips.json` alone, and tests it against
+chance — the two permutation tests the panel does not draw.
 `tools/render_readme_map.py` re-renders the image at the top of this file
 from the caches, when it should catch up with the rides.
 

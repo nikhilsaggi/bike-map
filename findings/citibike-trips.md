@@ -60,6 +60,74 @@ Three properties of the raw file drove the design:
   line item naming one: **189 of 2,524 trips, 7%, and a floor**, because a
   free ebike ride can carry no such item. The panel says "at least".
 
+### Nor does the id encode a fleet generation
+
+The obvious follow-up is that if the id format tracks fleet replacement, some
+*finer* structure in the number might name the actual hardware — enough to
+break trips down by generation. It does not, and this was tested properly
+before being dropped.
+
+**The hyphenated prefix carries no time signal.** 2,173 hyphenated trips
+across 663 distinct prefixes (162–899). Prefix against the date the bike was
+first seen: Pearson r = **−0.061**, Spearman ρ = −0.048 per prefix; r =
+**0.0001** per trip. The decile medians wander inside a two-month band with no
+drift — 2023-06-30, 2023-05-08, 2023-04-29, 2023-04-19 across deciles 0, 3, 6,
+9. Prefixes are not per-bike either: up to 8 distinct ids share one, median 3.
+The prefix space is dense and flat (0.90 of the range used, 44–50 prefixes per
+50-wide bin), which is what a lot or rack number looks like, not a serial
+issued over time. The five-digit ids test the same way: ρ = 0.069.
+
+**One real cluster, far too small to chart.** Every one of the 26 ebike-flagged
+five-digit trips falls in three narrow numeric bands — 36028–37470,
+74039–76410, 78560–81094 — separated from everything else by gaps of thousands,
+at 83–100% ebike rates against **0% across the other 302 five-digit bikes**.
+The floor cuts one way only, so the zeroes prove nothing, but a 100%-vs-0%
+partition holding across three separate gaps, at about one trip per id, is a
+genuinely distinct population: almost certainly the original pedal-assist
+ebikes that predate the hyphenated fleet. It is **25 of 2,225 bikes, 1.1%** —
+a footnote, and a chart bucket holding 1% of trips would overstate it by the
+space it took up.
+
+### What the panel draws from it
+
+The two-bucket split is worth a chart, and the panel carries one: trips per
+year, stacked older against newer, with the newer share on the right.
+
+```
+Fleet generation  (?)
+  21  [████████░░░░░░░░]  41%
+  22  [████░░░░░░░░░░░░]  70%
+  23  [██░░░░░░░░░░░░░░]  86%
+  24  [█░░░░░░░░░░░░░░░]  89%
+  25  [█░░░░░░░░░░░░░░░]  93%
+  26  [█░░░░░░░░░░░░░░░]  90%
+  older  newer
+  Share of my own unlocks, not a count of the fleet.
+```
+
+Two steps of the dock layer's own tone rather than two hues: older and newer
+are a sequence, not two identities, and a second hue would compete with the
+plasma ramp the map already spends colour on.
+
+**The caption is load-bearing.** This is 2,518 unlocks at one rider's docks,
+not a census — it measures what was on those racks, which is a smaller and
+more honest claim than "the Citi Bike fleet". 2021 is 22 trips and its
+tooltip says so rather than being dropped; the export's first months are thin,
+and a bar that hides its own n is worse than a short one.
+
+The **(?)** says where the labels come from, because that matters:
+
+Nothing published ties a visible Citi Bike number to a model.
+[Citi Bike's own "Meet the Bikes"](https://citibikenyc.com/how-it-works/meet-the-bikes)
+names three categories — classic, the original ebike, the newest ebike — with
+no numbering scheme; the [Nov 2023 expansion announcement](https://www.nyc.gov/mayors-office/news/2023/11/mayor-adams-dot-commissioner-rodriguez-lyft-expansion-improvements-citi-bike-system)
+gives fleet counts and not ids. **Which shape is the older fleet is the
+owner's reading, from the bikes themselves** — the export can confirm the
+changeover but not which end of it is which, and the tooltip says so. What it
+does confirm is that the changeover is real and one-directional, which is why
+the chart is only ever these two buckets. Anything finer is false precision,
+and the tests above are what rule it out.
+
 ## Why there is no speed
 
 The obvious thing to compute from a start dock, an end dock and a duration is
@@ -329,10 +397,16 @@ drifted apart until five years of data made it obvious.
   days with an own-bike ride too.
 - 118 of 216 docks were used exactly once, against `Montrose Ave & Bushwick
   Ave` at 189 endpoint touches — home, and reaching 87 other docks.
-- 253 of 2,225 bikes were ridden more than once — but 198 of the 293
-  re-encounters happen on the same day, which is a round trip on a bike that
-  was still where it was left rather than meeting one again. Whether the
-  remainder beats chance is [issue #21](https://github.com/nikhilsaggi/bike-map/issues/21).
+- **Meeting the same bike twice is not a thing that happens.** 253 of 2,225
+  bikes were ridden more than once, which sounds like a small city — but 200
+  of the 293 repeats are the bike you parked and took back, and the other 93
+  are exactly what a uniform draw from the classic fleet predicts. Where you
+  left a bike says nothing about where you meet it again (p = 0.51); when you
+  last rode it does, because the fleet turns over (p = 0.003). The panel now
+  reports the 93 alone, and lists the 88 bikes behind them as chips that put
+  each bike's recordings on the map
+  ([details](bike-reencounters.md), the answer to
+  [issue #21](https://github.com/nikhilsaggi/bike-map/issues/21)).
 
 ## What was measured and deliberately dropped
 

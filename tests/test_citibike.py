@@ -144,20 +144,60 @@ def test_summary_counts_docks_and_bikes(tmp_path):
         # Same dock, one minute: an unlock re-docked. It still counts as a
         # trip and as a use at both ends of dock A.
         _record("r5", day + 4 * hour, a, a, dur=60_000, bike="100-0005"),
-        # Bike 0001 again, so one of five bikes was ridden twice.
+        # Bike 0001 again, from A -- but r1 left it at B, so it moved in
+        # between and this is a bike met again rather than one picked back up.
         _record("r6", day + 5 * hour, a, b, bike="100-0001"),
     ]
     ingest(_write_export(tmp_path, records))
     s = _citibike_summary({})
 
     assert len(s["trips"]) == 6
-    assert s["bikes"] == 5
-    assert s["repeat_bikes"] == 1
+    assert (s["reencounters"], s["resumes"]) == (1, 0)
     assert len(s["docks"]) == 2
     # A: four departures to B plus the re-docked unlock that also started
     # there, against r4's arrival and that unlock's own return. B mirrors it.
     docks = {d["name"]: (d["out"], d["in"]) for d in s["docks"]}
     assert docks == {a: (5, 2), b: (1, 4)}
+
+
+@pytest.mark.usefixtures("trips_path")
+def test_summary_splits_round_trips_from_bikes_met_again(tmp_path):
+    """A repeated bike id means two different things; the panel reports both.
+
+    See findings/bike-reencounters.md -- 200 of the 293 repeats in the real
+    export are the bike you parked, and reporting them together made five
+    years of round trips look like a small city.
+    """
+    a, b = "A St & 1 Ave", "B St & 2 Ave"
+    day = 1_700_000_000_000
+    hour = 3_600_000
+    records = [
+        # Out and back on one bike: it ends at A and is unlocked from A.
+        _record("r1", day, a, b, bike="100-0001"),
+        _record("r2", day + hour, b, a, bike="100-0001"),
+        _record("r3", day + 2 * hour, a, b, bike="100-0001"),
+        # Left at B on day one, taken from A a week later: it moved without me.
+        _record("r4", day + 7 * 24 * hour, a, b, bike="100-0001"),
+        # Left at A and unlocked from A four days on -- past the resume
+        # window, so the shared dock does not make it a round trip.
+        _record("r5", day, b, a, bike="100-0002"),
+        _record("r6", day + 4 * 24 * hour, a, b, bike="100-0002"),
+        # The same dock under Lyft's two spellings is still one dock (#26).
+        _record("r7", day, a, "B St &\t2 Ave", bike="100-0003"),
+        _record("r8", day + hour, b, a, bike="100-0003"),
+    ]
+    ingest(_write_export(tmp_path, records))
+    s = _citibike_summary({})
+
+    # r2, r3 and r8 are round trips; r4 and r6 are bikes met again.
+    assert (s["reencounters"], s["resumes"]) == (2, 3)
+    # ... and each met bike gets a row: [id, encounters, days between them,
+    # recordings]. Encounters, not trips -- bike 0001 was ridden four times
+    # but on two occasions, the middle two being the out-and-back that r1
+    # started, so it reads 2x seven days apart rather than "4 trips". Getting
+    # that wrong overstated every bike whose repeat was a round trip. No ride
+    # index was passed, so nothing is recorded over any of them.
+    assert s["met"] == [["100-0001", 2, [7], []], ["100-0002", 2, [4], []]]
 
 
 def _flows(n, a, b, start=1_000):

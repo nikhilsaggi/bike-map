@@ -77,8 +77,29 @@ export const CITIBIKE_BLOCK = {
   same_day: 2,
   median_min: 9.0,
   ebike_min: 3,
-  bikes: 8,
-  repeat_bikes: 2,
+  reencounters: 2,
+  resumes: 5,
+  // The bikes met again: [id, encounters, days between them, recordings
+  // newest first]. Encounters, not trips -- a round trip is one occasion.
+  // Four cases the panel has to tell apart: three encounters with two gaps
+  // and several recordings to cycle, two encounters with one recording, one
+  // met again with nothing recorded at all (which still gets a row), and a
+  // bike whose encounter count outranks its recordings, so the sort can be
+  // seen to be on encounters rather than on what is clickable.
+  met: [
+    ['800-1234', 3, [40, 38], [3, 1]],
+    ['800-0000', 3, [500, 12], []],
+    ['800-5678', 2, [648], [1]],
+    ['800-9999', 2, [7], []],
+  ],
+  // Trips per year by id shape: [year, five-digit, hyphenated]. Chosen so
+  // every bar is hand-computable -- 1:3 is 75%, 0:4 is an all-newer year that
+  // must render one segment and not a zero-width second, and 2:2 is 50%.
+  gen: [
+    [2023, 1, 3],
+    [2024, 2, 2],
+    [2025, 0, 4],
+  ],
   once_only: 0,
   // The own-bike column: rides no Citibike trip was found under.
   own: { rides: 3, hours: 4.0, days: 2, median_min: 41.0 },
