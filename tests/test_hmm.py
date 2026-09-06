@@ -5,9 +5,10 @@ from __future__ import annotations
 import os
 import time
 
+import networkx as nx
 import numpy as np
 import pytest
-from conftest import lonlat
+from conftest import add_street, lonlat
 
 from bike_routes import config, hmm
 
@@ -145,3 +146,67 @@ def test_long_offgrid_stretch_fast_forwards(grid_mmap):
     assert skipped >= 1
     assert (0, 1) in edges  # start matched
     assert (40, 41) in edges  # top-row tail matched from its first block
+
+
+# -- Sidewalk filtering -----------------------------------------------------
+
+
+def _sidewalk_graph():
+    """Grid with a sidewalk beside one street, a crossing, and a greenway.
+
+    Nodes 0-1 are 100 m of street; 100-101 is a footway 8 m to its north;
+    200-201 is a footway 200 m north of everything (a greenway); 300-301 is
+    a footway perpendicular to the street.
+    """
+    G = nx.MultiDiGraph()
+    for nid, (x, y) in {
+        0: (0.0, 0.0),
+        1: (100.0, 0.0),
+        100: (0.0, 8.0),
+        101: (100.0, 8.0),
+        200: (0.0, 200.0),
+        201: (100.0, 200.0),
+        300: (50.0, 0.0),
+        301: (50.0, 40.0),
+    }.items():
+        lon, lat = lonlat(x, y)
+        G.add_node(nid, x=lon, y=lat)
+    add_street(G, 0, 1, highway="secondary")
+    for u, v in ((100, 101), (200, 201), (300, 301)):
+        add_street(G, u, v, highway="footway")
+    return G
+
+
+def test_sidewalk_beside_a_street_is_filtered_out():
+    G = _sidewalk_graph()
+    sidewalks = hmm._sidewalk_edges(G)
+    assert (100, 101) in sidewalks  # 8 m from the street, parallel
+    assert (200, 201) not in sidewalks  # a greenway: no roadway beside it
+    assert (300, 301) not in sidewalks  # perpendicular, so not accompanying
+    assert (0, 1) not in sidewalks  # the street itself is never a candidate
+
+
+def test_only_roadways_make_a_footway_a_sidewalk():
+    # The Hudson River Park case: a service way beside an esplanade must not
+    # class it as a sidewalk, whatever the distance.
+    G = _sidewalk_graph()
+    for _u, _v, data in G.edges(data=True):
+        if data["highway"] == "secondary":
+            data["highway"] = "service"
+    assert hmm._sidewalk_edges(G) == set()
+
+
+def test_map_index_leaves_sidewalks_out():
+    mmap = hmm._build_inmem_map(_sidewalk_graph())
+    assert mmap.size() == 8  # every node kept, whatever happened to its edges
+    assert 101 not in mmap.graph[100][1]
+    assert 201 in mmap.graph[200][1]
+
+
+def test_map_cache_rejects_a_differently_filtered_index(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "HMM_MAP_CACHE_PATH", tmp_path / "hmm.pkl")
+    monkeypatch.setattr(config, "GRAPH_CACHE_PATH", tmp_path / "graph.pkl")
+    hmm._save_inmem_map_cache(hmm._build_inmem_map(_sidewalk_graph()))
+    assert hmm._load_cached_inmem_map() is not None
+    monkeypatch.setattr(config, "SIDEWALK_PARALLEL_M", 30.0)
+    assert hmm._load_cached_inmem_map() is None

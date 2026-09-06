@@ -25,8 +25,12 @@ def _processing_config() -> dict[str, Any]:
         "edge_key_format": "node_pair",
     }
     if config.MATCHER == "hmm":
+        # Imported here to keep leuvenmapmatching off cache's import path.
+        from .hmm import _sidewalk_params  # noqa: PLC0415
+
         return {
             **shared,
+            "sidewalk": _sidewalk_params(),
             "hmm_max_dist": config.HMM_MAX_DIST,
             "hmm_obs_noise": config.HMM_OBS_NOISE,
             "hmm_obs_noise_ne": config.HMM_OBS_NOISE_NE,

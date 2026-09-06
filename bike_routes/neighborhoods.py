@@ -68,8 +68,10 @@ BOUNDARY_TOLERANCE_M = 55.0
 SIMPLIFY_DEG = 0.0001
 COORD_PRECISION = 5  # ~1 m; matches the export's own rounding
 
-# Slots 1 and 5 of an edge_speed chunk record are the forward and reverse
-# elapsed seconds; see edge_speed._new_chunk for the full eight-slot layout.
+# Slots 0 and 4 of an edge_speed chunk record are the forward and reverse
+# metres, 1 and 5 the elapsed seconds; see edge_speed._new_chunk for the full
+# eight-slot layout.
+_DIST_FWD, _DIST_REV = 0, 4
 _TIME_FWD, _TIME_REV = 1, 5
 
 BOROUGH_ABBR = {
@@ -220,22 +222,30 @@ def _midpoint(coords: Sequence[tuple[float, float]]) -> tuple[float, float]:
     return tuple(coords[len(coords) // 2])  # type: ignore[return-value]
 
 
-def _edge_seconds(state: dict[str, Any]) -> dict[tuple[int, int], float]:
-    """Elapsed seconds measured on each edge, both directions together.
+def _edge_measured(state: dict[str, Any]) -> dict[tuple[int, int], tuple[float, float]]:
+    """Metres and seconds measured on each edge, both directions together.
 
     From ``edge_speed``, which backfills the ride CSVs' timestamps onto the
-    geometry -- so this is measured time on that street, not an estimate from
-    distance.  It is a floor: the detector attributes ~370 of the ~520
-    recorded hours to an edge, and the rest is time off the network, inside a
-    recording gap, or on a pass too short to admit.  It carries no per-ride
-    breakdown, so nothing here can follow the date slider.
+    geometry -- so these are measured distance and time on that street, not
+    estimates from one another.  Every pass is in them, which is what makes
+    the distance a total rather than the length of the network: a street
+    ridden ten times contributes ten times.
+
+    Both are floors, for the same reason and by the same amount: the detector
+    attributes ~370 of the ~520 recorded hours to an edge, and the rest is
+    off the network, inside a recording gap, or on a pass too short to admit.
+    Neither carries a per-ride breakdown, so nothing here can follow the date
+    slider.
     """
-    out: dict[tuple[int, int], float] = {}
+    out: dict[tuple[int, int], tuple[float, float]] = {}
     for key, rec in state.get("edge_speed", {}).items():
         chunks = rec.get("c") if isinstance(rec, dict) else None
         if not chunks:
             continue
-        out[key] = sum(c[_TIME_FWD] + c[_TIME_REV] for c in chunks)
+        out[key] = (
+            sum(c[_DIST_FWD] + c[_DIST_REV] for c in chunks),
+            sum(c[_TIME_FWD] + c[_TIME_REV] for c in chunks),
+        )
     return out
 
 
@@ -245,7 +255,7 @@ def measure(
     edge_hw: dict[tuple[int, int], str],
     state: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    """Per-area rideable network, ridden network, time on it, and when it was first ridden.
+    """Per-area rideable network, ridden network, distance and time on it, and first dates.
 
     Numerator and denominator are the ones ``_coverage_summary`` uses -- graph
     edges whose highway tag is rideable, not the merged corridors the map
@@ -254,9 +264,12 @@ def measure(
     of network first ridden on it, which is what lets the page's slider move
     the layer.
 
-    ``time_s`` is the exception to the rideable-only rule: time on a park path
-    or a service road is still time spent in the neighborhood, so every edge
-    with a measured record counts, whatever its highway tag.
+    ``dist_m`` and ``time_s`` are the two exceptions to the rideable-only
+    rule, and for the same reason: distance and time on a greenway tagged
+    ``footway`` are still distance and time in the neighborhood, so every
+    measured edge counts, whatever its highway tag.  ``ridden_m`` is network
+    -- an edge once, however often it was ridden -- and ``dist_m`` is riding:
+    every pass over it, which is several times the network on these rides.
 
     One row per area, in the boundary file's own order and including the
     areas the graph has no rideable street in; callers drop those.  Shared by
@@ -265,13 +278,14 @@ def measure(
     if areas is None or not edge_hw:
         return []
     edge_rides: dict[tuple[int, int], list[str]] = state.get("edge_rides", {})
-    seconds = _edge_seconds(state)
+    measured = _edge_measured(state)
     keys = [k for k in edge_geom if edge_hw.get(k, "") not in config.COVERAGE_EXCLUDE]
     rideable = set(keys)
-    # Timed edges the rideable filter drops -- a park path, a service road --
-    # still have to be placed, or their time would silently land nowhere.
-    timed_only = [k for k in seconds if k not in rideable and k in edge_geom]
-    placed = areas.locate([_midpoint(edge_geom[k]) for k in [*keys, *timed_only]])
+    # Measured edges the rideable filter drops -- a greenway tagged footway, a
+    # park path, a service road -- still have to be placed, or the distance
+    # and time ridden on them would silently land nowhere.
+    measured_only = [k for k in measured if k not in rideable and k in edge_geom]
+    placed = areas.locate([_midpoint(edge_geom[k]) for k in [*keys, *measured_only]])
 
     rows: list[dict[str, Any]] = [
         {
@@ -279,17 +293,21 @@ def measure(
             "boro": b,
             "net_m": 0.0,
             "ridden_m": 0.0,
+            "dist_m": 0.0,
             "time_s": 0.0,
             "rides": set(),
             "first": {},
         }
         for n, b in zip(areas.names, areas.boros)
     ]
+    zero = (0.0, 0.0)
     for key, area in zip(keys, placed):
         if area < 0:
             continue
         row = rows[area]
-        row["time_s"] += seconds.get(key, 0.0)
+        metres, seconds = measured.get(key, zero)
+        row["dist_m"] += metres
+        row["time_s"] += seconds
         length = _geom_len_m(edge_geom[key])
         row["net_m"] += length
         rides = edge_rides.get(key)
@@ -299,9 +317,10 @@ def measure(
         row["rides"].update(rides)
         day = min(rides)[:10]
         row["first"][day] = row["first"].get(day, 0.0) + length
-    for key, area in zip(timed_only, placed[len(keys) :]):
+    for key, area in zip(measured_only, placed[len(keys) :]):
         if area >= 0:
-            rows[area]["time_s"] += seconds[key]
+            rows[area]["dist_m"] += measured[key][0]
+            rows[area]["time_s"] += measured[key][1]
     return rows
 
 
@@ -349,9 +368,11 @@ def _neighborhood_summary(
                 "boro": row["boro"],
                 "net_m": round(row["net_m"]),
                 "ridden_m": round(row["ridden_m"]),
-                # Measured on-street seconds, all-time: edge_speed has no
-                # per-ride breakdown, so unlike `new` this cannot follow the
-                # slider, and the panel that shows it says all-time.
+                # Measured metres and seconds ridden in the area, every pass
+                # counted, all-time: edge_speed has no per-ride breakdown, so
+                # unlike `new` neither can follow the slider, and the panel
+                # that shows them says all-time.
+                "dist_m": round(row["dist_m"]),
                 "time_s": round(row["time_s"]),
                 # [date index, metres first ridden that day], chronological:
                 # the page takes a running total up to the date it is showing.
@@ -367,6 +388,7 @@ def _neighborhood_summary(
         # Island contributes 25 km of network and no rides at all.
         "net_m": round(sum(a["net_m"] for a in out)),
         "ridden_m": round(sum(a["ridden_m"] for a in out)),
+        "dist_m": round(sum(a["dist_m"] for a in out)),
         "time_s": round(sum(a["time_s"] for a in out)),
         "areas": out,
     }

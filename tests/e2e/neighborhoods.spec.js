@@ -84,9 +84,13 @@ test.describe('Neighborhood layer', () => {
     // north street's, which belongs to Uptown. Summing passes would say 6.
     await expect(popup.locator('.nb-row').nth(2)).toContainText('Rides through');
     await expect(popup.locator('.nb-row').nth(2)).toContainText('4');
-    // 1,800 measured seconds on Downtown's streets, all-time.
-    await expect(popup.locator('.nb-row').nth(3)).toContainText('Time here');
-    await expect(popup.locator('.nb-row').nth(3)).toContainText('30 min');
+    // 8,000 measured metres ridden on Downtown's 5,000 m of street: the row
+    // is distance, so it is larger than the "3.1 of 12.4 mi" above it.
+    await expect(popup.locator('.nb-row').nth(3)).toContainText('Distance here');
+    await expect(popup.locator('.nb-row').nth(3)).toContainText('5.0 mi');
+    // 1,800 measured seconds on those streets, all-time.
+    await expect(popup.locator('.nb-row').nth(4)).toContainText('Time here');
+    await expect(popup.locator('.nb-row').nth(4)).toContainText('30 min');
   });
 
   test('the stats section rolls the areas up by borough', async ({ page }) => {
@@ -106,12 +110,12 @@ test.describe('Neighborhood layer', () => {
   test('a row in the section puts its neighborhood on the map', async ({ page }) => {
     await gotoMap(page);
     await openSection(page, 'stat-places');
-    await expect(page.locator('#stat-places .pl-name').first()).toHaveText('Downtown Flats');
+    await expect(page.locator('#stat-places .pl-name').first()).toHaveText('Uptown Heights');
     // The layer is off; clicking a row turns it on and opens that popup.
     await expect(page.locator('#nb-check')).not.toBeChecked();
     await page.locator('#stat-places .pl-row').first().click();
     await expect(page.locator('#nb-check')).toBeChecked();
-    await expect(page.locator('.nb-popup .nb-head')).toHaveText('Downtown Flats');
+    await expect(page.locator('.nb-popup .nb-head')).toHaveText('Uptown Heights');
   });
 
   test('each tab ranks the list by the number in its own column', async ({ page }) => {
@@ -120,18 +124,21 @@ test.describe('Neighborhood layer', () => {
     const names = page.locator('#pl-list .pl-name');
     const vals = page.locator('#pl-list .v');
 
-    // Ridden, the default: 5,000 m against 1,600 m, shown in miles.
-    await expect(names).toHaveText(['Downtown Flats', 'Uptown Heights']);
-    await expect(vals).toHaveText(['3.1 mi', '1.0 mi']);
+    // Ridden, the default: distance ridden with every pass counted, so it
+    // reads dist_m -- 16,000 m against 8,000 -- and not the 1,600 m and
+    // 5,000 m of street those passes were made on, which rank the other way.
+    await expect(names).toHaveText(['Uptown Heights', 'Downtown Flats']);
+    await expect(vals).toHaveText(['9.9 mi', '5.0 mi']);
 
-    // Time reverses them -- Uptown holds 5,400 s against Downtown's 1,800 --
-    // which is the whole point of the tab being separate from Ridden.
+    // Time keeps that order -- Uptown holds 5,400 s against Downtown's 1,800
+    // -- because both tabs measure the riding rather than the network.
     await page.locator('#pl-tabs .seg-btn', { hasText: 'Time' }).click();
     await expect(names).toHaveText(['Uptown Heights', 'Downtown Flats']);
     await expect(vals).toHaveText(['1.5 h', '30 min']);
 
-    // Explored is a share: 5,000 of 20,000 against 1,600 of 10,000, each
-    // carrying the network it is a share of.
+    // Explored is the one that asks about the network, and it reverses them:
+    // 5,000 of 20,000 against 1,600 of 10,000, each carrying the network it
+    // is a share of.
     await page.locator('#pl-tabs .seg-btn', { hasText: 'Explored' }).click();
     await expect(names).toHaveText(['Downtown Flats', 'Uptown Heights']);
     await expect(vals.nth(0)).toHaveText('25% of 12.4 mi');
@@ -142,10 +149,13 @@ test.describe('Neighborhood layer', () => {
     await gotoMap(page);
     await openSection(page, 'stat-places');
     // Rows carry their index into the areas array, not their place in the
-    // list, so the top row of the Time tab opens Uptown rather than area 0.
-    await page.locator('#pl-tabs .seg-btn', { hasText: 'Time' }).click();
-    await page.locator('#pl-list .pl-row').first().click();
-    await expect(page.locator('.nb-popup .nb-head')).toHaveText('Uptown Heights');
+    // list. Explored and Ridden rank the two areas in opposite orders, so
+    // after that round trip the second row is area 0 -- a list that clicked
+    // by position would open the other polygon.
+    await page.locator('#pl-tabs .seg-btn', { hasText: 'Explored' }).click();
+    await page.locator('#pl-tabs .seg-btn', { hasText: 'Ridden' }).click();
+    await page.locator('#pl-list .pl-row').nth(1).click();
+    await expect(page.locator('.nb-popup .nb-head')).toHaveText('Downtown Flats');
   });
 
   test('no block means no section', async ({ page }) => {

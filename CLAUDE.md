@@ -44,7 +44,8 @@ interactive Leaflet map (`docs/`, served via GitHub Pages) plus static PNGs.
 3. `hmm.py` / `matching.py` -- map-match rides to edges. `MATCHER = "hmm"`
    (leuvenmapmatching Viterbi) is the default; the "heuristic" snap+route
    matcher is kept for comparison. Parallel matching via worker processes
-   in `matching.py`.
+   in `matching.py`. `hmm._sidewalk_edges` shapes the matcher's input: the
+   map index is built without sidewalk-class edges (see below).
 4. `cache.py` -- cache/state.pkl (processed files, edge counts, per-edge
    passes and speeds), config-hash invalidation
 5. `edge_speed.py` -- per-edge passes, backfilled from the ride CSVs'
@@ -97,6 +98,23 @@ reads everything from `rides.geojson.gz` top-level `properties`.
   `edge_speed`, never from the matcher (see below). `state["edge_counts"]` and
   `edge_rides` stay per-ride: `_apply_results` counts a file once even when a
   GPS gap split it into several segments.
+- **The matcher chooses from less than the whole graph, and only the
+  matcher does.** `hmm._sidewalk_edges` keeps `footway`/`steps` edges with a
+  roadway running parallel within `SIDEWALK_PARALLEL_M` out of the map
+  index; the full graph still supplies geometry, coverage, drawing and
+  merge, so a footway that really was ridden still draws. Only roadways vote
+  (`SIDEWALK_STREET_TAGS`, a **positive** list): a negative one let service
+  ways beside the Hudson River Park Esplanade and a bridleway beside Central
+  Park's West Drive each class a greenway as sidewalk at *every* threshold,
+  which is a class of error a threshold sweep cannot see -- check named
+  greenways, not just the aggregate. Removal beats a penalty because the
+  8-wide beam is the scarce resource: penalised sidewalk states still occupy
+  slots ([why](findings/sidewalk-matching.md)).
+- The sidewalk filter's parameters are in **both** `_processing_config()`
+  and the `hmm_map_cache.pkl` payload. The map cache is otherwise
+  invalidated only by its format and the graph's mtime, so a changed
+  threshold would rematch every ride against a map still filtered the old
+  way.
 - Matching results must be deterministic and independent of scheduling.
   Results are folded into state chunk by chunk as they arrive (`cli.py`),
   which is safe because `edge_counts` accumulates by addition and
@@ -165,8 +183,8 @@ reads everything from `rides.geojson.gz` top-level `properties`.
   `coverage.pct` is measured over every rideable edge in the graph, and the
   graph is the rides' own bounding box -- half of it is not in New York City,
   so riding further out *lowers* it. `properties.neighborhoods` carries the
-  same measurement over the part inside a NYC neighborhood (9.1% against
-  5.1%), and that is what the "of NYC" tile shows, because that is what the
+  same measurement over the part inside a NYC neighborhood (11.8% against
+  6.5%), and that is what the "of NYC" tile shows, because that is what the
   label claims. Neither is a share of the whole city: the box has never
   reached Staten Island ([details](findings/neighborhoods.md)).
 - **A neighborhood is filled by coverage as of the date on screen**, not
@@ -175,7 +193,7 @@ reads everything from `rides.geojson.gz` top-level `properties`.
   first ridden that day] -- and the page takes a running total up to
   `filterHi`; it follows the range's upper end alone, because "how much had
   been ridden by then" is a running total. Areas are placed by edge midpoint,
-  which misplaces 4.9% of ridden metres, nearly all of it on ten named
+  which misplaces 4.7% of ridden metres, nearly all of it on ten named
   bridges and waterfront paths -- fine for a fill colour, not for anything
   stronger.
 - **An area popup counts rides, never passes.** A pass belongs to one stretch
@@ -186,27 +204,44 @@ reads everything from `rides.geojson.gz` top-level `properties`.
   counts distinct rides in range. There is no honest area-level pass count:
   how many times a ride entered and left would be the real one, and a
   feature's `rides` carry no order and no clock.
-- **Per-area time is measured, all-time, and a floor.** `time_s` sums
-  `edge_speed`'s elapsed seconds over the area's edges -- real timestamps on
-  known geometry, not distance over an assumed speed. It counts every timed
-  edge whatever its highway tag, because time on a park path is still time
-  spent there, which makes it the one figure in the block not restricted to
-  `COVERAGE_EXCLUDE`-filtered edges. It cannot follow the slider:
-  `edge_speed` has no per-ride breakdown. And it is a floor -- the detector
-  places ~357 of the ~519 recorded hours, the rest being off-network, inside
-  a gap, or on a pass too short to admit.
+- **Per-area distance and time are measured, all-time, and floors.**
+  `dist_m` and `time_s` sum `edge_speed`'s metres and elapsed seconds over
+  the area's edges -- real timestamps on known geometry, not one of the two
+  derived from the other through an assumed speed. They count every measured
+  edge whatever its highway tag, because distance and time on a park path
+  are still distance and time spent there, which makes them the two figures
+  in the block not restricted to `COVERAGE_EXCLUDE`-filtered edges. Neither
+  can follow the slider: `edge_speed` has no per-ride breakdown. And both are
+  floors, by a similar margin -- something like a quarter of what was
+  recorded never lands on an edge at all, being off-network, inside a gap, or
+  on a pass too short to admit.
+- **`dist_m` is riding and `ridden_m` is network, and the block ships both.**
+  `dist_m` counts a street again on every pass over it; `ridden_m` counts it
+  once however often it was ridden, and is the Explored numerator and the
+  layer's fill. On these rides `dist_m` is several times `ridden_m`, so the
+  two are never interchangeable: the popup prints them one above the other
+  precisely because a reader who has just seen "of its network" needs to know
+  the larger figure is the same streets again, not more of them. Deriving
+  `dist_m` from `edge_traversals` instead -- edge length times pass count --
+  was tried and rejected: it charges a whole edge for a pass that only
+  clipped it, so it overstates the total and puts areas at average speeds
+  `time_s` contradicts ([why](findings/neighborhoods.md)). By how much is a
+  measurement of one graph and one state, and a matcher change moves it --
+  don't quote a figure here.
 - **The Neighborhoods stats section is all-time**, like every other section
   of that panel; the layer is the part that moves with the slider. It rolls
-  the areas up per borough (Manhattan 32.4% against Queens 4.4% -- the spread
+  the areas up per borough (Manhattan 44.0% against Queens 5.2% -- the spread
   the one citywide number hides) and ranks the areas below that, each row
   opening its own polygon on the map.
 - **That ranking has three tabs and each one sorts by the number it prints.**
-  Ridden (miles), Time (`time_s`, so the floor above applies) and Explored
-  (`ridden_m / net_m`) are three different orders -- Central Park is second by
-  time and nowhere by distance -- and the single list they replaced sorted by
-  metres while printing a percentage, which reads as a ranking of the number
-  on screen and is not one. A row carries its index into `areas`, never its
-  place in the list, because the click opens a polygon.
+  Ridden (`dist_m`) and Time (`time_s`) are the riding, out of the same
+  `edge_speed` chunks, so the floors above apply to both and they part only
+  where the riding was fast; Explored (`ridden_m / net_m`) is the network,
+  and it is the order that genuinely differs -- how much of a place was seen
+  rather than how far the bike went in it. The single list they replaced
+  sorted by metres while printing a percentage, which reads as a ranking of
+  the number on screen and is not one. A row carries its index into `areas`,
+  never its place in the list, because the click opens a polygon.
 - **Explored prints the network it is a share of, in the row.** That ranking
   is the one a small denominator wins, and the denominator is neither the
   neighborhood nor the drawn map but `COVERAGE_EXCLUDE`-filtered graph edges:
@@ -217,13 +252,15 @@ reads everything from `rides.geojson.gz` top-level `properties`.
   move `coverage` makes with its two. Don't answer it with a minimum-network
   floor instead -- that silently drops the edge of the box, which is a real
   place the bike went.
-- **What is drawn and what is counted are two different sets, and the gap is
-  widest where the map looks fullest.** `_export_geojson` draws every matched
-  edge with no highway filter, so ridden footways, service roads and
-  motorways are all on screen in the same cyan as the counted streets;
-  coverage then measures only the filtered ones. Midtown-Times Square draws
-  91 km of ridden line and is credited 25 of 45 km, which is why full-looking
-  blocks read 56%. Before calling such a number wrong, check both sets --
+- **What is drawn and what is counted are two different sets.**
+  `_export_geojson` draws every matched edge with no highway filter, so ridden
+  footways, service roads and motorways are all on screen in the same cyan as
+  the counted streets; coverage then measures only the filtered ones. The gap
+  used to be enormous and concentrated exactly where the map looked fullest,
+  because the matcher was putting the ride on the sidewalk beside the street
+  it was credited against; the sidewalk filter closed most of it. It did not
+  close all of it -- drawn-but-uncounted footway is still the largest excluded
+  class -- so before calling such a number wrong, check both sets.
   `tools/neighborhood_audit.py` splits an area by highway tag.
 - **The Citibike panel is a two-column comparison**, Citibike against own
   bike, on trips / time / days / typical length. The Citibike column is the
@@ -357,7 +394,14 @@ instead. Features carry no speed key and `merge.py` never sees it
   stretches.
 - Street names come from the render cache (`edge_name`, `RENDER_CACHE_FORMAT`
   = `hw-name-v1`). Bumping that format costs one graph load to rebuild; it
-  does not touch the config hash.
+  does not touch the config hash. `_build_render_cache` takes the name and
+  the highway tag from the **first** edge of a canonical pair but the
+  geometry from the **shortest**, so all three can come from different OSM
+  ways, and which one is first depends on graph iteration order. 524 pairs
+  carry more than one name, so a corridor can be ranked under either of two
+  street names across rebuilds; 2,585 carry more than one tag with no bike
+  class to decide between them. Don't read an exact figure derived from
+  either as reproducible across a graph rebuild.
 
 #### Traversal counts
 

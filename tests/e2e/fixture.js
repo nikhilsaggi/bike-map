@@ -118,15 +118,20 @@ export const CITIBIKE_BLOCK = {
 // and pulling the upper handle back to date 0 leaves Downtown at 1,250 of
 // 20,000, which is 6.25% and 0.25 of the ramp.
 //
-// `time_s` is measured on-street seconds, all-time and not date-filtered:
-// 1,800 s is 30 min in Downtown (Brooklyn), 5,400 s is 1.5 h in Uptown
-// (Manhattan), so the borough table reads "30 min" and "1.5 h". Uptown holds
-// the more time and the less distance on purpose: it is what makes the
-// stats list's Ridden and Time tabs rank the two areas in opposite orders.
+// `dist_m` and `time_s` are measured metres and seconds, all-time and not
+// date-filtered: 1,800 s is 30 min in Downtown (Brooklyn), 5,400 s is 1.5 h
+// in Uptown (Manhattan), so the borough table reads "30 min" and "1.5 h".
+//
+// `dist_m` counts every pass and `ridden_m` counts the street once, so the
+// two disagree on purpose and by different factors: Downtown rode 8,000 m
+// over 5,000 m of street, Uptown 16,000 m over 1,600 m. That makes the
+// stats list's Ridden tab rank Uptown first and its Explored tab rank
+// Downtown first -- a Ridden tab reading the network again would fail.
 export const NEIGHBORHOOD_BLOCK = {
   source: 'NYC Neighborhood Tabulation Areas 2020 (9nt8-h7nd)',
   net_m: 30000,
   ridden_m: 6600,
+  dist_m: 24000,
   time_s: 7200,
   areas: [
     {
@@ -134,6 +139,7 @@ export const NEIGHBORHOOD_BLOCK = {
       boro: 'Bk',
       net_m: 20000,
       ridden_m: 5000,
+      dist_m: 8000,
       time_s: 1800,
       new: [[0, 1250], [2, 3750]],
       // polygon -> ring -> point, Leaflet's multi-polygon nesting.
@@ -146,6 +152,7 @@ export const NEIGHBORHOOD_BLOCK = {
       boro: 'Mn',
       net_m: 10000,
       ridden_m: 1600,
+      dist_m: 16000,
       time_s: 5400,
       new: [[1, 1600]],
       rings: [[[

@@ -35,6 +35,37 @@ HMM_LATTICE_WIDTH = 8  # Viterbi beam width on the first attempt
 HMM_LATTICE_WIDTH_RETRY = 24  # widened beam when a match stops early
 HMM_FAIL_SKIP_POINTS = 5  # points (~100m) skipped past a dead-end before rematching
 
+# -- Sidewalk filtering (matcher input only) --------------------------------
+# The composed walk network is two thirds of the graph's edges, and the
+# Viterbi matcher has no preference between an avenue and the sidewalk beside
+# it, so its beam fills with sidewalk states: 43% of drawn kilometres landed
+# on footways before this filter.  Sidewalk-class edges are dropped from the
+# HMM's map only -- the full graph still supplies geometry, coverage, drawing
+# and merge, so a ride that really was on a footway still draws there.
+# A sidewalk is defined by the roadway it accompanies: parallel, and closer
+# than this.  That is what separates it from a greenway or an esplanade.
+SIDEWALK_PARALLEL_M = 12.0  # median distance to a parallel roadway
+SIDEWALK_HEADING_DEG = 25.0  # bearing difference (mod 180) that counts as parallel
+SIDEWALK_TAGS = {"footway", "steps"}  # what may be classed as a sidewalk
+# Only actual roadways vote.  A positive list on purpose: pier access ways
+# (service) run alongside the Hudson River Park Esplanade and a bridleway
+# alongside Central Park's West Drive, and letting either vote classes both
+# as sidewalks at every threshold.  Motorways and trunks are out for the same
+# reason -- a greenway beside a highway is not a sidewalk.
+SIDEWALK_STREET_TAGS = {
+    "residential",
+    "secondary",
+    "tertiary",
+    "primary",
+    "unclassified",
+    "living_street",
+    "primary_link",
+    "secondary_link",
+    "tertiary_link",
+    "road",
+    "busway",
+}
+
 HW_PENALTY = {
     "cycleway": -5,
     "path": -2,

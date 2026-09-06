@@ -1,6 +1,6 @@
 # Rides by neighborhood: what one citywide percentage was hiding
 
-The map had exactly one geographic statistic — `coverage.pct`, "5.1% of NYC" —
+The map had exactly one geographic statistic — `coverage.pct`, "6.5% of NYC" —
 and one place name, the busiest segment. Neighborhood is the unit a reader of
 a NYC bike map already thinks in, and nothing on the page spoke it. This is
 what came out of cutting the ridden map into NYC's 2020 Neighborhood
@@ -15,12 +15,12 @@ the graph.
 
 | | km |
 |---|---|
-| rideable network in the graph (the shipped denominator) | 19,235 |
-| of that, inside a NYC neighborhood | **10,063** |
-| further than 55 m from every neighborhood | 9,172 |
-| ridden, inside a NYC neighborhood | 916.1 of 978.2 |
+| rideable network in the graph (the shipped denominator) | 19,247 |
+| of that, inside a NYC neighborhood | **10,062** |
+| further than 55 m from every neighborhood | 9,185 |
+| ridden, inside a NYC neighborhood | 1,190.2 of 1,252.5 |
 
-**Coverage of New York City is 9.1%, not 5.1%.**
+**Coverage of New York City is 11.8%, not 6.5%.**
 
 The gap is not a bug. `graph._compute_bbox` builds the street network from the
 *rides'* own bounding box, clamped to `NYC_BBOX` — so riding to Long Island
@@ -31,32 +31,32 @@ problem at all, and summing the areas gives the citywide figure the label was
 always claiming.
 
 That is now what the hero tile shows. Both numbers ship — the streets panel
-carries "Of rideable NYC 9.1%" over "Of the whole graph 5.1%, which reaches
+carries "Of rideable NYC 11.8%" over "Of the whole graph 6.5%, which reaches
 past the city" — because the gap between them is itself the finding.
 
-One caveat the page does not try to state: 10,063 km is the NYC street network
+One caveat the page does not try to state: 10,062 km is the NYC street network
 *within the graph's box*, not the whole city's. Staten Island contributes
 25 km of network and no rides, because the box has never had a reason to reach
-it. So 9.1% is a share of the city the map can see.
+it. So 11.8% is a share of the city the map can see.
 
 ## Manhattan is a different story from the citywide number
 
 | borough | ridden | network | covered | areas touched |
 |---|---|---|---|---|
-| Manhattan | 355.3 km | 1,097 km | **32.4%** | 38/38 |
-| Brooklyn | 295.2 km | 2,800 km | 10.5% | 57/69 |
-| Queens | 194.7 km | 4,427 km | 4.4% | 64/82 |
-| Bronx | 70.9 km | 1,714 km | 4.1% | 33/48 |
+| Manhattan | 481.4 km | 1,095 km | **44.0%** | 38/38 |
+| Brooklyn | 402.6 km | 2,798 km | 14.4% | 58/69 |
+| Queens | 228.0 km | 4,427 km | 5.2% | 64/82 |
+| Bronx | 78.1 km | 1,716 km | 4.6% | 33/48 |
 | Staten Island | 0.0 km | 25 km | 0% | 0/3 |
 
 Every one of Manhattan's 38 areas has ridden street in it, and a third of its
-streets have been ridden. "32% of Manhattan" and "5.1% of the network" are not
+streets have been ridden. "44% of Manhattan" and "6.5% of the network" are not
 the same sentence, and only one of them was on the page.
 
-192 of the 240 areas have at least one ridden edge; the median touched area
-holds 2.9 km and 17 hold under 500 m. It is also less concentrated than it
-feels: the top 5 areas hold 14% of ridden km, the top 20 hold 39%, the top 50
-hold 65%.
+193 of the 240 areas have at least one ridden edge; the median touched area
+holds 3.4 km and 11 hold under 500 m. It is also less concentrated than it
+feels: the top 5 areas hold 15% of ridden km, the top 20 hold 40%, the top 50
+hold 67%.
 
 Passes below are counted over the same rideable edges as the coverage column,
 so the two agree. **The map's popup does not show them** — see "Rides, not
@@ -64,23 +64,23 @@ passes" below.
 
 | neighborhood | | ridden | of it | rides | passes |
 |---|---|---|---|---|---|
-| East Williamsburg | Bk | 36.3 km | 45.5% | 182 | 2,013 |
-| Midtown-Times Square | Mn | 25.2 km | 55.9% | 302 | 1,319 |
-| Williamsburg | Bk | 25.2 km | 46.5% | 111 | 1,491 |
-| Downtown Brooklyn-DUMBO-Boerum Hill | Bk | 22.3 km | 39.8% | 62 | 1,052 |
-| Chelsea-Hudson Yards | Mn | 19.0 km | 32.5% | 132 | 1,285 |
-| Murray Hill-Kips Bay | Mn | 18.2 km | **60.8%** | 105 | 1,200 |
+| East Williamsburg | Bk | 44.1 km | 55.2% | 252 | 3,883 |
+| Midtown-Times Square | Mn | 40.1 km | **89.0%** | 647 | 6,974 |
+| Williamsburg | Bk | 33.0 km | 60.8% | 128 | 2,033 |
+| Downtown Brooklyn-DUMBO-Boerum Hill | Bk | 32.0 km | 57.1% | 71 | 1,671 |
+| Greenpoint | Bk | 27.3 km | 50.5% | 45 | 1,002 |
+| Chelsea-Hudson Yards | Mn | 25.6 km | 43.9% | 177 | 2,150 |
 
 ## "Rode through" and "explored" are different shapes, but not opposite ones
 
-Rides-touching and coverage correlate strongly (Spearman 0.70), which is mildly
+Rides-touching and coverage correlate strongly (Spearman 0.73), which is mildly
 surprising — a commute corridor should score high on rides and low on
 coverage. Passes per ridden kilometre is the measure that separates them, and
 both ends of it are real:
 
-- **Rode through.** Stuyvesant Town-Peter Cooper Village: 149 passes per ridden
-  km over 3.2 km, 45 rides, 39% covered. Old Astoria-Hallets Point: 69/km at
-  15.8% covered. Pelham Bay-Country Club-City Island: 62/km from **two** rides
+- **Rode through.** Stuyvesant Town-Peter Cooper Village: 141 passes per ridden
+  km over 3.9 km, 45 rides, 51% covered. Old Astoria-Hallets Point: 69/km at
+  20.9% covered. Pelham Bay-Country Club-City Island: 65/km from **two** rides
    — a park loop ridden round and round, which is the same shape from a
   completely different cause.
 - **Explored.** The parks and the far waterfront: Jamaica Bay (East), Alley
@@ -95,9 +95,9 @@ number and not a label for it.
 ## Passes and unique kilometres rank almost the same areas
 
 Ranking areas by `edge_traversals` instead of unique km moves things around
-without changing the story (Spearman 0.87 between the two orderings). Lower
-East Side climbs from 9th to 2nd, Greenpoint drops out of the top ten, and the
-top and third are the same either way. Both are in the audit's output; the
+without changing the story (Spearman 0.90 between the two orderings). Lower
+East Side climbs from 13th to 2nd, Greenpoint drops from 5th to 18th, and the
+same two areas hold the top places either way. Both are in the audit's output; the
 export ships unique metres, because that is what a coverage percentage is made
 of.
 
@@ -107,10 +107,10 @@ Each edge is assigned to the area containing its **midpoint** — cheap, and it
 never splits a count across two areas. Splitting every ridden edge on the
 polygons it crosses (`--boundaries`) gives the error:
 
-> 750 of the ridden edges cross a boundary, and **44.9 km — 4.9% of ridden
+> 950 of the ridden edges cross a boundary, and **58.2 km — 4.7% of ridden
 > length — sits outside the neighborhood its midpoint fell in.**
 
-That 4.9% is not spread thinly. It is a handful of long ways that span a
+That 4.7% is not spread thinly. It is a handful of long ways that span a
 boundary by design:
 
 | | misplaced | of |
@@ -126,7 +126,7 @@ single ride**: the Belt Parkway Bike Path's midpoint lands in it, and 3.6 km of
 path against a 3.9 km in-graph network is almost the whole area. Splitting
 edges on boundaries would fix it, at the cost of a per-area geometry pass in
 the export and a numerator that no longer matches `_coverage_summary`'s. It
-was not worth it for 4.9% concentrated in ten named ways — but it is the first
+was not worth it for 4.7% concentrated in ten named ways — but it is the first
 thing to reach for if the per-area numbers are ever used for something
 stronger than a fill colour.
 
@@ -195,43 +195,73 @@ service roads are included, and a merged corridor placed by its midpoint can
 reach well past the boundary. The audit's column is over rideable graph edges
 only. Both are stated; neither is claimed to be the other.
 
-## Time in a neighborhood
+## Distance and time in a neighborhood
 
-`time_s` sums `edge_speed`'s elapsed seconds over the area's edges. It is a
-measurement, not an estimate: the seconds come from the ride CSVs' own
-timestamps projected onto known geometry, never from distance over an assumed
-speed.
+`dist_m` and `time_s` sum `edge_speed`'s metres and elapsed seconds over the
+area's edges. Both are measurements, not estimates: they come from the ride
+CSVs' own timestamps projected onto known geometry, and neither is derived
+from the other through an assumed speed.
 
-Three things it is not:
+Three things they are not:
 
 - **Not date-filterable.** `edge_speed` aggregates across rides with no
-  per-ride breakdown, so unlike `new` this cannot follow the slider. The
-  panel that shows it says all-time, and the popup's row says so on hover.
-- **Not restricted to rideable tags.** It is the one figure in the block that
-  counts every timed edge whatever its highway tag — time on a park path is
-  still time spent in the neighborhood. That is why Staten Island can show
-  0.0% covered and 10 minutes.
-- **Not a total.** The pass detector places ~357 of the ~519 recorded hours;
-  the rest is off-network, inside a recording gap, or on a pass too short to
-  admit. It is a floor.
+  per-ride breakdown, so unlike `new` neither can follow the slider. The
+  panel that shows them says all-time, and the popup's rows say so on hover.
+- **Not restricted to rideable tags.** They are the two figures in the block
+  that count every measured edge whatever its highway tag — distance and time
+  on a park path are still distance and time spent in the neighborhood. That
+  is why Staten Island can show 0.0% covered and 10 minutes.
+- **Not totals.** The pass detector places 373 of the 519 recorded hours and
+  5,048 of the 6,726 recorded km — around a quarter of what was recorded
+  never lands on an edge at all, being off-network, inside a recording gap,
+  or on a pass too short to admit. Both are floors. The per-area figures in
+  this block sum to less again (364 hours), because they count only the time
+  inside a NYC neighborhood: that last ten hours is geography, not the
+  detector missing anything.
 
 What it turns out to be good for is separating the neighborhoods you ride
-*through* from the ones you ride *in*. Central Park: 2.6 of 14.1 miles ridden,
-131 rides, **20 hours** — a park ridden round and round. Forest Hills: 2 rides,
-17 minutes. Midtown-Times Square, the busiest: 44 hours.
+*through* from the ones you ride *in*. Central Park: 3.1 of 14.1 miles ridden,
+**19 hours** — a park ridden round and round. Forest Hills: 17 minutes.
+Midtown-Times Square, the busiest: 45 hours.
 
 | borough | covered | time |
 |---|---|---|
-| Manhattan | 32.4% | 238 h |
-| Brooklyn | 10.5% | 90 h |
-| Queens | 4.4% | 22 h |
-| Bronx | 4.1% | 7.1 h |
+| Manhattan | 44.0% | 242 h |
+| Brooklyn | 14.4% | 92 h |
+| Queens | 5.2% | 22 h |
+| Bronx | 4.6% | 7.1 h |
 | Staten Island | 0.0% | 10 min |
 
 That table is the Neighborhoods stats section. It is all-time, like every
 other section of that panel — the layer is the part that follows the slider,
 and a table that moved under the reader while they read it would be a
 different and worse thing.
+
+### Distance ridden is not network ridden
+
+`ridden_m` counts a street once however often it was ridden — it is a length
+of network, the Explored numerator and what the layer's fill runs on.
+`dist_m` counts every pass over that street. The gap between them is the
+whole difference between a place explored and a place commuted through, and
+on these rides it is several-fold: the Ridden tab and the Explored tab
+therefore rank the city in genuinely different orders, which is the reason
+they are separate tabs rather than one column.
+
+The obvious cheaper route to the same number is edge length × `edge_traversals`
+— the pass counts the map already colours by. It was built first and rejected
+on the numbers. Charging a full edge for every pass charges the whole
+Manhattan Bridge deck to a trace that clipped one end of it, so the total runs
+above the distance the timestamps actually record and whole neighborhoods come
+out at average speeds the rides never rode. Distance out of the same chunks as
+`time_s` does not have that failure, and it has the further property that the
+two tabs are a distance and a duration of the same passes, so a reader can
+hold them against each other.
+
+The size of that overshoot is deliberately not quoted. It is a property of one
+graph and one matching run rather than of the method, and it moves whenever
+the matcher changes which edge a pass is charged to — which is the same
+sensitivity that disqualified the method. Re-derive it with
+`tools/neighborhood_audit.py` if a number is wanted for a particular run.
 
 The whole block is 88 KB gzipped on a 704 KB payload: 240 simplified polygons
 at ~11 m tolerance (the raw boundary file is 1.6 MB gzipped, more than the
