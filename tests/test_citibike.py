@@ -176,7 +176,7 @@ def test_summary_splits_round_trips_from_bikes_met_again(tmp_path):
         _record("r1", day, a, b, bike="100-0001"),
         _record("r2", day + hour, b, a, bike="100-0001"),
         _record("r3", day + 2 * hour, a, b, bike="100-0001"),
-        # Left at B on day one, taken from A a week later: it moved without me.
+        # Left at B on day one, taken from A a week later: the bike moved.
         _record("r4", day + 7 * 24 * hour, a, b, bike="100-0001"),
         # Left at A and unlocked from A four days on -- past the resume
         # window, so the shared dock does not make it a round trip.

@@ -1357,10 +1357,8 @@ function typeChart(cb) {
   const wrap = document.createElement('div');
   wrap.className = 'cb-type';
   wrap.appendChild(chartTitle('Bike type',
-    'How many trips were on an ebike, counted off the export\u2019s ebike ' +
-    'charges. A free ebike ride carries no such line, so this is a floor: at ' +
-    'least this many trips were on an ebike, and the classic share is at most ' +
-    'what it says.'));
+    'Counted from the export\u2019s ebike charges. A free ebike ride carries ' +
+    'none, so the ebike share is a floor.'));
   wrap.appendChild(stackRow('', [
     ['cb-type-classic', classic, `${Math.round(100 * classic / total)}%`],
     ['cb-type-ebike', ebike, `${Math.round(100 * ebike / total)}%`],
@@ -1377,22 +1375,20 @@ function typeChart(cb) {
 // the older bikes.
 //
 // This is a sample of one rider's docks, not a census of the fleet: you take
-// whatever is on the rack, so it estimates what was *at those docks*. That
-// caveat decides what the chart claims, so it lives in the (?) rather than
-// nowhere -- it used to be a caption under the bars as well, which said the
-// same thing twice. 2021 is 22 trips and says so in its tooltip rather than
-// being dropped -- the export's first months are thin, and a bar that hides
-// its own n is worse than a short one.
+// whatever is on the rack, so it estimates what was *at those docks*. The
+// panel no longer says so -- the caption was cut, then the sentence in the
+// (?) -- so findings/citibike-trips.md is the only place that reading is
+// written down. 2021 is 22 trips and says so in its tooltip rather than being
+// dropped -- the export's first months are thin, and a bar that hides its own
+// n is worse than a short one.
 function genChart(gen) {
   if (!gen?.length) return null;
   const wrap = document.createElement('div');
   wrap.className = 'cb-gen';
   wrap.appendChild(chartTitle('Fleet generation',
-    'Which generation of bike each trip was on, read off the id: five digits ' +
-    '(16825) is the older fleet, seven with a hyphen (812-7417) the newer. ' +
-    'Citi Bike publishes no number-to-model mapping, so the labels come from ' +
-    'the bikes themselves. The share is of my own unlocks -- whatever was on ' +
-    'the rack -- so it measures the docks I used, not the fleet.'));
+    'Read off the bike id: five digits (16825) is the older fleet, seven with ' +
+    'a hyphen (812-7417) the newer. Citi Bike publishes no number-to-model ' +
+    'mapping, so the labels come from the bikes themselves.'));
 
   for (const [year, older, newer] of gen) {
     const total = older + newer;
@@ -1637,7 +1633,7 @@ function nbStyle(ai) {
 }
 
 // Restyled on every filter change, like the edges and the dock markers. The
-// fill answers "how much of this had I ridden by then", which is a running
+// fill answers "how much of this had been ridden by then", a running
 // total, so it follows filterHi and ignores filterLo -- the popup says so
 // rather than leaving the reader to infer it.
 function applyNbFilter() {

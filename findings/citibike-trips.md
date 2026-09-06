@@ -59,9 +59,8 @@ Three properties of the raw file drove the design:
   replaced, not a change in what was ridden. Ebike is knowable only from a
   line item naming one: **189 of 2,524 trips, 7%, and a floor**, because a
   free ebike ride can carry no such item. The panel draws it as its own
-  stacked bar, plain percentages with the bound in the (?): written onto the
-  numbers themselves (`≥7%` against `≤93%`) the signs read as clutter at 10px
-  before they read as bounds. That bar leaves the page's palette on purpose:
+  stacked bar, plain percentages with the bound in the (?): on the numbers
+  themselves (`≥7%` against `≤93%`) the signs read as clutter at 10px. That bar leaves the page's palette on purpose:
   Citi Bike's blue (`#255BE3`) for the classic bike and the ebike's grey
   (`#D1D5DB`) are what a reader has already seen on the street, and a colour
   that names the thing beats one that matches the panel.
@@ -115,14 +114,13 @@ and newer are a sequence, not two identities, so they take the panel purple
 the hour and weekday histograms use and then the ramp's magenta, and run in
 the direction the rest of the page reads in.
 
-**The sampling caveat is load-bearing.** This is 2,518 unlocks at one rider's
-docks, not a census — it measures what was on those racks, which is a smaller
-and more honest claim than "the Citi Bike fleet". It sat under the bars as a
-caption *and* went unsaid in the (?); now the (?) carries it, because that is
-where the rest of what the chart means already lives and a claim stated twice
-is a claim a reader learns to skip. 2021 is 22 trips and its tooltip says so
-rather than being dropped; the export's first months are thin, and a bar that
-hides its own n is worse than a short one.
+**The sampling caveat lives here, and only here.** This is 2,518 unlocks at
+one rider's docks, not a census — it measures what was on those racks, which
+is a smaller and more honest claim than "the Citi Bike fleet". The panel used
+to say it twice, in a caption and in the (?); both are gone, so this page is
+where it is written down. 2021 is 22 trips and its tooltip says so rather than
+being dropped; the export's first months are thin, and a bar that hides its
+own n is worse than a short one.
 
 The **(?)** says where the labels come from, because that matters:
 

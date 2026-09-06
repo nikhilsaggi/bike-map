@@ -219,7 +219,7 @@ def _headline(trips: list[dict[str, Any]], draws: list[Draw]) -> None:
     print(f"ridden more than once          {repeats:6}   <- what the panel says")
     print(f"repeat pairs (the events)      {pairs:6}")
     print(f"  round trips (resumes)        {resumes:6}   parked it, took it back")
-    print(f"  re-encounters                {met:6}   it had moved on without me")
+    print(f"  re-encounters                {met:6}   the bike had moved on")
     print()
 
 
@@ -256,15 +256,15 @@ def _shape(draws: list[Draw]) -> None:
     kms = [d.hit[1] for d in draws if d.hit is not None and d.hit[1] is not None]
     print("== what a re-encounter looks like ==")
     print(
-        f"days since I last rode it   q25 {_quantile(ages, 0.25):6.0f}"
+        f"days since last ridden      q25 {_quantile(ages, 0.25):6.0f}"
         f"  median {_quantile(ages, 0.5):6.0f}  q75 {_quantile(ages, 0.75):6.0f}"
     )
     print(
-        f"km from where I left it     q25 {_quantile(kms, 0.25):6.2f}"
+        f"km from where it was left   q25 {_quantile(kms, 0.25):6.2f}"
         f"  median {_quantile(kms, 0.5):6.2f}  q75 {_quantile(kms, 0.75):6.2f}   (n={len(kms)})"
     )
     same = sum(1 for d in draws if d.hit is not None and d.hit[1] is not None and d.hit[1] < 0.01)
-    print(f"picked up at the very dock I left it at   {same}")
+    print(f"picked up at the very dock it was left at   {same}")
     print()
 
 
@@ -272,10 +272,10 @@ def _implied_pool(draws: list[Draw], fleet: int, classic: int) -> None:
     """How big a pool the re-encounter rate implies, given only the data.
 
     Total bike-draws over re-encounters.  Restricting both to bikes ridden
-    within a window is what separates "the pool" from "every bike I have ever
-    ridden", most of which the system has since retired.
+    within a window is what separates "the pool" from "every bike ever ridden",
+    most of which the system has since retired.
     """
-    print("== how big is the pool I am drawing from? ==")
+    print("== how big is the pool being drawn from? ==")
     print("bikes ridden within   exposure    met   implied pool   95% CI")
     for window in (60, 90, 180, 365, 730, None):
         exposure = sum(
@@ -311,14 +311,14 @@ def _permutation(draws: list[Draw], trials: int, seed: int) -> None:
 
     Each re-encounter contributes its own reference set -- the bikes ridden by
     then, aged and placed as of that same moment -- so the null is not "some
-    other bike" but "some other bike I could equally have unlocked right here,
-    right now".  Nothing about fleet size enters.
+    other bike" but "some other bike that could equally have been unlocked right
+    here, right now".  Nothing about fleet size enters.
     """
     rng = random.Random(seed)  # noqa: S311 -- a permutation test, not a secret
     print(f"== two permutation tests ({trials:,} draws each) ==")
     for name, index, unit, question in (
-        ("space", 1, "km", "is it nearer to where I left it than any other bike I had ridden?"),
-        ("time", 0, "days", "is it one I rode more recently than the others?"),
+        ("space", 1, "km", "is it nearer to where it was left than any other bike ridden by then?"),
+        ("time", 0, "days", "is it one ridden more recently than the others?"),
     ):
         obs = [d.hit[index] for d in draws if d.hit is not None and d.hit[index] is not None]
         pools = [

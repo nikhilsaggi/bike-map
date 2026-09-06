@@ -666,7 +666,7 @@ test.describe('Citibike dock layer', () => {
     await expect(row.locator('.cb-stack-val.first')).toHaveText('40%');
     await expect(row.locator('.cb-stack-val:not(.first)')).toHaveText('60%');
     await expect(row).toHaveAttribute('title', 'at least 3 of 5 trips on an ebike');
-    await expect(chart.locator('.cb-help')).toHaveAttribute('title', /this is a floor/);
+    await expect(chart.locator('.cb-help')).toHaveAttribute('title', /the ebike share is a floor/);
     // Widths carry the split, so the ebike segment is the larger of the two.
     const classic = await row.locator('.cb-type-classic').boundingBox();
     const ebike = await row.locator('.cb-type-ebike').boundingBox();
@@ -714,13 +714,10 @@ test.describe('Citibike dock layer', () => {
     await expect(key).toContainText('older');
     await expect(key).toContainText('newer');
     // The (?) says where the labels come from, because no published source
-    // maps a bike number to a model, and that the share is of one rider's
-    // unlocks -- the caveat that decides what the chart claims. It used to be
-    // a caption under the bars as well, saying the same thing twice.
+    // maps a bike number to a model, and stops there.
     const help = section.locator('.cb-gen .cb-help');
     await expect(help).toHaveAttribute('title', /five digits \(16825\) is the older fleet/);
     await expect(help).toHaveAttribute('title', /publishes no number-to-model mapping/);
-    await expect(help).toHaveAttribute('title', /the docks I used, not the fleet/);
     await expect(section).not.toContainText('Share of my own unlocks');
   });
 

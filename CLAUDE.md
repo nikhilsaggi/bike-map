@@ -173,8 +173,8 @@ reads everything from `rides.geojson.gz` top-level `properties`.
   all-time, so the slider and the time-lapse move it the way they move the
   edges and the dock markers. The export ships `new` -- [date index, metres
   first ridden that day] -- and the page takes a running total up to
-  `filterHi`; it follows the range's upper end alone, because "how much had I
-  ridden by then" is a running total. Areas are placed by edge midpoint,
+  `filterHi`; it follows the range's upper end alone, because "how much had
+  been ridden by then" is a running total. Areas are placed by edge midpoint,
   which misplaces 4.9% of ridden metres, nearly all of it on ten named
   bridges and waterfront paths -- fine for a fill colour, not for anything
   stronger.
@@ -273,11 +273,10 @@ reads everything from `rides.geojson.gz` top-level `properties`.
   number-to-model mapping. Structure *within* either shape was tested for and
   is not there (prefix against first-seen date is r = -0.06; the prefix space
   is flat and dense, a lot number rather than a serial), so a finer split
-  would be invented. The chart must keep saying the share is of one rider's
-  unlocks -- it measures the racks that rider used, not the fleet -- and the
-  (?) is where that now lives, having been a caption under the bars as well
-  until saying it twice was the thing worth cutting
-  ([both](findings/citibike-trips.md)).
+  would be invented. The share is of one rider's unlocks -- the racks that
+  rider used, not the fleet -- and the panel no longer says so: the caption
+  went, then the sentence in the (?). That reading now lives only in
+  [findings](findings/citibike-trips.md).
 - **The two stacked bars are one layout with two palettes.** Fleet generation
   and bike type share `stackRow`/`stackKey`, so their geometry cannot drift
   apart; each brings only its own two colours. Generation takes two steps of
@@ -286,10 +285,9 @@ reads everything from `rides.geojson.gz` top-level `properties`.
   deliberately**: Citi Bike's blue for the classic bike and the ebike's grey
   are what a reader has already seen on the street, and a colour that names
   the thing beats one that matches the panel. The ebike share is a floor -- a
-  free ebike ride carries no charge to count -- and the (?) is where that
-  belongs: the bars were drawn with the bound on the numbers themselves
-  (`>=7%` against `<=93%`) and it read as clutter at 10px, so they are plain
-  percentages with the caveat stated once.
+  free ebike ride carries no charge to count -- and the (?) says so; the bound
+  was tried on the numbers themselves (`>=7%` against `<=93%`) and read as
+  clutter at 10px.
 - **A chance-test chart was built here, drawn four ways, and taken off.** The
   two permutation tests live in `tools/bike_reencounters.py` now, and a result
   needing a p-value belongs there rather than on the panel. Two of those four
@@ -468,6 +466,13 @@ times one ride crossed one edge, in the stored vertex order of
   ([details](findings/citibike-trips.md)).
 
 ## Documentation
+
+**No first person.** Nothing in this project says "I" or "my" -- not the page,
+not the README, not `findings/`, not a tool's printed output. It is one
+rider's data, and the prose says "one rider" or nothing at all. **And keep it
+short**: a tooltip states the rule and stops, a caption is one line, and a
+caveat is written once in the place it belongs rather than everywhere it
+could go.
 
 `README.md` is for someone running the pipeline: what the map shows, how to
 install it, how to run it, what the knobs are, and where the outputs land.

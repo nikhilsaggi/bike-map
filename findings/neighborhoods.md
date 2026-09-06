@@ -166,8 +166,8 @@ Two decisions made it worth the payload:
   entries across 192 areas, 6 KB gzipped — and the page takes a running total
   up to `filterHi`. So the slider and the time-lapse fill the city in, and 240
   polygons are not the one thing on the page that sits still while everything
-  else moves. It follows the range's upper end only, because "how much had I
-  ridden by then" is a running total.
+  else moves. It follows the range's upper end only, because "how much had
+  been ridden by then" is a running total.
 - **Every drawn feature carries the area it is in** (`properties.n`), so a
   popup can count the rides through one neighborhood in the visible range.
   That is the number tying the polygon to the streets under it.

@@ -34,8 +34,8 @@ The remaining 93 are the real question, and they look nothing like the 200:
 
 | | q25 | median | q75 |
 |---|---|---|---|
-| days since I last rode it | 112 | **306** | 662 |
-| km from where I left it | 0.89 | **3.17** | 5.43 |
+| days since last ridden | 112 | **306** | 662 |
+| km from where it was left | 0.89 | **3.17** | 5.43 |
 
 Ten months and three kilometres. Seven of the 93 were picked up at the very
 dock they were left at, months later — coincidence wearing the costume of the
