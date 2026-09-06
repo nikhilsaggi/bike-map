@@ -190,3 +190,47 @@ ridden moved +30%. That is the signature of re-attribution rather than
 discovery: the same riding, credited to the street it happened on instead of
 the pavement beside it. Had trace distance moved as much as network did, the
 filter would have been inventing riding rather than relocating it.
+
+## How right is it
+
+Length ratios say a path is plausible, not that it is the right street. The
+discriminating test is per-ride: for each (edge, ride) pair the filter newly
+created, whether *that ride's own* fixes ever came within 25 m of the edge —
+a pass moved to the avenue one block over passes a pooled test and fails this
+one. Over the 2,754 km of newly attributed riding:
+
+```
+on a road that ride itself passed within 25 m   2,550.0 km   92.6%
+its own ride never within 25 m                    204.2 km    7.4%
+```
+
+So about one part in fourteen lands on the wrong street. The residual is not
+sidewalk-shaped: residential 76.2 km, secondary 35.7, primary 27.8, and a
+cluster of Manhattan cross-streets — West 37th, West 15th, West 47th — sitting
+150-250 m from the ride that credits them, which at ~80 m block spacing is the
+avenue two or three over. That is a beam-width and emission problem rather
+than a pavement one, and the worst cases predate this change: the
+Queens-Midtown Tunnel at 1,265 m and the Hudson River Greenway at 502 m were
+mismatched before the filter existed. 140 of the 204 km carries a counted
+tag, so it inflates coverage rather than only the drawn map.
+
+Coverage of 6.5% sits against 7.2-8.3% measured by treating the raw fixes as
+arbiter — about half the remaining gap closed in one step.
+
+**The classifier itself leaked nothing.** Of the ~118 km still matched on
+`footway`/`steps` afterwards, none is below the threshold:
+
+```
+median distance to a parallel roadway
+  <= 12 m  (would have been flagged)     0.0 km    0%
+  12-20 m                               58.9 km   50%
+  20-40 m                               10.9 km    9%
+  >= 40 m  (no roadway near it)         48.4 km   41%
+```
+
+Two fifths of what survives has no roadway within 40 m — standalone path,
+correctly kept, and it is named accordingly: Central Park Outer Loop, Hudson
+River Park Esplanade, Flatbush Avenue Greenway, Shore Road Greenway, the East
+River and Riverside esplanades. The half sitting at 12-20 m is the threshold
+decision rather than an escape, and the sweep above is the argument for
+leaving it there.
