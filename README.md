@@ -57,6 +57,9 @@ The pipeline exports a compressed GeoJSON that powers an interactive
   occasions and the days between them, and clicking one plays that bike's
   recordings through the same cycle a dock row uses
   ([what counts as one](findings/bike-reencounters.md))
+- Bike type: classic against ebike over every trip, as a bound rather than a
+  count — an ebike ride is only visible in the export when it was charged
+  for, so the bar reads at least 7% ebike against at most 93% classic
 - Fleet generation: trips per year stacked by which fleet the bike came from,
   read off the id shape — the newer bikes go from 41% of unlocks in 2021 to
   90% in 2026 ([what the id does and does not say](findings/citibike-trips.md))

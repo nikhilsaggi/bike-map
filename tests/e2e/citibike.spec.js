@@ -498,12 +498,12 @@ test.describe('Citibike dock layer', () => {
     await openSection(page, SECTION);
     const section = page.locator(`#${SECTION}`);
     // Bikes met again -- not the 5 that were simply picked back up off the
-    // dock they were parked at (findings/bike-reencounters.md).
-    await expect(section).toContainText('2 unlocks were on a bike ridden before');
+    // dock they were parked at (findings/bike-reencounters.md). The count
+    // heads the re-encounter list rather than trailing the panel: it is what
+    // that list is a list of.
+    await expect(section.locator('.cb-lead')).toHaveText(
+      '2 unlocks were on a bike ridden before');
     await expect(section).not.toContainText('just parked');
-    // 3 of 5 trips carry an ebike line item, and "at least" is load-bearing:
-    // a free ebike ride can carry none.
-    await expect(section).toContainText('at least 60% of trips on an ebike');
     // The one-way dock rows and the paragraphs that explained them are gone,
     // and so are the fare and re-dock counts.
     await expect(section.locator('.cb-flow-row')).toHaveCount(0);
@@ -558,8 +558,8 @@ test.describe('Citibike dock layer', () => {
     // The (?) carries the rule, which is not inferable from the words. Both
     // branches have to be in it: a different dock, OR the same dock after 48h.
     // Only the second ever fires on the real export, but stating one branch
-    // would describe a different rule. Scoped by index: the panel carries a
-    // second (?) for the generation chart, so a bare .cb-help is ambiguous.
+    // would describe a different rule. Scoped to the list: the panel carries
+    // a (?) per chart, so a bare .cb-help is ambiguous.
     const help = section.locator('.cb-help').nth(0);
     await expect(help).toHaveAttribute(
       'title', 'Bikes ridden more than once (picked up either from a different ' +
@@ -643,8 +643,37 @@ test.describe('Citibike dock layer', () => {
     const section = page.locator(`#${SECTION}`);
     await expect(section.locator('.cb-met-row')).toHaveCount(0);
     await expect(section).not.toContainText('Bike re-encounters');
+    // The count heads that block, so it goes with it: no bike met again is
+    // nothing to count, and a "0 unlocks" line would be noise.
+    await expect(section.locator('.cb-lead')).toHaveCount(0);
     // The rest of the panel is untouched by its absence.
-    await expect(section).toContainText('2 unlocks were on a bike ridden before');
+    await expect(section.locator('.cb-cmp .v').first()).toHaveText('5');
+    await expect(section.locator('.cb-type .cb-stack-row')).toHaveCount(1);
+    await expect(section.locator('.cb-gen .cb-stack-row')).toHaveCount(3);
+  });
+
+  test('splits the trips by bike type, and bounds both shares', async ({ page }) => {
+    await gotoMap(page);
+    await openSection(page, SECTION);
+    const chart = page.locator(`#${SECTION} .cb-type`);
+    await expect(chart).toContainText('Bike type');
+    const row = chart.locator('.cb-stack-row');
+    await expect(row).toHaveCount(1);
+    // 3 of 5 trips carry an ebike charge. The bound on each side is
+    // load-bearing and rides on the number rather than on a caption: a free
+    // ebike ride carries no such charge, so 60% is a floor and the classic
+    // 40% is a ceiling.
+    await expect(row.locator('.cb-stack-val.first')).toHaveText('\u226440%');
+    await expect(row.locator('.cb-stack-val:not(.first)')).toHaveText('\u226560%');
+    await expect(row).toHaveAttribute('title', 'at least 3 of 5 trips on an ebike');
+    await expect(chart.locator('.cb-help')).toHaveAttribute('title', /this is a floor/);
+    // Widths carry the split, so the ebike segment is the larger of the two.
+    const classic = await row.locator('.cb-type-classic').boundingBox();
+    const ebike = await row.locator('.cb-type-ebike').boundingBox();
+    expect(ebike.width).toBeGreaterThan(classic.width);
+    const key = chart.locator('.cb-stack-key');
+    await expect(key).toContainText('classic');
+    await expect(key).toContainText('ebike');
   });
 
   test('stacks each year by which generation of bike was ridden', async ({ page }) => {
@@ -652,17 +681,17 @@ test.describe('Citibike dock layer', () => {
     await openSection(page, SECTION);
     const section = page.locator(`#${SECTION}`);
     await expect(section).toContainText('Fleet generation');
-    const rows = section.locator('.cb-gen-row');
+    const rows = section.locator('.cb-gen .cb-stack-row');
     await expect(rows).toHaveCount(3);
-    await expect(rows.nth(0).locator('.cb-gen-year')).toHaveText('2023');
+    await expect(rows.nth(0).locator('.cb-stack-label')).toHaveText('2023');
     // A share each side, older on the left against its own segment: 1 of 4 and
     // 3 of 4, then 2 and 2, then none and all.
-    await expect(rows.nth(0).locator('.cb-gen-val.older')).toHaveText('25%');
-    await expect(rows.nth(0).locator('.cb-gen-val:not(.older)')).toHaveText('75%');
-    await expect(rows.nth(1).locator('.cb-gen-val.older')).toHaveText('50%');
-    await expect(rows.nth(1).locator('.cb-gen-val:not(.older)')).toHaveText('50%');
-    await expect(rows.nth(2).locator('.cb-gen-val.older')).toHaveText('0%');
-    await expect(rows.nth(2).locator('.cb-gen-val:not(.older)')).toHaveText('100%');
+    await expect(rows.nth(0).locator('.cb-stack-val.first')).toHaveText('25%');
+    await expect(rows.nth(0).locator('.cb-stack-val:not(.first)')).toHaveText('75%');
+    await expect(rows.nth(1).locator('.cb-stack-val.first')).toHaveText('50%');
+    await expect(rows.nth(1).locator('.cb-stack-val:not(.first)')).toHaveText('50%');
+    await expect(rows.nth(2).locator('.cb-stack-val.first')).toHaveText('0%');
+    await expect(rows.nth(2).locator('.cb-stack-val:not(.first)')).toHaveText('100%');
     await expect(rows.nth(0)).toHaveAttribute(
       'title', '2023: 3 of 4 trips on the newer fleet, 1 on the older');
     // A year with none of a generation draws one segment, not a zero-width
@@ -681,15 +710,18 @@ test.describe('Citibike dock layer', () => {
     expect(newW).toBeGreaterThan(oldW * 2);
     // Two series, so the legend is not optional, and the caption has to say
     // the share is of one rider's unlocks rather than of the fleet.
-    const key = section.locator('.cb-gen-key');
+    const key = section.locator('.cb-gen .cb-stack-key');
     await expect(key).toContainText('older');
     await expect(key).toContainText('newer');
-    await expect(section).toContainText('Share of my own unlocks, not a count of the fleet.');
     // The (?) says where the labels come from, because no published source
-    // maps a bike number to a model.
-    const help = section.locator('.cb-help').nth(1);
+    // maps a bike number to a model, and that the share is of one rider's
+    // unlocks -- the caveat that decides what the chart claims. It used to be
+    // a caption under the bars as well, saying the same thing twice.
+    const help = section.locator('.cb-gen .cb-help');
     await expect(help).toHaveAttribute('title', /five digits \(16825\) is the older fleet/);
     await expect(help).toHaveAttribute('title', /publishes no number-to-model mapping/);
+    await expect(help).toHaveAttribute('title', /the docks I used, not the fleet/);
+    await expect(section).not.toContainText('Share of my own unlocks');
   });
 
   test('the generation chart is absent when the export has no years', async ({ page }) => {
@@ -697,7 +729,7 @@ test.describe('Citibike dock layer', () => {
     await gotoMap(page, buildFixture({ citibike: cb }));
     await openSection(page, SECTION);
     const section = page.locator(`#${SECTION}`);
-    await expect(section.locator('.cb-gen-row')).toHaveCount(0);
+    await expect(section.locator('.cb-gen')).toHaveCount(0);
     await expect(section).not.toContainText('Fleet generation');
     await expect(section).toContainText('Bike re-encounters');
   });

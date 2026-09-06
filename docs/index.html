@@ -269,7 +269,10 @@
   .cb-cmp .head.own { color: #888; }
   .cb-cmp .label { color: #888; }
   .cb-cmp .v { color: #fff; text-align: right; font-variant-numeric: tabular-nums; }
-  .cb-note { color: #777; font-size: 9px; line-height: 1.4; margin-top: 8px; }
+  /* A section's finding, sitting directly under its heading rather than at
+     the foot of the panel: the list below it is the way into the map, and
+     this says what the list is a list of. */
+  .cb-lead { color: #777; font-size: 9px; line-height: 1.4; margin-top: 1px; }
   /* The bikes met again, one row each: id, how many times it turned up, and
      the gaps between those times. Capped and scrollable so 88 rows cannot
      push the rest of the panel off screen; .scrollbox is the dock popup's own
@@ -323,37 +326,47 @@
     color: #888; font-size: 8px; cursor: help; margin-left: 4px; vertical-align: 1px;
   }
   .cb-help:hover { color: #fff; border-color: #888; }
-  /* The fleet turning over: one stacked bar per year, two ordered categories.
-     Two steps of the map's own plasma ramp rather than two unrelated hues --
-     older and newer are a sequence, not two identities, so they take the
-     ramp's magenta and its yellow (PLASMA at t = 0.45 and t = 0.9) and run in
-     the direction the map already reads in. */
-  .cb-gen-row { display: flex; align-items: center; gap: 6px; margin: 2px 0; }
-  .cb-gen-year {
+  /* One stacked bar: a label, two ordered segments carrying the split, and a
+     share on each side. Two charts share the layout -- the fleet turning over
+     per year and the bike type over all trips -- so the geometry lives here
+     once and each chart brings only its own two colours. */
+  .cb-stack-row { display: flex; align-items: center; gap: 6px; margin: 2px 0; }
+  .cb-stack-label {
     width: 24px; text-align: right; color: #888; font-size: 10px; flex: none;
     font-variant-numeric: tabular-nums;
   }
-  .cb-gen-track { display: flex; flex: 1; height: 9px; gap: 2px; }
+  .cb-stack-track { display: flex; flex: 1; height: 9px; gap: 2px; }
   /* A 2px gap between the segments, not a border: a border would add width
      to the thing whose width is the measurement. */
-  .cb-gen-old { background: #b42282; }
-  .cb-gen-new { background: #fcc202; }
+  /* Older and newer are a sequence, not two identities, so they take two
+     steps of the map's own plasma ramp -- the panel purple the hour and
+     weekday histograms use, then the ramp's magenta -- and run in the
+     direction the rest of the page already reads in. */
+  .cb-gen-old { background: #7b3ff2; }
+  .cb-gen-new { background: #b42282; }
+  /* Bike type breaks that palette on purpose: Citi Bike's own blue for the
+     classic bike and the ebike's grey are what a reader has already seen on
+     the street, and a colour that names the thing beats a colour that matches
+     the panel. */
+  .cb-type-classic { background: #255BE3; }
+  .cb-type-ebike { background: #D1D5DB; }
   /* A share on each side, each against the segment it belongs to, so the bar
      is read outwards from its own split rather than against one axis end.
      Both wear the panel's text colour rather than their series' -- a number
-     tinted like its bar reads as part of the bar. */
-  .cb-gen-val {
-    width: 25px; color: #ccc; font-size: 10px; flex: none;
+     tinted like its bar reads as part of the bar. Wide enough for a bounding
+     qualifier, because the ebike share carries one. */
+  .cb-stack-val {
+    width: 30px; color: #ccc; font-size: 10px; flex: none;
     font-variant-numeric: tabular-nums;
   }
-  .cb-gen-val.older { text-align: right; }
+  .cb-stack-val.first { text-align: right; }
   /* Two series, so a legend is not optional. Swatches carry the identity and
      the words stay in the panel's own text colour. nowrap on each item because
      a 236px panel otherwise breaks one between its swatch and its label,
      leaving orphaned squares on a line of their own. */
-  .cb-gen-key { display: flex; gap: 10px; color: #777; font-size: 9px; margin: 4px 0 0 32px; }
-  .cb-gen-key span { white-space: nowrap; }
-  .cb-gen-key i { display: inline-block; width: 8px; height: 8px; margin-right: 3px; }
+  .cb-stack-key { display: flex; gap: 10px; color: #777; font-size: 9px; margin: 4px 0 0 32px; }
+  .cb-stack-key span { white-space: nowrap; }
+  .cb-stack-key i { display: inline-block; width: 8px; height: 8px; margin-right: 3px; }
 
   @media (max-width: 640px) {
     #stats-sections.open { max-height: min(240px, calc(100vh - 300px)); }
@@ -1260,6 +1273,137 @@ function initDockLayer(cb) {
 // popup, so they are kept apart from dockTraceLabels, which dockPopup clears.
 let metChipLabels = [];
 
+// One stacked bar: a label, two ordered segments whose widths carry the
+// split, and a share on each side, each against the segment it belongs to.
+// The fleet-generation chart and the bike-type chart are the same picture of
+// two ordered categories, so the row is built here and they differ only in
+// their two colours and their words.
+function stackRow(label, parts, title) {
+  const row = document.createElement('div');
+  row.className = 'cb-stack-row';
+  if (title) row.title = title;
+  const lab = document.createElement('span');
+  lab.className = 'cb-stack-label';
+  lab.textContent = label;
+  const track = document.createElement('div');
+  track.className = 'cb-stack-track';
+  const vals = [];
+  for (const [cls, n, text] of parts) {
+    // A category with none of the trips draws no segment: a zero-width one
+    // would still show as a sliver through the 2px gap.
+    if (n) {
+      const seg = document.createElement('div');
+      seg.className = cls;
+      seg.style.flex = String(n);
+      track.appendChild(seg);
+    }
+    const val = document.createElement('span');
+    val.className = vals.length ? 'cb-stack-val' : 'cb-stack-val first';
+    val.textContent = text;
+    vals.push(val);
+  }
+  row.append(lab, vals[0], track, vals[1]);
+  return row;
+}
+
+// Two series, so a legend is not optional.
+function stackKey(series) {
+  const key = document.createElement('div');
+  key.className = 'cb-stack-key';
+  for (const [cls, label] of series) {
+    const item = document.createElement('span');
+    const sw = document.createElement('i');
+    sw.className = cls;
+    item.append(sw, document.createTextNode(label));
+    key.appendChild(item);
+  }
+  return key;
+}
+
+// A chart heading and the (?) that carries what the title cannot: the rule a
+// count follows, or where a label with no published source came from.
+function chartTitle(text, help) {
+  const title = document.createElement('div');
+  title.className = 'histo-title';
+  title.textContent = text;
+  const mark = document.createElement('span');
+  mark.className = 'cb-help';
+  mark.textContent = '?';
+  mark.title = help;
+  title.appendChild(mark);
+  return title;
+}
+
+// What kind of bike, over every trip. A floor rather than a measurement: an
+// ebike ride is only visible in the export when it was charged for, and a
+// free one names no bike type at all -- so the ebike share can only be
+// understated and the classic share overstated, which is what the bounding
+// qualifiers on the two numbers say. The two colours leave the page's palette
+// deliberately: Citi Bike's own blue and the ebike's grey are what a reader
+// has already seen on the street, and a colour that names the thing beats one
+// that matches the panel.
+function typeChart(cb) {
+  const total = cb.trips?.length || 0;
+  if (!total) return null;
+  const ebike = cb.ebike_min || 0;
+  const classic = total - ebike;
+  const wrap = document.createElement('div');
+  wrap.className = 'cb-type';
+  wrap.appendChild(chartTitle('Bike type',
+    'How many trips were on an ebike, counted off the export\u2019s ebike ' +
+    'charges. A free ebike ride carries no such line, so this is a floor: at ' +
+    'least this many trips were on an ebike, and the classic share is at most ' +
+    'what it says.'));
+  wrap.appendChild(stackRow('', [
+    ['cb-type-classic', classic, `\u2264${Math.round(100 * classic / total)}%`],
+    ['cb-type-ebike', ebike, `\u2265${Math.round(100 * ebike / total)}%`],
+  ], `at least ${ebike.toLocaleString()} of ${total.toLocaleString()} trips on an ebike`));
+  wrap.appendChild(stackKey([
+    ['cb-type-classic', 'classic'], ['cb-type-ebike', 'ebike'],
+  ]));
+  return wrap;
+}
+
+// The fleet replacing itself, sampled by five years of unlocks. Lyft writes
+// two shapes of bike id -- five digits (16825) and hyphenated sevens
+// (812-7417) -- and the shape is the generation, the five-digit ones being
+// the older bikes.
+//
+// This is a sample of one rider's docks, not a census of the fleet: you take
+// whatever is on the rack, so it estimates what was *at those docks*. That
+// caveat decides what the chart claims, so it lives in the (?) rather than
+// nowhere -- it used to be a caption under the bars as well, which said the
+// same thing twice. 2021 is 22 trips and says so in its tooltip rather than
+// being dropped -- the export's first months are thin, and a bar that hides
+// its own n is worse than a short one.
+function genChart(gen) {
+  if (!gen?.length) return null;
+  const wrap = document.createElement('div');
+  wrap.className = 'cb-gen';
+  wrap.appendChild(chartTitle('Fleet generation',
+    'Which generation of bike each trip was on, read off the id: five digits ' +
+    '(16825) is the older fleet, seven with a hyphen (812-7417) the newer. ' +
+    'Citi Bike publishes no number-to-model mapping, so the labels come from ' +
+    'the bikes themselves. The share is of my own unlocks -- whatever was on ' +
+    'the rack -- so it measures the docks I used, not the fleet.'));
+
+  for (const [year, older, newer] of gen) {
+    const total = older + newer;
+    if (!total) continue;
+    // Rounded independently, so the pair can read 41% / 59% or, on a year
+    // that splits near a half, 50% / 50% off 49.6 -- the bar carries the exact
+    // split and the labels are for reading, not for summing.
+    wrap.appendChild(stackRow(String(year), [
+      ['cb-gen-old', older, `${Math.round(100 * older / total)}%`],
+      ['cb-gen-new', newer, `${Math.round(100 * newer / total)}%`],
+    ], `${year}: ${newer.toLocaleString()} of ${total.toLocaleString()} trips ` +
+       `on the newer fleet, ${older.toLocaleString()} on the older`));
+  }
+
+  wrap.appendChild(stackKey([['cb-gen-old', 'older'], ['cb-gen-new', 'newer']]));
+  return wrap;
+}
+
 // The bikes met again, one chip each, and each chip is a way into the map:
 // click it and the GPS recordings made on that bike play through single-ride
 // view, the same cycle a dock popup's route link opens.
@@ -1267,112 +1411,30 @@ let metChipLabels = [];
 // A re-encounter is a bike unlocked again after it moved on -- not one picked
 // back up off the dock it was parked at, which is a round trip and is 200 of
 // the export's 293 repeats. The (?) carries that rule, because it is a rule
-// and not something a reader can infer from the word.
+// and not something a reader can infer from the word, and the count sits
+// under the heading rather than at the foot of the panel: it is what the list
+// below it is a list of.
 // findings/bike-reencounters.md has the derivation.
-// The fleet replacing itself, sampled by five years of unlocks. Lyft writes
-// two shapes of bike id -- five digits (16825) and hyphenated sevens
-// (812-7417) -- and the shape is the generation, the five-digit ones being
-// the older bikes.
-//
-// This is a sample of one rider's docks, not a census of the fleet: you take
-// whatever is on the rack, so it estimates what was *at those docks*, which
-// is the honest claim and the one the caption makes. 2021 is 22 trips and
-// says so in its tooltip rather than being dropped -- the export's first
-// months are thin, and a bar that hides its own n is worse than a short one.
-function genChart(gen) {
-  if (!gen?.length) return null;
-  const wrap = document.createElement('div');
-  const title = document.createElement('div');
-  title.className = 'histo-title';
-  title.textContent = 'Fleet generation';
-  const help = document.createElement('span');
-  help.className = 'cb-help';
-  help.textContent = '?';
-  // Provenance only. The sampling caveat is not repeated here because it is
-  // already under the chart in full sight, where it has to stay -- it is the
-  // difference between "the fleet turned over" and "the fleet at my docks
-  // turned over", and a caveat that decides the claim does not belong on a
-  // hover.
-  help.title =
-    'Which generation of bike each trip was on, read off the id: five digits ' +
-    '(16825) is the older fleet, seven with a hyphen (812-7417) the newer. ' +
-    'Citi Bike publishes no number-to-model mapping, so the labels come from ' +
-    'the bikes themselves.';
-  title.appendChild(help);
-  wrap.appendChild(title);
-
-  for (const [year, older, newer] of gen) {
-    const total = older + newer;
-    if (!total) continue;
-    const row = document.createElement('div');
-    row.className = 'cb-gen-row';
-    row.title = `${year}: ${newer.toLocaleString()} of ${total.toLocaleString()} trips ` +
-      `on the newer fleet, ${older.toLocaleString()} on the older`;
-    const y = document.createElement('span');
-    y.className = 'cb-gen-year';
-    y.textContent = String(year);
-    const track = document.createElement('div');
-    track.className = 'cb-gen-track';
-    for (const [cls, n] of [['cb-gen-old', older], ['cb-gen-new', newer]]) {
-      if (!n) continue;
-      const seg = document.createElement('div');
-      seg.className = cls;
-      seg.style.flex = String(n);
-      track.appendChild(seg);
-    }
-    // Rounded independently, so the pair can read 41% / 59% or, on a year
-    // that splits near a half, 50% / 50% off 49.6 -- the bar carries the exact
-    // split and the labels are for reading, not for summing.
-    const oldVal = document.createElement('span');
-    oldVal.className = 'cb-gen-val older';
-    oldVal.textContent = `${Math.round(100 * older / total)}%`;
-    const val = document.createElement('span');
-    val.className = 'cb-gen-val';
-    val.textContent = `${Math.round(100 * newer / total)}%`;
-    row.append(y, oldVal, track, val);
-    wrap.appendChild(row);
-  }
-
-  const key = document.createElement('div');
-  key.className = 'cb-gen-key';
-  for (const [cls, label] of [['cb-gen-old', 'older'], ['cb-gen-new', 'newer']]) {
-    const item = document.createElement('span');
-    const sw = document.createElement('i');
-    sw.className = cls;
-    item.append(sw, document.createTextNode(label));
-    key.appendChild(item);
-  }
-  wrap.appendChild(key);
-  // The caveat is visible rather than only in the (?), because it is the
-  // difference between "the fleet turned over" and "the fleet at my docks
-  // turned over", and only the second one is measured here.
-  const note = document.createElement('div');
-  note.className = 'cb-note';
-  note.textContent = 'Share of my own unlocks, not a count of the fleet.';
-  wrap.appendChild(note);
-  return wrap;
-}
-
-function metList(met) {
+function metList(met, reencounters) {
   if (!met?.length) return null;
   metChipLabels = [];
   const wrap = document.createElement('div');
-  const title = document.createElement('div');
-  title.className = 'histo-title';
-  title.textContent = 'Bike re-encounters';
-  const help = document.createElement('span');
-  help.className = 'cb-help';
-  help.textContent = '?';
   // States the rule as what counts rather than what is excluded, and keeps
   // both branches: the dock test and the clock test are separate conditions,
   // and naming only the one that ever fires on this export would describe a
   // different rule. The rows carry their own counts and click hints, so this
   // says the definition and stops.
-  help.title =
+  wrap.appendChild(chartTitle('Bike re-encounters',
     'Bikes ridden more than once (picked up either from a different dock or ' +
-    'from the same dock 48+ hours later)';
-  title.appendChild(help);
-  wrap.appendChild(title);
+    'from the same dock 48+ hours later)'));
+  // Unlocks, not bikes: the bikes are the rows below. 200 of the export's 293
+  // repeats were the bike you parked and took straight back -- a round trip,
+  // not a meeting -- and `resumes` holds those (findings/bike-reencounters.md).
+  const lead = document.createElement('div');
+  lead.className = 'cb-lead';
+  lead.textContent =
+    `${(reencounters || 0).toLocaleString()} unlocks were on a bike ridden before`;
+  wrap.appendChild(lead);
 
   // Three columns need naming: "3x" and "300, 99 d" are not self-describing,
   // and the tooltip that spells them out only reaches one row at a time.
@@ -1486,23 +1548,19 @@ function renderCitibike(cb) {
     rows.map(([k, a, b]) =>
       `<span class="label">${k}</span><span class="v">${a}</span><span class="v">${b}</span>`
     ).join('') +
-    `</div>` +
-    // Bikes actually met again, not bikes ridden twice. The line used to say
-    // "253 of 2,225 bikes ridden more than once", and 200 of those repeats
-    // were the bike you parked and took straight back -- a round trip, not a
-    // meeting. `resumes` holds that discarded 200 (findings/bike-reencounters.md).
-    `<div class="cb-note">${cb.reencounters.toLocaleString()} unlocks were on ` +
-    `a bike ridden before ` +
-    // "at least" is load-bearing: a free ebike ride can carry no line item
-    // naming one, so this is a floor rather than a measurement.
-    `\u00b7 at least ${Math.round(100 * cb.ebike_min / cb.trips.length)}% of ` +
-    `trips on an ebike</div>`;
+    `</div>`;
   // Appended as DOM rather than markup: a chip is a control with a listener,
   // and the bike ids come from Lyft, which has no business being interpolated
   // into HTML -- the same reason dockPopup builds its rows this way.
   const section = document.getElementById('stat-citibike');
-  const met = metList(cb.met);
+  // Bikes actually met again, not bikes ridden twice: the heading's count
+  // reads "unlocks were on a bike ridden before" for that reason.
+  const met = metList(cb.met, cb.reencounters);
   if (met) section.appendChild(met);
+  // Both stacked bars say what bike, so they sit together: which kind, then
+  // which generation of it.
+  const type = typeChart(cb);
+  if (type) section.appendChild(type);
   const gen = genChart(cb.gen);
   if (gen) section.appendChild(gen);
   showChip('stat-citibike');

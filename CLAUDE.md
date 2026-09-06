@@ -219,7 +219,8 @@ reads everything from `rides.geojson.gz` top-level `properties`.
   predicate to the clock alone on the evidence that the other branch is empty
   -- that reclassifies the first bike to turn up across town the same
   afternoon, which is the case the rule exists for. The panel reports only
-  the other 93, as "unlocks on a bike ridden before";
+  the other 93, as "unlocks on a bike ridden before" -- under the
+  re-encounter list's own heading, because it is what that list is a list of;
   **never report the raw 253 as "bikes ridden more than
   once"**, which is the wording this replaced and which counts a person taking
   their own bike home. The list's own tooltip does open with that phrase, and
@@ -257,9 +258,22 @@ reads everything from `rides.geojson.gz` top-level `properties`.
   number-to-model mapping. Structure *within* either shape was tested for and
   is not there (prefix against first-seen date is r = -0.06; the prefix space
   is flat and dense, a lot number rather than a serial), so a finer split
-  would be invented. The caption must keep saying the share is of one rider's
-  unlocks: it measures the racks that rider used, not the fleet
+  would be invented. The chart must keep saying the share is of one rider's
+  unlocks -- it measures the racks that rider used, not the fleet -- and the
+  (?) is where that now lives, having been a caption under the bars as well
+  until saying it twice was the thing worth cutting
   ([both](findings/citibike-trips.md)).
+- **The two stacked bars are one layout with two palettes.** Fleet generation
+  and bike type share `stackRow`/`stackKey`, so their geometry cannot drift
+  apart; each brings only its own two colours. Generation takes two steps of
+  the map's own plasma ramp (the histograms' purple, then the ramp's magenta),
+  because older and newer are a sequence. **Bike type breaks that palette
+  deliberately**: Citi Bike's blue for the classic bike and the ebike's grey
+  are what a reader has already seen on the street, and a colour that names
+  the thing beats one that matches the panel. The ebike share is a floor -- a
+  free ebike ride carries no charge to count -- so the bound rides on the
+  numbers themselves (`>=7%` ebike against `<=93%` classic), never only in a
+  caption.
 - **A chance-test chart was built here, drawn four ways, and taken off.** The
   two permutation tests live in `tools/bike_reencounters.py` now, and a result
   needing a p-value belongs there rather than on the panel. Two of those four
