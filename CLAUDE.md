@@ -186,27 +186,42 @@ reads everything from `rides.geojson.gz` top-level `properties`.
   counts distinct rides in range. There is no honest area-level pass count:
   how many times a ride entered and left would be the real one, and a
   feature's `rides` carry no order and no clock.
-- **Per-area time is measured, all-time, and a floor.** `time_s` sums
-  `edge_speed`'s elapsed seconds over the area's edges -- real timestamps on
-  known geometry, not distance over an assumed speed. It counts every timed
-  edge whatever its highway tag, because time on a park path is still time
-  spent there, which makes it the one figure in the block not restricted to
-  `COVERAGE_EXCLUDE`-filtered edges. It cannot follow the slider:
-  `edge_speed` has no per-ride breakdown. And it is a floor -- the detector
-  places ~357 of the ~519 recorded hours, the rest being off-network, inside
-  a gap, or on a pass too short to admit.
+- **Per-area distance and time are measured, all-time, and floors.**
+  `dist_m` and `time_s` sum `edge_speed`'s metres and elapsed seconds over
+  the area's edges -- real timestamps on known geometry, not one of the two
+  derived from the other through an assumed speed. They count every measured
+  edge whatever its highway tag, because distance and time on a park path
+  are still distance and time spent there, which makes them the two figures
+  in the block not restricted to `COVERAGE_EXCLUDE`-filtered edges. Neither
+  can follow the slider: `edge_speed` has no per-ride breakdown. And both are
+  floors, by the same margin -- the detector places roughly two thirds of the
+  recorded hours, the rest being off-network, inside a gap, or on a pass too
+  short to admit.
+- **`dist_m` is riding and `ridden_m` is network, and the block ships both.**
+  `dist_m` counts a street again on every pass over it; `ridden_m` counts it
+  once however often it was ridden, and is the Explored numerator and the
+  layer's fill. On these rides `dist_m` is several times `ridden_m`, so the
+  two are never interchangeable: the popup prints them one above the other
+  precisely because a reader who has just seen "of its network" needs to know
+  the larger figure is the same streets again, not more of them. Deriving
+  `dist_m` from `edge_traversals` instead -- edge length times pass count --
+  was tried and rejected: it charges a whole edge for a pass that only
+  clipped it, which on the real rides overstated the total by about a third
+  and put areas at implausible average speeds against `time_s`.
 - **The Neighborhoods stats section is all-time**, like every other section
   of that panel; the layer is the part that moves with the slider. It rolls
   the areas up per borough (Manhattan 32.4% against Queens 4.4% -- the spread
   the one citywide number hides) and ranks the areas below that, each row
   opening its own polygon on the map.
 - **That ranking has three tabs and each one sorts by the number it prints.**
-  Ridden (miles), Time (`time_s`, so the floor above applies) and Explored
-  (`ridden_m / net_m`) are three different orders -- Central Park is second by
-  time and nowhere by distance -- and the single list they replaced sorted by
-  metres while printing a percentage, which reads as a ranking of the number
-  on screen and is not one. A row carries its index into `areas`, never its
-  place in the list, because the click opens a polygon.
+  Ridden (`dist_m`) and Time (`time_s`) are the riding, out of the same
+  `edge_speed` chunks, so the floors above apply to both and they part only
+  where the riding was fast; Explored (`ridden_m / net_m`) is the network,
+  and it is the order that genuinely differs -- how much of a place was seen
+  rather than how far the bike went in it. The single list they replaced
+  sorted by metres while printing a percentage, which reads as a ranking of
+  the number on screen and is not one. A row carries its index into `areas`,
+  never its place in the list, because the click opens a polygon.
 - **Explored prints the network it is a share of, in the row.** That ranking
   is the one a small denominator wins, and the denominator is neither the
   neighborhood nor the drawn map but `COVERAGE_EXCLUDE`-filtered graph edges:

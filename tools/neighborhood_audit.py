@@ -88,7 +88,7 @@ def _report_totals(rows: list[dict[str, Any]], citywide: dict[str, Any] | None) 
 
 
 def _report_areas(rows: list[dict[str, Any]], top: int) -> None:
-    """Rank neighborhoods by ridden km, and again by passes."""
+    """Rank neighborhoods by ridden km, and again by distance ridden."""
     touched = [r for r in rows if r["ridden_m"] > 0]
     have_net = [r for r in rows if r["net_m"] > 0]
     lengths = sorted(r["ridden_m"] for r in touched)
@@ -105,13 +105,29 @@ def _report_areas(rows: list[dict[str, Any]], top: int) -> None:
     # measured on, so the two agree with each other. The map's own popup
     # counts every drawn corridor in the area, sidewalks and service roads
     # included, and is roughly 3x larger for it.
+    #
+    # `ridden` is the street once and `dist` is every pass over it measured
+    # from the timestamps -- the panel's Explored and Ridden columns, side by
+    # side, because the gap between them is the thing worth auditing.
     print(f"\nTop {top} by ridden km (passes over rideable edges only):")
-    print(f"  {'neighborhood':44} {'bo':2} {'ridden':>8} {'of it':>6} {'rides':>6} {'passes':>7}")
+    print(
+        f"  {'neighborhood':44} {'bo':2} {'ridden':>8} {'of it':>6} "
+        f"{'rides':>6} {'passes':>7} {'dist':>9}"
+    )
     for r in sorted(touched, key=lambda r: -r["ridden_m"])[:top]:
         pct = 100 * r["ridden_m"] / r["net_m"]
         print(
             f"  {r['name'][:44]:44} {r['boro']:2} {r['ridden_m'] / 1000:6.1f} km "
-            f"{pct:5.1f}% {len(r['rides']):6,} {r['passes']:7,}"
+            f"{pct:5.1f}% {len(r['rides']):6,} {r['passes']:7,} {r['dist_m'] / 1000:6.1f} km"
+        )
+
+    print(f"\nTop {top} by distance ridden -- what the panel's Ridden tab ranks:")
+    for r in sorted(touched, key=lambda r: -r["dist_m"])[:top]:
+        kmh = r["dist_m"] / max(r["time_s"], 1) * 3.6
+        print(
+            f"  {r['name'][:44]:44} {r['boro']:2} {r['dist_m'] / 1000:6.1f} km "
+            f"{r['time_s'] / 3600:5.1f} h {kmh:5.1f} km/h  "
+            f"on {r['ridden_m'] / 1000:5.1f} km of street"
         )
 
     # Passes per ridden km separates a corridor ridden daily from a

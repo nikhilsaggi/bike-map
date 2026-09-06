@@ -33,7 +33,7 @@ The pipeline exports a compressed GeoJSON that powers an interactive
 - Optional neighborhood layer: NYC's tabulation areas, each filled by the
   share of its own streets ridden by the date on screen, so the slider and the
   time-lapse fill the city in. Click one for its coverage, the rides that went
-  through it, and the measured time spent on its streets
+  through it, and the measured distance and time ridden inside it
 - A Neighborhoods stats section rolling those up per borough — a third of
   Manhattan's streets ridden against 4% of Queens', both hidden inside one
   citywide 9.1% ([why](findings/neighborhoods.md))

@@ -85,8 +85,8 @@ def test_measure_splits_the_coverage_measurement_by_area(areas):
     assert list(west["first"]) == ["2024-01-05"]
 
 
-def test_measure_sums_the_time_measured_on_each_area(areas):
-    """Time comes from edge_speed, and counts tags coverage leaves out."""
+def test_measure_sums_the_distance_and_time_measured_on_each_area(areas):
+    """Both come from edge_speed, and count tags coverage leaves out."""
     edge_geom = {
         (1, 2): [lonlat(100.0, 0.0), lonlat(200.0, 0.0)],  # west, rideable
         (4, 5): [lonlat(700.0, 0.0), lonlat(800.0, 0.0)],  # east, rideable
@@ -107,12 +107,30 @@ def test_measure_sums_the_time_measured_on_each_area(areas):
     west, east = neighborhoods.measure(areas, edge_geom, edge_hw, state)
     assert west["time_s"] == 60.0  # forward only
     assert east["time_s"] == 75.0  # both directions, plus the footway's 30 s
+    assert west["dist_m"] == 100.0
+    assert east["dist_m"] == 300.0  # both directions, plus the footway's 100 m
 
 
-def test_measure_without_speed_records_reports_no_time(areas):
+def test_measure_distance_is_every_pass_where_ridden_m_is_the_street_once(areas):
+    """The Ridden ranking's number: 300 m of riding on 100 m of street."""
+    edge_geom = {(1, 2): [lonlat(100.0, 0.0), lonlat(200.0, 0.0)]}
+    state = {
+        "edge_rides": {(1, 2): [R1, R2]},
+        # Two passes out and one back, all on the one 100 m edge.
+        "edge_speed": {
+            (1, 2): {"b": 90.0, "c": [[200.0, 120.0, 110.0, 2.0, 100.0, 50.0, 45.0, 1.0]]},
+        },
+    }
+    west = neighborhoods.measure(areas, edge_geom, {(1, 2): "residential"}, state)[0]
+    assert round(west["ridden_m"]) == 100
+    assert west["dist_m"] == 300.0
+
+
+def test_measure_without_speed_records_reports_no_distance_or_time(areas):
     edge_geom = {(1, 2): [lonlat(100.0, 0.0), lonlat(200.0, 0.0)]}
     rows = neighborhoods.measure(areas, edge_geom, {(1, 2): "residential"}, {"edge_rides": {}})
     assert rows[0]["time_s"] == 0.0
+    assert rows[0]["dist_m"] == 0.0
 
 
 def test_measure_without_boundaries_is_empty():
@@ -126,7 +144,15 @@ def test_summary_ships_areas_and_tags_the_features(areas):
         (4, 5): [lonlat(700.0, 0.0), lonlat(800.0, 0.0)],  # 100 m, ridden
     }
     edge_hw = dict.fromkeys(edge_geom, "residential")
-    state = {"edge_rides": {(1, 2): [R1], (4, 5): [R2]}}
+    state = {
+        "edge_rides": {(1, 2): [R1], (4, 5): [R2]},
+        # Two passes over the west edge and one over the east: 500 m ridden
+        # on 300 m of street, which is the pair the Ridden ranking needs.
+        "edge_speed": {
+            (1, 2): {"b": 90.0, "c": [[400.0, 200.0, 190.0, 2.0, 0.0, 0.0, 0.0, 0.0]]},
+            (4, 5): {"b": 90.0, "c": [[100.0, 40.0, 40.0, 1.0, 0.0, 0.0, 0.0, 0.0]]},
+        },
+    }
     features = [
         {"geometry": {"coordinates": [lonlat(100.0, 0.0), lonlat(300.0, 0.0)]}, "properties": {}},
         {"geometry": {"coordinates": [lonlat(700.0, 0.0), lonlat(800.0, 0.0)]}, "properties": {}},
@@ -143,9 +169,11 @@ def test_summary_ships_areas_and_tags_the_features(areas):
     assert [a["name"] for a in block["areas"]] == ["Westville", "Eastburg"]
     assert block["net_m"] == 400
     assert block["ridden_m"] == 300
+    assert block["dist_m"] == 500
     # The tag is an index into the block's own array, not the boundary file's.
     assert [f["properties"]["n"] for f in features] == [0, 1, -1]
     west, east = block["areas"]
+    assert (west["dist_m"], east["dist_m"]) == (400, 100)
     assert west["new"] == [[0, 200]]
     assert east["new"] == [[1, 100]]
     # polygon -> ring -> point: one piece, one ring, five points closing it.

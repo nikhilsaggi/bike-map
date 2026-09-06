@@ -1690,9 +1690,15 @@ function nbPopup(ai) {
     ['Of its network', `${share}%`, 'Share of its rideable streets ridden by then'],
     ['Rides through', nbRidesIn(ai).toLocaleString(),
       'Rides with any drawn street here, within the date range'],
+    // Distance beside the network above it, because the two are far apart and
+    // a reader who has just read "15.7 of 45.2 mi" needs to see that the 305
+    // is the same streets ridden again, not more of them.
+    ['Distance here', `${mi((a.dist_m || 0) / 1000).toFixed(1)} mi`,
+      'Measured distance ridden here, every pass counted, all-time'],
     ['Time here', fmtDuration(a.time_s),
       'Measured riding time on these streets, all-time -- the timestamps ' +
-      'carry no per-ride split, so this one does not follow the slider'],
+      'carry no per-ride split, so neither this nor the distance follows ' +
+      'the slider'],
   ];
   box.append(head, sub);
   for (const [k, v, title] of rows) {
@@ -1710,16 +1716,22 @@ function nbPopup(ai) {
 // distance and the number beside it a share of a network, and nothing on
 // screen said so. Each tab now sorts by the number in its own column.
 //
-// All three are all-time, like the rest of this panel; `time_s` could not
-// follow the slider even if the section did, since edge_speed carries no
-// per-ride split.
+// All three are all-time, like the rest of this panel; `dist_m` and `time_s`
+// could not follow the slider even if the section did, since edge_speed
+// carries no per-ride split.
 const PLACE_MODES = [
   {
     id: 'ridden',
     label: 'Ridden',
-    title: 'By the distance of their streets ridden, all-time',
-    rank: a => a.ridden_m,
-    value: a => `${mi(a.ridden_m / 1000).toFixed(1)} mi`,
+    title: 'By the distance ridden inside them, every pass counted, all-time',
+    // Distance ridden, not network ridden: a street crossed daily counts
+    // every time, so this is miles put in rather than ground covered --
+    // Explored below is the one that asks how much of the place was seen.
+    // Measured on the geometry from the ride timestamps, like Time and with
+    // the same floor, so the two agree on what they are a distance and a
+    // duration of.
+    rank: a => a.dist_m || 0,
+    value: a => `${mi((a.dist_m || 0) / 1000).toFixed(1)} mi`,
   },
   {
     id: 'time',
@@ -1832,9 +1844,11 @@ function renderPlaceList() {
     // Every tab's number on every row, so switching tabs is a re-ranking
     // rather than three lists that cannot be compared with each other.
     row.title = `${BOROUGHS[a.boro] || a.boro} \u00b7 ` +
-      `${mi(a.ridden_m / 1000).toFixed(1)} of ${mi(a.net_m / 1000).toFixed(1)} mi ridden \u00b7 ` +
-      `${a.net_m ? Math.round((100 * a.ridden_m) / a.net_m) : 0}% \u00b7 ` +
-      `${fmtDuration(a.time_s)} \u2014 click to show it on the map`;
+      `${mi((a.dist_m || 0) / 1000).toFixed(1)} mi ridden \u00b7 ` +
+      `${fmtDuration(a.time_s)} \u00b7 ` +
+      `${mi(a.ridden_m / 1000).toFixed(1)} of ${mi(a.net_m / 1000).toFixed(1)} mi of street, ` +
+      `${a.net_m ? Math.round((100 * a.ridden_m) / a.net_m) : 0}% ` +
+      `\u2014 click to show it on the map`;
     row.addEventListener('click', () => showArea(+row.dataset.area));
   });
 }

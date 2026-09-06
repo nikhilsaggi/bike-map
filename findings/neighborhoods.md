@@ -195,25 +195,25 @@ service roads are included, and a merged corridor placed by its midpoint can
 reach well past the boundary. The audit's column is over rideable graph edges
 only. Both are stated; neither is claimed to be the other.
 
-## Time in a neighborhood
+## Distance and time in a neighborhood
 
-`time_s` sums `edge_speed`'s elapsed seconds over the area's edges. It is a
-measurement, not an estimate: the seconds come from the ride CSVs' own
-timestamps projected onto known geometry, never from distance over an assumed
-speed.
+`dist_m` and `time_s` sum `edge_speed`'s metres and elapsed seconds over the
+area's edges. Both are measurements, not estimates: they come from the ride
+CSVs' own timestamps projected onto known geometry, and neither is derived
+from the other through an assumed speed.
 
-Three things it is not:
+Three things they are not:
 
 - **Not date-filterable.** `edge_speed` aggregates across rides with no
-  per-ride breakdown, so unlike `new` this cannot follow the slider. The
-  panel that shows it says all-time, and the popup's row says so on hover.
-- **Not restricted to rideable tags.** It is the one figure in the block that
-  counts every timed edge whatever its highway tag — time on a park path is
-  still time spent in the neighborhood. That is why Staten Island can show
-  0.0% covered and 10 minutes.
-- **Not a total.** The pass detector places ~357 of the ~519 recorded hours;
+  per-ride breakdown, so unlike `new` neither can follow the slider. The
+  panel that shows them says all-time, and the popup's rows say so on hover.
+- **Not restricted to rideable tags.** They are the two figures in the block
+  that count every measured edge whatever its highway tag — distance and time
+  on a park path are still distance and time spent in the neighborhood. That
+  is why Staten Island can show 0.0% covered and 10 minutes.
+- **Not totals.** The pass detector places ~357 of the ~519 recorded hours;
   the rest is off-network, inside a recording gap, or on a pass too short to
-  admit. It is a floor.
+  admit. Distance is short by the same passes. Both are floors.
 
 What it turns out to be good for is separating the neighborhoods you ride
 *through* from the ones you ride *in*. Central Park: 2.6 of 14.1 miles ridden,
@@ -232,6 +232,26 @@ That table is the Neighborhoods stats section. It is all-time, like every
 other section of that panel — the layer is the part that follows the slider,
 and a table that moved under the reader while they read it would be a
 different and worse thing.
+
+### Distance ridden is not network ridden
+
+`ridden_m` counts a street once however often it was ridden — it is a length
+of network, the Explored numerator and what the layer's fill runs on.
+`dist_m` counts every pass over that street. The gap between them is the
+whole difference between a place explored and a place commuted through, and
+on these rides it is several-fold: the Ridden tab and the Explored tab
+therefore rank the city in genuinely different orders, which is the reason
+they are separate tabs rather than one column.
+
+The obvious cheaper route to the same number is edge length × `edge_traversals`
+— the pass counts the map already colours by. It was built first and rejected
+on the numbers. Charging a full edge for every pass charges the whole
+Manhattan Bridge deck to a trace that clipped one end of it, which on the real
+rides came out about a third above the measured distance and put whole
+neighborhoods at average speeds the rides never rode. Distance out of the same
+chunks as `time_s` does not have that failure, and it has the further property
+that the two tabs are a distance and a duration of the same passes, so a
+reader can hold them against each other.
 
 The whole block is 88 KB gzipped on a 704 KB payload: 240 simplified polygons
 at ~11 m tolerance (the raw boundary file is 1.6 MB gzipped, more than the
