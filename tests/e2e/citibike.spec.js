@@ -511,55 +511,109 @@ test.describe('Citibike dock layer', () => {
     await expect(section).not.toContainText('paid of');
   });
 
-  test('plots each meeting median where it falls among the shuffles', async ({ page }) => {
+  test('lists the bikes met again, and says what a meeting is', async ({ page }) => {
     await gotoMap(page);
     await openSection(page, SECTION);
     const section = page.locator(`#${SECTION}`);
-    await expect(section).toContainText('Meeting a bike again');
-    const rows = section.locator('.cb-again-row');
-    await expect(rows).toHaveCount(2);
-    // 4.828 km is 3.0 mi; 300 days rounds to itself. The value column is the
-    // measurement, and the tooltip carries what chance gave beside it.
-    await expect(rows.nth(0).locator('.cb-again-val')).toHaveText('3.0 mi');
-    await expect(rows.nth(1).locator('.cb-again-val')).toHaveText('300 d');
-    await expect(rows.nth(0)).toHaveAttribute(
-      'title', '20 meetings · 3.0 mi, against 3.0 mi from chance (2.0 mi–4.0 mi) · ' +
-      '48% of shuffles came out this low');
-    await expect(rows.nth(1)).toHaveAttribute(
-      'title', '22 meetings · 300 d, against 420 d from chance (360 d–480 d) · ' +
-      '1.2% of shuffles came out this low');
-    // The dots carry the whole finding: inside the band is a coincidence,
-    // outside it is not. Each row is framed on its own band, so a row is only
-    // ever compared against its own -- reading row 1's dot against row 0's
-    // band is meaningless, and happens to land exactly on its edge.
-    const geom = async (i) => ({
-      band: await rows.nth(i).locator('.cb-again-band').boundingBox(),
-      track: await rows.nth(i).locator('.cb-again-track').boundingBox(),
-      dot: await rows.nth(i).locator('.cb-again-dot').boundingBox(),
-    });
-    const mid = (b) => b.x + b.width / 2;
-    const where = await geom(0);
-    const when = await geom(1);
-    expect(mid(where.dot)).toBeGreaterThan(where.band.x);
-    expect(mid(where.dot)).toBeLessThan(where.band.x + where.band.width);
-    // Outside has to be *visibly* outside. Both earlier versions of this chart
-    // put the dot within a pixel or two of the band edge -- a percentile axis,
-    // where the middle 95% covers 95% of the track by construction, and then a
-    // zero-anchored one, where 306 days against a band starting at 338 was 6%
-    // of the axis. The finding is only a finding if it can be seen.
-    expect(when.band.x - mid(when.dot)).toBeGreaterThan(3);
-    expect(when.band.width).toBeLessThan(when.track.width * 0.9);
+    await expect(section).toContainText('Bike re-encounters');
+    const chips = section.locator('.cb-met-id');
+    await expect(chips).toHaveCount(3);
+    await expect(chips.nth(0)).toHaveText('800-1234');
+    // Ridden 3 times means 2 of them after the bike had moved on -- the chip
+    // says so, because the round trips are exactly what the count excludes.
+    await expect(chips.nth(0)).toHaveAttribute(
+      'title', 'Ridden 3 times, 2 of them after it had moved on. 2 recordings — ' +
+      'click to play them');
+    await expect(chips.nth(1)).toHaveAttribute(
+      'title', 'Ridden 2 times, 1 of them after it had moved on. 1 recording — ' +
+      'click to show it');
+    // A bike met again with nothing recorded keeps its chip and says why it
+    // does nothing, rather than being dropped to make the list all clickable.
+    await expect(chips.nth(2)).toHaveClass(/dim/);
+    await expect(chips.nth(2)).toHaveAttribute('title', /No GPS recording covers any of them/);
+    // The (?) carries the 48-hour rule, which is not inferable from the words.
+    const help = section.locator('.cb-help');
+    await expect(help).toHaveAttribute('title', /round trip, not a meeting/);
+    await expect(help).toHaveAttribute('title', /48 hours/);
   });
 
-  test('draws no chart when there were too few meetings to median', async ({ page }) => {
-    // citibike.py ships `again: null` under CHANCE_MIN_MEETINGS, and half a
-    // chart would be worse than none.
-    const cb = { ...buildFixture().properties.citibike, again: null };
+  test('a bike chip plays its recordings, and the arrows step them', async ({ page }) => {
+    await gotoMap(page);
+    await openSection(page, SECTION);
+    const section = page.locator(`#${SECTION}`);
+    const chip = section.locator('.cb-met-id').nth(0);   // 800-1234, rides [3, 1]
+
+    await chip.click();
+    // Newest first, so the first click lands on ride 3 -- the same order a
+    // dock popup's route link uses.
+    await expect(page.locator('#ride-view-bar')).toBeVisible();
+    await expect(page.locator('#ride-view-label')).toContainText('2024-07-04');
+    await expect(chip).toHaveClass(/on/);
+    await expect(chip).toHaveText('800-1234 1/2');
+
+    // Down steps to the older recording, and the ride-view bar counts along.
+    await page.keyboard.press('ArrowDown');
+    await expect(page.locator('#ride-view-label')).toContainText('2023-06-15');
+    await expect(chip).toHaveText('800-1234 2/2');
+    await expect(page.locator('.rv-step')).toContainText('route 2/2');
+
+    // Up wraps rather than falling out of the cycle.
+    await page.keyboard.press('ArrowUp');
+    await expect(chip).toHaveText('800-1234 1/2');
+
+    // Clicking walks the cycle and then off the end of it, so the chip that
+    // started the detour can end it.
+    await chip.click();
+    await expect(chip).toHaveText('800-1234 2/2');
+    await chip.click();
+    await expect(page.locator('#ride-view-bar')).toBeHidden();
+    await expect(chip).not.toHaveClass(/on/);
+    await expect(chip).toHaveText('800-1234');
+  });
+
+  test('a bike with one recording shows it and puts the map back', async ({ page }) => {
+    await gotoMap(page);
+    await openSection(page, SECTION);
+    const chip = page.locator(`#${SECTION} .cb-met-id`).nth(1);  // 800-5678, [1]
+    await chip.click();
+    await expect(page.locator('#ride-view-label')).toContainText('2023-06-15');
+    // One recording is no cycle, so the chip stays a bare id and the bar
+    // carries no step counter.
+    await expect(chip).toHaveText('800-5678');
+    await expect(page.locator('.rv-step')).toHaveCount(0);
+    await chip.click();
+    await expect(page.locator('#ride-view-bar')).toBeHidden();
+  });
+
+  test('a bike with no recording is inert', async ({ page }) => {
+    await gotoMap(page);
+    await openSection(page, SECTION);
+    const chip = page.locator(`#${SECTION} .cb-met-id`).nth(2);  // 800-9999, []
+    await chip.click();
+    await expect(page.locator('#ride-view-bar')).toBeHidden();
+    await expect(chip).not.toHaveClass(/on/);
+  });
+
+  test('leaving ride view any other way clears the chip too', async ({ page }) => {
+    await gotoMap(page);
+    await openSection(page, SECTION);
+    const chip = page.locator(`#${SECTION} .cb-met-id`).nth(0);
+    await chip.click();
+    await expect(chip).toHaveClass(/on/);
+    // Escape, not a second click: the chip reads its state from rideView, so
+    // every other exit has to clear it as well.
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#ride-view-bar')).toBeHidden();
+    await expect(chip).not.toHaveClass(/on/);
+  });
+
+  test('the list is absent when no bike was ever met again', async ({ page }) => {
+    const cb = { ...buildFixture().properties.citibike, met: [] };
     await gotoMap(page, buildFixture({ citibike: cb }));
     await openSection(page, SECTION);
     const section = page.locator(`#${SECTION}`);
-    await expect(section.locator('.cb-again-row')).toHaveCount(0);
-    await expect(section).not.toContainText('Meeting a bike again');
+    await expect(section.locator('.cb-met-id')).toHaveCount(0);
+    await expect(section).not.toContainText('Bike re-encounters');
     // The rest of the panel is untouched by its absence.
     await expect(section).toContainText('2 unlocks were on a bike ridden before');
   });

@@ -4,16 +4,13 @@ from __future__ import annotations
 
 import datetime as dt
 import json
-import random
 
 import pytest
 
 from bike_routes.citibike import (
-    CHANCE_MIN_MEETINGS,
     SOURCE_OWN,
     SOURCE_UNKNOWN,
     TRIP_UNTRACED,
-    _chance_test,
     _citibike_summary,
     ride_sources,
     trip_rides,
@@ -194,33 +191,9 @@ def test_summary_splits_round_trips_from_bikes_met_again(tmp_path):
 
     # r2, r3 and r8 are round trips; r4 and r6 are bikes met again.
     assert (s["reencounters"], s["resumes"]) == (2, 3)
-    # Two meetings is far under CHANCE_MIN_MEETINGS, so the panel gets no
-    # chart rather than a median of two things.
-    assert s["again"] is None
-
-
-def test_chance_test_says_which_side_of_chance_a_median_fell():
-    """`pct` has to point the right way, because the chart's meaning is its sign.
-
-    A dot left of the band reads "sooner/nearer than chance" on the panel. If
-    this statistic ever inverted, the page would draw a confident finding
-    backwards and nothing else would notice.
-    """
-    rng = random.Random(0)  # noqa: S311 -- a shuffle test, not a secret
-    pools = [[10.0, 20.0, 30.0]] * 30
-
-    # Every meeting landed on the smallest thing it could have: almost no
-    # shuffle comes out this low, so the marker sits left of the band.
-    low = _chance_test([10.0] * 30, pools, rng)
-    assert low["pct"] < 5
-    assert low["lo"] <= low["chance"] <= low["hi"]
-    assert low["n"] == 30
-
-    # ... and the mirror image, so a passing test cannot just be "small".
-    assert _chance_test([30.0] * 30, pools, rng)["pct"] > 95
-
-    # Nothing to shuffle against gives no answer at all.
-    assert _chance_test([10.0] * (CHANCE_MIN_MEETINGS - 1), pools, rng) is None
+    # ... and each met bike gets a row, ordered by how much there is to look
+    # at. No ride index was passed, so nothing is recorded over any of them.
+    assert s["met"] == [["100-0001", 4, []], ["100-0002", 2, []]]
 
 
 def _flows(n, a, b, start=1_000):

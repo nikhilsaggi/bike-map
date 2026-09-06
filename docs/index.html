@@ -254,38 +254,33 @@
   .cb-cmp .label { color: #888; }
   .cb-cmp .v { color: #fff; text-align: right; font-variant-numeric: tabular-nums; }
   .cb-note { color: #777; font-size: 9px; line-height: 1.4; margin-top: 8px; }
-  /* One measurement against the spread of what chance gives, twice. The dot
-     is the real median; the band is the middle 95% of the same statistic over
-     shuffles that kept the meetings and swapped the bike. Deliberately not
-     the weather bars' fill-and-tick: a fill from zero would claim the axis
-     starts somewhere meaningful, and this axis is a rank among shuffles. */
-  .cb-again-row { display: flex; align-items: center; gap: 6px; margin: 3px 0; }
-  .cb-again-label { width: 74px; text-align: right; color: #888; font-size: 10px; flex: none; }
-  /* Square ends, and shallower than the weather bars: a pale dot centred in a
-     rounded 10px groove reads as a slider handle you could drag, which is the
-     one thing this must not look like. */
-  .cb-again-track { position: relative; flex: 1; height: 7px; background: #181818; }
-  /* Band and dot share this inset box rather than the track, so both are
-     percentages of the same axis. Insetting by the dot's radius is what keeps
-     a dot at 0% fully inside the track; nudging the dot instead would push it
-     past the 2.5% band edge on a 130px track and draw an outside-chance
-     result as an inside-chance one. */
-  .cb-again-plot { position: absolute; top: 0; bottom: 0; left: 5px; right: 5px; }
-  /* A lighter step of the track, not a colour of its own: it is context for
-     the dot, and a hue here would compete with the dot for the reading. */
-  .cb-again-band { position: absolute; top: 0; bottom: 0; background: #333; }
-  .cb-again-dot {
-    position: absolute; top: 50%; width: 8px; height: 8px; border-radius: 50%;
-    background: #a8d8e8; transform: translate(-50%, -50%);
-    /* A hairline of the panel's own surface, so the dot stays separate from
-       the band it usually overlaps. Any thicker and the ring reads as the
-       bezel of a control rather than a gap. */
-    box-shadow: 0 0 0 1px #0d0d0d;
+  /* The bikes met again, as chips rather than rows: 88 ids at eight
+     characters each browse in a quarter of the height a list needs, and the
+     chip is also the control -- clicking one puts its recordings on the map.
+     Capped and scrollable so the list cannot push the rest of the panel off
+     screen; .scrollbox is the same thin bar the dock popup uses. */
+  .cb-met { display: flex; flex-wrap: wrap; gap: 3px; max-height: 108px; overflow-y: auto; }
+  .cb-met-id {
+    font-size: 9px; font-variant-numeric: tabular-nums; padding: 2px 4px;
+    border-radius: 3px; background: #1a1a1a; color: #aaa; cursor: pointer;
+    border: 1px solid transparent; white-space: nowrap;
   }
-  .cb-again-val {
-    width: 42px; color: #ccc; font-size: 10px; flex: none;
-    font-variant-numeric: tabular-nums;
+  .cb-met-id:hover { color: #fff; border-color: #444; }
+  /* Cyan is selection everywhere else on the page, so it is selection here. */
+  .cb-met-id.on { background: #14343d; border-color: #a8d8e8; color: #dff4fb; }
+  /* A bike met again with no recording over any of its trips is still a bike
+     met again. It keeps its chip and says why it cannot be opened, rather
+     than being dropped to make the list all clickable. */
+  .cb-met-id.dim { color: #555; cursor: default; }
+  .cb-met-id.dim:hover { color: #555; border-color: transparent; }
+  /* A question mark that carries the definition, because "re-encounter" is a
+     rule (48h, same dock) and not a word a reader can be expected to guess. */
+  .cb-help {
+    display: inline-block; width: 11px; height: 11px; line-height: 11px;
+    text-align: center; border-radius: 50%; border: 1px solid #444;
+    color: #888; font-size: 8px; cursor: help; margin-left: 4px; vertical-align: 1px;
   }
+  .cb-help:hover { color: #fff; border-color: #888; }
 
   @media (max-width: 640px) {
     #stats-sections.open { max-height: min(240px, calc(100vh - 300px)); }
@@ -811,10 +806,14 @@ let dockMarkers = [];      // index-aligned with cbData.docks
 let dockTrips = [];        // dock index -> indices into cbData.trips
 let dockSelected = null;   // dock index whose trips are drawn, if any
 let dockTraceLabels = [];  // relabel callbacks for the open popup's route links
-// The pair of docks whose recordings are being stepped through, if any:
-// { to: partner dock index, rides: [ride id, ...] newest first, at: which one
-// is drawn }. It lives out here rather than in the row that started it so the
-// keyboard and the ride-view bar can address the same cycle.
+// The recordings being stepped through, if any:
+// { key: what started it, to: partner dock index or null, rides: [ride id, ...]
+//   newest first, at: which one is drawn }.
+// It lives out here rather than in the control that started it so the keyboard
+// and the ride-view bar can address the same cycle. `key` is what a control
+// compares itself against, because two of them can now open a cycle -- a dock
+// popup's row ("d:<dock>") and the stats panel's bike chips ("b:<bike id>") --
+// and only the dock case narrows the drawn links, which is what `to` is for.
 let dockTrace = null;
 let dockSqrtMax = 1;
 
@@ -885,7 +884,7 @@ function showDockLinks(di) {
   // pair's route is up that pair is the only line: the trip, and the ride
   // that was made on it.
   for (const p of dockPartners(di, lo, hi)) {
-    if (dockTrace && p.idx !== dockTrace.to) continue;
+    if (dockTrace && dockTrace.to !== null && p.idx !== dockTrace.to) continue;
     const to = cbData.docks[p.idx];
     if (!to.at) continue;
     L.polyline([[from.at[1], from.at[0]], [to.at[1], to.at[0]]], {
@@ -907,14 +906,15 @@ function focusDock(di) {
   if (m && dockLayer.hasLayer(m)) m.openPopup();  // auto-pans if off screen
 }
 
-// Show one of a pair's recordings and make it the cycle. `at` wraps, so the
-// arrow keys can run off either end without falling out of the pair.
-function startDockTrace(to, rides, at) {
+// Show one of a set of recordings and make it the cycle. `at` wraps, so the
+// arrow keys can run off either end without falling out of the set.
+function startDockTrace(key, to, rides, at) {
   const i = ((at % rides.length) + rides.length) % rides.length;
-  dockTrace = { to, rides, at: i };
+  dockTrace = { key, to, rides, at: i };
   viewRide(rides[i], true);       // keep the popup: its rows are the point
   // ... and narrow the links to this pair, so the route is not lost in the
-  // starburst of a dock that reaches a hundred others.
+  // starburst of a dock that reaches a hundred others. Only a dock cycle has
+  // a pair to narrow to; a bike's recordings are not one dock's trips.
   if (dockSelected !== null) showDockLinks(dockSelected);
 }
 
@@ -922,7 +922,9 @@ function startDockTrace(to, rides, at) {
 // is what Escape and the bar's own button are for, and a keypress that
 // silently ended the detour would be easy to hit by accident.
 function stepDockTrace(delta) {
-  if (dockTrace) startDockTrace(dockTrace.to, dockTrace.rides, dockTrace.at + delta);
+  if (dockTrace) {
+    startDockTrace(dockTrace.key, dockTrace.to, dockTrace.rides, dockTrace.at + delta);
+  }
 }
 
 // A dock pair the export found a GPS recording for can put that recording on
@@ -944,7 +946,8 @@ function addTraceControl(meta, p) {
   // Where this row sits in the cycle on screen, or -1 when the cycle belongs
   // to another row, or to nothing. Read rather than remembered: ride view is
   // left from Escape, the exit bar and the date filter too.
-  const at = () => (dockTrace && dockTrace.to === p.idx && rideView !== null ? dockTrace.at : -1);
+  const at = () =>
+    (dockTrace && dockTrace.key === `d:${p.idx}` && rideView !== null ? dockTrace.at : -1);
 
   function relabel() {
     const i = at();
@@ -983,7 +986,7 @@ function addTraceControl(meta, p) {
     const i = at();
     // Clicking walks the cycle and then off the end of it, so the row that
     // started a detour can end it. The arrow keys wrap instead.
-    if (i < 0) startDockTrace(p.idx, p.rides, 0);
+    if (i < 0) startDockTrace(`d:${p.idx}`, p.idx, p.rides, 0);
     else if (i + 1 < n) stepDockTrace(1);
     else exitRideView();
     relabel();
@@ -1160,52 +1163,94 @@ function initDockLayer(cb) {
   });
 }
 
-// The two questions a re-encounter can answer with no model of the system:
-// was the bike near where I left it, and had I ridden it recently? Both are
-// medians, and both are plotted where they fall among 5,000 shuffles that
-// kept the meetings and swapped in a bike I could equally have unlocked at
-// that same moment (bike_routes/citibike.py). So the axis is a rank, not a
-// distance -- 50 is the middle of chance, and the band is chance's middle 95%.
+// Relabel callbacks for the bike chips, one per chip. They outlive any dock
+// popup, so they are kept apart from dockTraceLabels, which dockPopup clears.
+let metChipLabels = [];
+
+// The bikes met again, one chip each, and each chip is a way into the map:
+// click it and the GPS recordings made on that bike play through single-ride
+// view, the same cycle a dock popup's route link opens.
 //
-// It is drawn as a pair because one of them landing dead centre is what makes
-// the other mean anything: a bike carries a lifetime, not a neighbourhood.
+// A re-encounter is a bike unlocked again after it moved on -- not one picked
+// back up off the dock it was parked at, which is a round trip and is 200 of
+// the export's 293 repeats. The (?) carries that rule, because it is a rule
+// and not something a reader can infer from the word.
 // findings/bike-reencounters.md has the derivation.
-function againChart(again) {
-  // An export with too few meetings to median ships no block, and half a
-  // chart is worse than none -- the same rule the weather bars follow.
-  if (!again?.where || !again?.when) return '';
-  const row = (label, t, fmt) => {
-    // One axis per row, framed on the band and the measurement rather than
-    // anchored at zero. That is only allowed because the mark is a dot: its
-    // position carries the value, so the axis may start anywhere, where a
-    // bar's *length* would carry it and a cut baseline would lie. Anchored at
-    // zero the whole result lived in 6% of the track -- 306 days against a
-    // band starting at 338 -- and the finding was invisible.
-    const lo = Math.min(t.obs, t.lo);
-    const hi = Math.max(t.obs, t.hi);
-    const pad = (hi - lo) * 0.15;
-    const at = (v) => `${(100 * (v - lo + pad) / (hi - lo + 2 * pad)).toFixed(1)}%`;
-    // The band is the axis's reference, so the tooltip carries what the axis
-    // cannot: the numbers behind it, and how far out the measurement landed.
-    return `<div class="cb-again-row" title="${t.n.toLocaleString()} meetings · ` +
-      `${fmt(t.obs)}, against ${fmt(t.chance)} from chance ` +
-      `(${fmt(t.lo)}–${fmt(t.hi)}) · ${t.pct}% of shuffles came out this low">` +
-      `<span class="cb-again-label">${label}</span>` +
-      `<div class="cb-again-track"><div class="cb-again-plot">` +
-      `<div class="cb-again-band" style="left:${at(t.lo)};` +
-      `width:calc(${at(t.hi)} - ${at(t.lo)})"></div>` +
-      `<div class="cb-again-dot" style="left:${at(t.obs)}"></div>` +
-      `</div></div><span class="cb-again-val">${fmt(t.obs)}</span></div>`;
-  };
-  const km = (v) => `${mi(v).toFixed(1)} mi`;
-  const days = (v) => `${Math.round(v).toLocaleString()} d`;
-  return `<div class="histo-title">Meeting a bike again</div>` +
-    row('How far off', again.where, km) +
-    row('How long ago', again.when, days) +
-    // Say how to read it, not what it says. A reader who sees one dot in the
-    // band and one outside has found the result themselves.
-    `<div class="cb-note">Band is the middle 95% of what chance gives, ` +
-    `for a bike I could have unlocked instead. Inside it is a coincidence.</div>`;
+function metList(met) {
+  if (!met?.length) return null;
+  metChipLabels = [];
+  const wrap = document.createElement('div');
+  const title = document.createElement('div');
+  title.className = 'histo-title';
+  title.textContent = 'Bike re-encounters';
+  const help = document.createElement('span');
+  help.className = 'cb-help';
+  help.textContent = '?';
+  help.title =
+    'Bikes I unlocked more than once, counting only the times the bike had ' +
+    'moved on in between. Picking a bike back up off the dock I parked it at ' +
+    'within 48 hours is a round trip, not a meeting, and is left out — that ' +
+    'is 200 of 293 repeats. Click an id to play the recordings made on that ' +
+    'bike; ↑↓ steps them.';
+  title.appendChild(help);
+  wrap.appendChild(title);
+
+  const list = document.createElement('div');
+  list.className = 'cb-met scrollbox';
+  for (const [bike, trips, rides] of met) {
+    const chip = document.createElement('span');
+    chip.className = 'cb-met-id';
+    const n = rides.length;
+    const dateOf = ri => dateList[rideDateIdx[ri]] ?? '';
+    // Read rather than remembered, like the dock rows: ride view is also left
+    // by Escape, the exit bar and the date filter.
+    const at = () =>
+      (dockTrace && dockTrace.key === `b:${bike}` && rideView !== null ? dockTrace.at : -1);
+
+    function relabel() {
+      const i = at();
+      chip.classList.toggle('on', i >= 0);
+      chip.textContent = i >= 0 && n > 1 ? `${bike} ${i + 1}/${n}` : bike;
+      const ridden = `Ridden ${trips} times, ${trips - 1} of them after it had moved on`;
+      if (!n) {
+        chip.title = `${ridden}. No GPS recording covers any of them, so there ` +
+          'is nothing to draw.';
+      } else if (i >= 0) {
+        chip.title = `Showing ${dateOf(rides[i])} · ` +
+          (n > 1 ? 'click or press ↓ for the next recording' : 'click to put the map back');
+      } else {
+        chip.title = `${ridden}. ${n} recording${n !== 1 ? 's' : ''} — click to ` +
+          (n > 1 ? 'play them' : 'show it');
+      }
+    }
+
+    if (!n) {
+      chip.classList.add('dim');
+    } else {
+      chip.addEventListener('click', () => {
+        const i = at();
+        // Clicking walks the cycle and then off the end of it, so the chip
+        // that started a detour can end it. The arrow keys wrap instead.
+        if (i < 0) {
+          // A bike's recordings are not one dock's trips, so any open dock
+          // popup and its links belong to a different question -- close it.
+          map.closePopup();
+          clearDockLinks();
+          startDockTrace(`b:${bike}`, null, rides, 0);
+        } else if (i + 1 < n) {
+          stepDockTrace(1);
+        } else {
+          exitRideView();
+        }
+        relabel();
+      });
+    }
+    relabel();
+    metChipLabels.push(relabel);
+    list.appendChild(chip);
+  }
+  wrap.appendChild(list);
+  return wrap;
 }
 
 function renderCitibike(cb) {
@@ -1241,8 +1286,12 @@ function renderCitibike(cb) {
     // "at least" is load-bearing: a free ebike ride can carry no line item
     // naming one, so this is a floor rather than a measurement.
     `\u00b7 at least ${Math.round(100 * cb.ebike_min / cb.trips.length)}% of ` +
-    `trips on an ebike</div>` +
-    againChart(cb.again);
+    `trips on an ebike</div>`;
+  // Appended as DOM rather than markup: a chip is a control with a listener,
+  // and the bike ids come from Lyft, which has no business being interpolated
+  // into HTML -- the same reason dockPopup builds its rows this way.
+  const met = metList(cb.met);
+  if (met) document.getElementById('stat-citibike').appendChild(met);
   showChip('stat-citibike');
 }
 
@@ -1624,6 +1673,10 @@ function toggleRide(ri) {
 // another row put on the map, so they read their state from here too.
 function syncYearLinks() {
   for (const relabel of dockTraceLabels) relabel();
+  // The stats panel's bike chips are the same case as a dock row, but they
+  // outlive any one popup, so they keep their own list rather than the one
+  // dockPopup clears on every open.
+  for (const relabel of metChipLabels) relabel();
   for (const link of document.querySelectorAll('#stat-years .yd-link')) {
     const on = rideView !== null && +link.dataset.ride === rideView;
     link.classList.toggle('on', on);

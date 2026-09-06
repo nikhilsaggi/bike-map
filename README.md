@@ -50,6 +50,11 @@ The pipeline exports a compressed GeoJSON that powers an interactive
   down arrow keys step through them, newest first, and the bar at the top says
   which one is drawn. A recording can hold several trips, and the row says
   when the one on screen does
+- Bike re-encounters: the panel lists every Citibike unlocked again after it
+  had moved on — 88 of them, against 200 repeats that were only the bike
+  parked and taken straight back. Clicking an id plays that bike's recordings
+  through the same cycle a dock row uses
+  ([what counts as one](findings/bike-reencounters.md))
 - Ride source: each GPS ride is matched to Citibike trips by clock overlap and
   labelled where it appears, and the legend can filter the whole network to
   Citibike or own-bike rides. Rides outside the Citibike history are left
@@ -289,7 +294,8 @@ part of it; `findings/` holds what they found:
 `tools/neighborhood_audit.py` cuts the coverage measurement into
 neighbourhoods (`--boundaries` also measures what midpoint assignment
 misplaces). `tools/bike_reencounters.py` re-derives the Citibike panel's
-repeat-bike line from `cache/citibike_trips.json` alone.
+re-encounter list from `cache/citibike_trips.json` alone, and tests it against
+chance — the two permutation tests the panel does not draw.
 `tools/render_readme_map.py` re-renders the image at the top of this file
 from the caches, when it should catch up with the rides.
 

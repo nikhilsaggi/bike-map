@@ -60,6 +60,42 @@ Three properties of the raw file drove the design:
   line item naming one: **189 of 2,524 trips, 7%, and a floor**, because a
   free ebike ride can carry no such item. The panel says "at least".
 
+### Nor does the id encode a fleet generation
+
+The obvious follow-up is that if the id format tracks fleet replacement, some
+*finer* structure in the number might name the actual hardware — enough to
+break trips down by generation. It does not, and this was tested properly
+before being dropped.
+
+**The hyphenated prefix carries no time signal.** 2,173 hyphenated trips
+across 663 distinct prefixes (162–899). Prefix against the date the bike was
+first seen: Pearson r = **−0.061**, Spearman ρ = −0.048 per prefix; r =
+**0.0001** per trip. The decile medians wander inside a two-month band with no
+drift — 2023-06-30, 2023-05-08, 2023-04-29, 2023-04-19 across deciles 0, 3, 6,
+9. Prefixes are not per-bike either: up to 8 distinct ids share one, median 3.
+The prefix space is dense and flat (0.90 of the range used, 44–50 prefixes per
+50-wide bin), which is what a lot or rack number looks like, not a serial
+issued over time. The five-digit ids test the same way: ρ = 0.069.
+
+**One real cluster, far too small to chart.** Every one of the 26 ebike-flagged
+five-digit trips falls in three narrow numeric bands — 36028–37470,
+74039–76410, 78560–81094 — separated from everything else by gaps of thousands,
+at 83–100% ebike rates against **0% across the other 302 five-digit bikes**.
+The floor cuts one way only, so the zeroes prove nothing, but a 100%-vs-0%
+partition holding across three separate gaps, at about one trip per id, is a
+genuinely distinct population: almost certainly the original pedal-assist
+ebikes that predate the hyphenated fleet. It is **25 of 2,225 bikes, 1.1%** —
+a footnote, and a chart bucket holding 1% of trips would overstate it by the
+space it took up.
+
+Nothing published ties a visible Citi Bike number to a model.
+[Citi Bike's own "Meet the Bikes"](https://citibikenyc.com/how-it-works/meet-the-bikes)
+names three categories — classic, the original ebike, the newest ebike — with
+no numbering scheme; the [Nov 2023 expansion announcement](https://www.nyc.gov/mayors-office/news/2023/11/mayor-adams-dot-commissioner-rodriguez-lyft-expansion-improvements-citi-bike-system)
+gives fleet counts and not ids. So the coarse hyphenated-vs-five-digit share
+by year, already above, is the whole of the generation signal this export
+carries. Anything finer is false precision.
+
 ## Why there is no speed
 
 The obvious thing to compute from a start dock, an end dock and a duration is
@@ -335,8 +371,8 @@ drifted apart until five years of data made it obvious.
   are exactly what a uniform draw from the classic fleet predicts. Where you
   left a bike says nothing about where you meet it again (p = 0.51); when you
   last rode it does, because the fleet turns over (p = 0.003). The panel now
-  reports the 93 alone, and draws both tests under it — one dot inside its
-  band of chance, one outside
+  reports the 93 alone, and lists the 88 bikes behind them as chips that put
+  each bike's recordings on the map
   ([details](bike-reencounters.md), the answer to
   [issue #21](https://github.com/nikhilsaggi/bike-map/issues/21)).
 

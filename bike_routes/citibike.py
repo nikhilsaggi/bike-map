@@ -30,14 +30,10 @@ it would read as the same kind of number and is not.
 from __future__ import annotations
 
 import json
-import random
 from datetime import datetime, timezone
 from typing import Any, NamedTuple
 
-import numpy as np
-
 from . import config
-from .gps import haversine_m
 
 # A GPS ride and a Citibike trip are the same journey when their recorded
 # spans overlap. Requiring a minute of it, rather than an instant, keeps a
@@ -64,18 +60,6 @@ TRIP_UNTRACED = -1
 # park is not split by midnight -- though on the real trips the two agree, and
 # so does everything from 2 hours to 30 days.
 RESUME_MAX_GAP_S = 48 * 3600
-
-DAY_MS = 86_400_000
-
-# The panel's two chance tests shuffle, so they are pinned to a seed: an export
-# is a build artefact and must not move when nothing about the rides did.
-# 5,000 trials place the marker to a fifth of a percent, which is finer than
-# the 200px track it is drawn on. Below CHANCE_MIN_MEETINGS there are too few
-# meetings for a median to mean anything and the block ships as None -- the
-# page draws nothing rather than half a chart, the way it treats weather.
-CHANCE_TRIALS = 5_000
-CHANCE_SEED = 0
-CHANCE_MIN_MEETINGS = 20
 
 try:
     from zoneinfo import ZoneInfo
@@ -114,24 +98,21 @@ def _median(values: list[float]) -> float:
     return (ordered[mid - 1] + ordered[mid]) / 2
 
 
-class _Meeting(NamedTuple):
-    """A bike met again, beside the bikes that could have been met instead.
+class _Repeats(NamedTuple):
+    """The two things a repeated bike id can mean, and where to find them.
 
-    ``pool_*`` is every *other* bike ridden by that moment, aged and placed as
-    of that same unlock. It is the reference set the chance tests draw from:
-    the question is never "is 306 days a long time" but "is it longer than the
-    bikes I could equally have unlocked right here, right now".
+    ``resumes`` is the round trips -- the bike you parked and took back --
+    and ``met`` maps each bike that genuinely turned up again to how many
+    times it did. ``trips_of`` carries every trip index per met bike, in the
+    cache's own order, so the panel can offer what was ridden on it.
     """
 
-    age_d: float
-    km: float | None
-    pool_ages: list[float]
-    pool_kms: list[float]
+    resumes: int
+    met: dict[str, int]
+    trips_of: dict[str, list[int]]
 
 
-def _reencounters(
-    raw: list[dict[str, Any]], coords: dict[str, list[float] | None]
-) -> tuple[int, list[_Meeting]]:
+def _reencounters(raw: list[dict[str, Any]]) -> _Repeats:
     """Split repeated bike ids into round trips and bikes actually met again.
 
     2,225 distinct bikes over 2,518 trips leaves 293 repeats, and the panel
@@ -143,14 +124,20 @@ def _reencounters(
     ([findings](../findings/bike-reencounters.md), reproduced by
     ``tools/bike_reencounters.py``).
 
-    Returns (round trips, meetings). RESUME_MAX_GAP_S is not a tuned
-    threshold: every window from 2 hours to 30 days gives 190-202 round trips.
+    RESUME_MAX_GAP_S is not a tuned threshold: every window from 2 hours to
+    30 days gives 190-202 round trips. Tighter than that it starts counting
+    errands -- a bike parked for a coffee and unlocked from the same dock an
+    hour later is not a bike you met.
     """
     last: dict[str, tuple[float, str]] = {}  # bike -> (end ms, dock left at)
     seen: set[str] = set()
     resumes = 0
-    met: list[_Meeting] = []
-    for t in sorted((t for t in raw if t["bike"]), key=lambda t: t["t"]):
+    met: dict[str, int] = {}
+    trips_of: dict[str, list[int]] = {}
+    for i in sorted(range(len(raw)), key=lambda i: raw[i]["t"]):
+        t = raw[i]
+        if not t["bike"]:
+            continue
         # Whitespace-collapsed because the cache stores Lyft's raw spelling and
         # Lyft writes the busiest dock both with and without a tab (issue #26);
         # left and unlocked under different spellings, one park would read as a
@@ -159,101 +146,32 @@ def _reencounters(
         prev = last.get(t["bike"])
         if prev is not None and prev[1] == here and t["t"] - prev[0] <= RESUME_MAX_GAP_S * 1000:
             resumes += 1
-        else:
-            if prev is not None and t["bike"] in seen:
-                met.append(_meeting(t["bike"], t["t"], prev, last, coords, coords.get(here)))
-            seen.add(t["bike"])
+        elif t["bike"] in seen:
+            met[t["bike"]] = met.get(t["bike"], 0) + 1
+        seen.add(t["bike"])
+        trips_of.setdefault(t["bike"], []).append(i)
         last[t["bike"]] = (t["t"] + t["dur"], " ".join(t["b"].split()))
-    return resumes, met
+    return _Repeats(resumes, met, {b: trips_of[b] for b in met})
 
 
-def _meeting(
-    bike: str,
-    now: float,
-    prev: tuple[float, str],
-    last: dict[str, tuple[float, str]],
-    coords: dict[str, list[float] | None],
-    here: list[float] | None,
-) -> _Meeting:
-    """Measure one meeting, and every bike that could have been unlocked instead."""
-    others = [state for other, state in last.items() if other != bike]
-    ages = [(now - end) / DAY_MS for end, _ in others]
-    kms: list[float] = []
-    if here is not None:
-        left = [c for c in (coords.get(dock) for _, dock in others) if c]
-        if left:
-            lons = np.array([c[0] for c in left])
-            lats = np.array([c[1] for c in left])
-            # float(), not the numpy scalar: these reach json.dumps by way of
-            # the medians below, and np.float64 is not serialisable.
-            kms = [float(x) for x in haversine_m(lats, lons, here[1], here[0]) / 1000]
-    mine = coords.get(prev[1])
-    return _Meeting(
-        age_d=(now - prev[0]) / DAY_MS,
-        km=None
-        if here is None or not mine
-        else float(haversine_m(mine[1], mine[0], here[1], here[0]) / 1000),
-        pool_ages=ages,
-        pool_kms=kms,
-    )
+def _met_rows(repeats: _Repeats, traced: list[int]) -> list[list[Any]]:
+    """One row per bike met again: its id, how many trips, and what was recorded.
 
+    The rides are the GPS recordings running over that bike's trips, newest
+    first and deduplicated -- one recording can cover two of its trips. A bike
+    with none still gets a row: it was met, and hiding it because the renderer
+    has nothing to draw would shrink the count to suit the drawing, the same
+    mistake as dropping a dock GBFS cannot place.
 
-def _chance_test(
-    observed: list[float], pools: list[list[float]], rng: random.Random
-) -> dict[str, float] | None:
-    """Measure a median against the medians chance would have produced.
-
-    Hold the meetings fixed and swap in, for each one, a bike that could have
-    been unlocked in its place. Repeat, and the medians of those shuffles are
-    what "no pattern at all" looks like.
-
-    Everything ships in the measurement's own units -- ``lo``/``hi`` are the
-    middle 95% of the shuffles, ``chance`` their median -- because the panel
-    draws ``obs`` against that band on a real axis. An earlier version shipped
-    only ``pct``, the rank among shuffles, and drew *that*: on a percentile
-    axis the band is 95% of the track by construction, so every answer but an
-    extreme one looked the same. ``pct`` stays for the tooltip, where a rank
-    is the right thing to say.
-
-    No fleet size enters, and no threshold: the pools are the export's own
-    history. That is the whole reason the panel can show this at all -- the
-    counting question needs an N nobody here has
-    (findings/bike-reencounters.md).
+    Ordered by how much there is to look at -- recordings, then trips, then
+    the id -- so the rows a reader can actually follow come first.
     """
-    if len(observed) < CHANCE_MIN_MEETINGS:
-        return None
-    obs = _median(observed)
-    shuffled = sorted(_median([rng.choice(p) for p in pools]) for _ in range(CHANCE_TRIALS))
-    beaten = sum(1 for m in shuffled if m <= obs)
-    edge = round(0.025 * CHANCE_TRIALS)
-    return {
-        # Rounded because this is an export, not a working figure: the page
-        # shows one decimal at most, in miles or whole days.
-        "obs": round(obs, 3),
-        "chance": round(_median(shuffled), 3),
-        "lo": round(shuffled[edge], 3),
-        "hi": round(shuffled[-edge - 1], 3),
-        "pct": round(100 * beaten / CHANCE_TRIALS, 1),
-        "n": len(observed),
-    }
-
-
-def _chance_tests(meetings: list[_Meeting]) -> dict[str, dict[str, float]] | None:
-    """Measure the two questions a meeting can answer with no model of the system.
-
-    Space says nothing (the marker lands mid-chance) and time says something
-    (it lands outside): a bike carries a lifetime, not a neighbourhood. Both
-    are drawn, because one of them being flat is what makes the other mean
-    anything.
-    """
-    rng = random.Random(CHANCE_SEED)  # noqa: S311 -- a shuffle test, not a secret
-    placed = [(m.km, m.pool_kms) for m in meetings if m.km is not None and m.pool_kms]
-    aged = [(m.age_d, m.pool_ages) for m in meetings if m.pool_ages]
-    where = _chance_test([k for k, _ in placed], [p for _, p in placed], rng)
-    when = _chance_test([a for a, _ in aged], [p for _, p in aged], rng)
-    if where is None or when is None:
-        return None
-    return {"where": where, "when": when}
+    rows = []
+    for bike, trips in repeats.trips_of.items():
+        rides = sorted({traced[i] for i in trips if traced[i] != TRIP_UNTRACED}, reverse=True)
+        rows.append([bike, len(trips), rides])
+    rows.sort(key=lambda r: (-len(r[2]), -r[1], r[0]))
+    return rows
 
 
 def _trip_spans(payload: dict[str, Any]) -> list[tuple[float, float]]:
@@ -400,9 +318,13 @@ def _citibike_summary(
             return TRIP_UNTRACED
         return ride_index.get(fname, TRIP_UNTRACED)
 
+    # Resolved once, because the bike rows below cite the same recordings from
+    # the other direction -- by bike rather than by dock pair.
+    cited = [cite(fname) for fname in traced]
+
     trips = [
-        [index[t["a"]], index[t["b"]], day_index[_local_date(t["t"])], cite(fname)]
-        for t, fname in zip(raw, traced, strict=True)
+        [index[t["a"]], index[t["b"]], day_index[_local_date(t["t"])], ride]
+        for t, ride in zip(raw, cited, strict=True)
     ]
 
     # The own-bike column: the GPS rides no Citibike trip overlaps.
@@ -415,7 +337,7 @@ def _citibike_summary(
         own_minutes.append(rs["duration_s"] / 60)
         own_days.add(fname[:10])
     minutes = [t["dur"] / 60_000 for t in raw]
-    resumes, meetings = _reencounters(raw, coords)
+    repeats = _reencounters(raw)
 
     return {
         # The page counts array length, the way it does for a feature's rides.
@@ -443,9 +365,9 @@ def _citibike_summary(
         # The panel draws `reencounters` alone. `resumes` rides along undrawn,
         # because it is the number the old "bikes ridden more than once" line
         # was mostly made of -- shipping it keeps the correction checkable.
-        "reencounters": len(meetings),
-        "resumes": resumes,
-        # Where those meetings sit against chance, on the two questions the
-        # data can answer on its own. None when there are too few to median.
-        "again": _chance_tests(meetings),
+        "reencounters": sum(repeats.met.values()),
+        "resumes": repeats.resumes,
+        # One row per bike met again, so the panel's number can be opened up
+        # rather than only read: [id, trips, rides recorded over them].
+        "met": _met_rows(repeats, cited),
     }

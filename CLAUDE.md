@@ -199,25 +199,23 @@ reads everything from `rides.geojson.gz` top-level `properties`.
   ebike can only re-meet an ebike already ridden, which is what made ebikes
   look 7x rarer than they are ([why](findings/bike-reencounters.md), rerun
   with `python tools/bike_reencounters.py`).
-- **The panel's two chance tests are drawn together or not at all.**
-  `_chance_tests` ships `properties.citibike.again` as `where` and `when`, each
-  a median against the middle 95% of `CHANCE_TRIALS` shuffles that kept the
-  meetings and swapped the bike. `where` lands inside its band and `when`
-  outside, and the pair is the argument: one dot outside a band is a
-  statistic, two dots showing the same method found nothing in one case and
-  something in the other is evidence. Ship `None` rather than one of them
-  (`CHANCE_MIN_MEETINGS`), and keep `CHANCE_SEED` pinned -- an export is a
-  build artefact and must not move when the rides did not.
-- **That chart's axis is framed on its own band, not anchored at zero, and
-  that is only legal because the mark is a dot.** Position carries the value,
-  so the axis may start anywhere; a bar's *length* would carry it and a cut
-  baseline would lie. Zero-anchored, the whole result sat in 6% of the track.
-  Two earlier versions were built and thrown away for being unreadable rather
-  than wrong -- band histograms (93 events over 4 bands is all noise) and a
-  percentile axis (a middle-95% band covers 95% of the track by construction).
-  The e2e test asserts the dot clears the band by real pixels, because both
-  failures would have passed a test that only checked which side it was on
-  ([all three](findings/bike-reencounters.md)).
+- **The panel's re-encounter list is a way into the map, not a readout.**
+  `_met_rows` ships `properties.citibike.met` as `[id, trips, rides]` per bike
+  met again, and a chip opens that bike's recordings in single-ride view --
+  the same cycle a dock row opens, through the same `dockTrace`. That cycle
+  now has two owners, so controls compare `dockTrace.key` (`d:<dock>` or
+  `b:<id>`) rather than `.to`, and only a dock cycle sets `.to`, which is what
+  narrows the drawn links. **A bike with no recording keeps its chip**, dimmed
+  -- it was met, and dropping it to make the list all-clickable would shrink
+  the count to suit the renderer.
+- **A chance-test chart was built here, drawn four ways, and taken off.** The
+  two permutation tests live in `tools/bike_reencounters.py` now, and a result
+  needing a p-value belongs there rather than on the panel. Two of those four
+  versions were wrong in ways only rendering revealed -- band histograms (93
+  events over 4 bands is all noise) and a percentile axis (a middle-95% band
+  covers 95% of the track by construction). If a chart is ever reinstated
+  here, read [why each failed](findings/bike-reencounters.md) first, and note
+  that the working one still lost to a list you can click.
 - **The dock layer is meant to be explored, not read.** Markers resize with
   the same `filterLo`/`filterHi` range that filters the edges (`applyFilter`
   calls `applyDockFilter`), so the slider and time-lapse move them too. The

@@ -185,55 +185,72 @@ result, and the line has a stats panel's worth of space, not a paragraph's. The
 export still ships `resumes` next to `reencounters` with nothing drawing it, so
 the 93 can be checked against what it was cut from.
 
-Under it, the two chance tests are drawn — one dot per test, against the band
-of what chance gives:
+Under it is the list the number opens up — one chip per bike met again,
+88 of them:
 
 ```
-Meeting a bike again
-  How far off    ──────[═══●═══]──    2.0 mi
-  How long ago   ───●──[═══════]──    306 d
-  Band is the middle 95% of what chance gives, for a bike I could have
-  unlocked instead. Inside it is a coincidence.
+Bike re-encounters  (?)
+  [266-5628] [420-4640] [554-9324]
+  [878-6261] [405-4946] [551-1407]
+  ...
 ```
 
-**They are drawn as a pair because one of them being flat is what makes the
-other mean anything.** A single dot outside a band is a statistic; two dots,
-where the same method visibly found nothing in one case and something in the
-other, are an argument. The caption says how to read the chart and stops there
-— a reader who notices that one dot is in and one is out has found the result
-themselves, which is the reason this map has layers instead of a summary.
+Click one and the GPS recordings made on that bike play through single-ride
+view, newest first, stepped with ↑↓ — the same cycle a dock popup's route
+link opens, and the same code. 78 of the 88 have at least one recording; 38
+have two or more, so most of the list is a route you can actually walk.
 
-### Three versions of that chart, two of them wrong
+**A bike with no recording keeps its chip.** Ten were met again on trips no
+Garmin was running over, and they are dimmed with a tooltip saying why rather
+than dropped — hiding them would shrink the list to suit the renderer, which
+is the same mistake as dropping a dock GBFS cannot place.
 
-Worth recording, because each failure was invisible until it was drawn.
+The **(?)** carries the definition, because "re-encounter" is a rule and not a
+word a reader can be expected to infer: *picking a bike back up off the dock I
+parked it at within 48 hours is a round trip, not a meeting, and is left out —
+that is 200 of 293 repeats.* Putting the rule behind a hover was the only way
+to keep the 48-hour window on the page at all; as a sentence it crowded out
+the list, and without it "re-encounter" is just a word.
+
+This is a list where a chart used to be, and the swap is the point. The two
+chance tests below were built, drawn, and taken off the panel:
+
+### The chance-test chart, and why it came off
+
+Three versions were built. The first two were wrong in ways that were
+invisible until they were rendered, and worth recording for that alone.
 
 **Band histograms.** The first attempt binned the 93 meetings by distance and
 by age, observed share against null share, four bars each. It had to be thrown
 away: 93 events over four bands is ~20 a band, and the sampling noise (±6
 points) is larger than either effect. The distance chart would have shown a
 lean the permutation test says is not there, and the age chart would have
-understated one that is. **The median test has power the histogram does not**,
-so the median is what gets drawn.
+understated one that is. **The median test has power the histogram does not.**
 
 **A percentile axis.** The second put each dot at its rank among the shuffles
 — elegant, since both rows then share one axis. But the middle 95% of a
 percentile axis is 95% of the track *by construction*, so the band was the
 whole chart and only a dot pinned to the very edge read as outside it. Worse,
 inset the dot far enough to keep its ring on screen and a genuinely outside
-result gets drawn inside the band. A `.cb-again-plot` box now insets the band
-and the dot together, so both sit on one axis and neither needs nudging.
+result gets drawn *inside* the band.
 
 **A zero-anchored axis.** The third plotted real units from zero. Honest, and
 still unreadable: 306 days against a band starting at 338 is 6% of a 0–528
-axis, four pixels on a 236px panel. The shipped version frames each row on its
-own band and measurement instead. That is legitimate here and would not be for
-a bar — **a dot's position carries its value, so the axis may start anywhere;
-a bar's length carries it, and a cut baseline lies.** The value column and the
-tooltip carry the absolute numbers either way.
+axis, four pixels on a 236px panel. Framing each row on its own band fixed it
+— legitimate for a dot and not for a bar, because **a dot's position carries
+its value, so the axis may start anywhere; a bar's length carries it, and a
+cut baseline lies.**
 
-The e2e test asserts the *gap*, not the arithmetic: the outside dot must clear
-the band by more than 3 real pixels. Both broken versions would have passed a
-test that only checked which side of the band the dot was on.
+The fourth version worked, and came off anyway. It stated a conclusion the
+reader could only agree with; the chip list hands them 88 bikes and 119
+recordings to look through. That is the same call the dock layer already
+survived once — a ranked list "says it better" than a map encoding, and it is
+still the wrong test for this project. The difference here is which artefact
+is the ranked list: this time the *chart* was the thing that stated one
+finding, and the list is the thing that can be explored.
+
+Both tests still run in `tools/bike_reencounters.py`, which is where a result
+that needs a p-value belongs.
 
 ## What was left alone
 
@@ -241,10 +258,14 @@ test that only checked which side of the band the dot was on.
   It would let the tool print a p-value, and that p-value would be a
   restatement of whichever number was pasted in. The implied-pool table says
   the same thing and shows its working.
-- **No map layer.** A re-encounter is a bike id matching across two dock-to-dock
-  trips: it has no trace, no route, and after the space test above, provably no
-  geography. There is nothing to draw that would not be
-  [the rejected routed layer](citibike-trips.md) with a smaller n.
+- **No re-encounter layer.** A re-encounter is a bike id matching across two
+  dock-to-dock trips: it has no trace and no route. Drawing the 93 as lines
+  from where a bike was left to where it turned up would be
+  [the rejected routed layer](citibike-trips.md) with a smaller n — and worse
+  than that, it would be drawing noise, because the space test says those
+  displacements are indistinguishable from random. What a bike chip puts on
+  the map is a recording that exists, which is the rule the dock rows already
+  follow.
 - **`bike` is assumed to be one physical bike for its whole life.** Nothing in
   the export confirms that, and a renumbered bike reads here as a retirement.
   It is part of what the time test measured.
