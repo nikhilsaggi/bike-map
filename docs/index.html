@@ -1251,12 +1251,16 @@ function genChart(gen) {
   const help = document.createElement('span');
   help.className = 'cb-help';
   help.textContent = '?';
+  // Provenance only. The sampling caveat is not repeated here because it is
+  // already under the chart in full sight, where it has to stay -- it is the
+  // difference between "the fleet turned over" and "the fleet at my docks
+  // turned over", and a caveat that decides the claim does not belong on a
+  // hover.
   help.title =
     'Which generation of bike each trip was on, read off the id: five digits ' +
     '(16825) is the older fleet, seven with a hyphen (812-7417) the newer. ' +
     'Citi Bike publishes no number-to-model mapping, so the labels come from ' +
-    'the bikes themselves — what the export confirms is the changeover. ' +
-    'Share is of my own unlocks at my own docks, not of the whole fleet.';
+    'the bikes themselves.';
   title.appendChild(help);
   wrap.appendChild(title);
 
