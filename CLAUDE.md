@@ -394,7 +394,14 @@ instead. Features carry no speed key and `merge.py` never sees it
   stretches.
 - Street names come from the render cache (`edge_name`, `RENDER_CACHE_FORMAT`
   = `hw-name-v1`). Bumping that format costs one graph load to rebuild; it
-  does not touch the config hash.
+  does not touch the config hash. `_build_render_cache` takes the name and
+  the highway tag from the **first** edge of a canonical pair but the
+  geometry from the **shortest**, so all three can come from different OSM
+  ways, and which one is first depends on graph iteration order. 524 pairs
+  carry more than one name, so a corridor can be ranked under either of two
+  street names across rebuilds; 2,585 carry more than one tag with no bike
+  class to decide between them. Don't read an exact figure derived from
+  either as reproducible across a graph rebuild.
 
 #### Traversal counts
 
