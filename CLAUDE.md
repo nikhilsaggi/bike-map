@@ -200,7 +200,11 @@ reads everything from `rides.geojson.gz` top-level `properties`.
   the other 93, as "unlocks on a bike ridden before";
   **never report the raw 253 as "bikes ridden more than
   once"**, which is the wording this replaced and which counts a person taking
-  their own bike home. The export ships `resumes` beside `reencounters` and
+  their own bike home. The list's own tooltip does open with that phrase, and
+  it is not the same claim: it is immediately qualified by the rule ("picked
+  up either from a different dock or from the same dock 48+ hours later") and
+  it labels the 88 bikes, not the 253. Do not reconcile the two by loosening
+  either. The export ships `resumes` beside `reencounters` and
   nothing draws it -- it is there so the 93 can be checked against what it was
   cut from. Never derive a *rate* from any of it without the exposure: an
   ebike can only re-meet an ebike already ridden, which is what made ebikes

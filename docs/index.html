@@ -258,7 +258,24 @@
      the gaps between those times. Capped and scrollable so 88 rows cannot
      push the rest of the panel off screen; .scrollbox is the dock popup's own
      thin bar. The margin is what separates the list from its heading. */
-  .cb-met { max-height: 104px; overflow-y: auto; margin-top: 5px; }
+  /* scrollbar-gutter so the bar's width is reserved whether or not the list
+     overflows -- the header sits outside the scroll box, and without a stable
+     gutter its right-aligned column would sit 6px off from the rows' whenever
+     the list happens to be short enough not to scroll. */
+  .cb-met {
+    max-height: 116px; overflow-y: auto; scrollbar-gutter: stable; margin-top: 5px;
+  }
+  /* Column labels, sticky inside the scroll box rather than sitting above it:
+     the reserved scrollbar gutter is *inside* that box, so a header outside it
+     is a gutter's width out of true with the rows it labels. Sticky also keeps
+     the labels on screen through all 88 rows. Opaque, or rows scroll under it
+     and show through. It borrows the rows' own column classes rather than
+     repeating the widths, so the two cannot drift apart. */
+  .cb-met-head {
+    position: sticky; top: 0; z-index: 1; background: #101010;
+    display: flex; gap: 6px; padding: 2px 3px 3px;
+    color: #666; font-size: 9px; letter-spacing: 0.3px;
+  }
   /* The whole row is the control, not just the id: a 9px id is a poor hit
      target for something whose job is to be clicked. */
   .cb-met-row {
@@ -296,7 +313,7 @@
      compete with the plasma ramp the map already spends colour on. */
   .cb-gen-row { display: flex; align-items: center; gap: 6px; margin: 2px 0; }
   .cb-gen-year {
-    width: 26px; text-align: right; color: #888; font-size: 10px; flex: none;
+    width: 24px; text-align: right; color: #888; font-size: 10px; flex: none;
     font-variant-numeric: tabular-nums;
   }
   .cb-gen-track { display: flex; flex: 1; height: 9px; gap: 2px; }
@@ -304,10 +321,15 @@
      to the thing whose width is the measurement. */
   .cb-gen-old { background: #3d5a63; }
   .cb-gen-new { background: #a8d8e8; }
+  /* A share on each side, each against the segment it belongs to, so the bar
+     is read outwards from its own split rather than against one axis end.
+     Both wear the panel's text colour rather than their series' -- a number
+     tinted like its bar reads as part of the bar. */
   .cb-gen-val {
-    width: 30px; color: #ccc; font-size: 10px; flex: none;
+    width: 25px; color: #ccc; font-size: 10px; flex: none;
     font-variant-numeric: tabular-nums;
   }
+  .cb-gen-val.older { text-align: right; }
   /* Two series, so a legend is not optional. Swatches carry the identity and
      the words stay in the panel's own text colour. nowrap on each item because
      a 236px panel otherwise breaks one between its swatch and its label,
@@ -1247,7 +1269,7 @@ function genChart(gen) {
       `on the newer fleet, ${older.toLocaleString()} on the older`;
     const y = document.createElement('span');
     y.className = 'cb-gen-year';
-    y.textContent = String(year).slice(2);
+    y.textContent = String(year);
     const track = document.createElement('div');
     track.className = 'cb-gen-track';
     for (const [cls, n] of [['cb-gen-old', older], ['cb-gen-new', newer]]) {
@@ -1257,10 +1279,16 @@ function genChart(gen) {
       seg.style.flex = String(n);
       track.appendChild(seg);
     }
+    // Rounded independently, so the pair can read 41% / 59% or, on a year
+    // that splits near a half, 50% / 50% off 49.6 -- the bar carries the exact
+    // split and the labels are for reading, not for summing.
+    const oldVal = document.createElement('span');
+    oldVal.className = 'cb-gen-val older';
+    oldVal.textContent = `${Math.round(100 * older / total)}%`;
     const val = document.createElement('span');
     val.className = 'cb-gen-val';
     val.textContent = `${Math.round(100 * newer / total)}%`;
-    row.append(y, track, val);
+    row.append(y, oldVal, track, val);
     wrap.appendChild(row);
   }
 
@@ -1294,22 +1322,33 @@ function metList(met) {
   const help = document.createElement('span');
   help.className = 'cb-help';
   help.textContent = '?';
-  // States the rule as what counts, not what is excluded: both branches of it
-  // are real, even though on this export only one of them ever fires. "a
-  // different dock than I left it at" is the load-bearing half -- the
-  // comparison is against where that bike's own last trip ended, not against
-  // where I started last time.
+  // States the rule as what counts rather than what is excluded, and keeps
+  // both branches: the dock test and the clock test are separate conditions,
+  // and naming only the one that ever fires on this export would describe a
+  // different rule. The rows carry their own counts and click hints, so this
+  // says the definition and stops.
   help.title =
-    'Bikes I rode more than once, where I picked the bike up either from a ' +
-    'different dock than I left it at, or from the same dock 48+ hours later. ' +
-    'Sooner than that at the same dock is a round trip, not a meeting — 200 ' +
-    'of 293 repeats. Click an id to play that bike’s recordings; ' +
-    '↑↓ steps them.';
+    'Bikes ridden more than once (picked up either from a different dock or ' +
+    'from the same dock 48+ hours later)';
   title.appendChild(help);
   wrap.appendChild(title);
 
+  // Three columns need naming: "3x" and "300, 99 d" are not self-describing,
+  // and the tooltip that spells them out only reaches one row at a time.
+  const head = document.createElement('div');
+  head.className = 'cb-met-head';
+  for (const [cls, label] of [
+    ['cb-met-id', 'bike'], ['cb-met-n', 'times'], ['cb-met-gap', 'days apart'],
+  ]) {
+    const cell = document.createElement('span');
+    cell.className = cls;
+    cell.textContent = label;
+    head.appendChild(cell);
+  }
+
   const list = document.createElement('div');
   list.className = 'cb-met scrollbox';
+  list.appendChild(head);
   for (const [bike, encounters, gaps, rides] of met) {
     const row = document.createElement('div');
     row.className = 'cb-met-row';

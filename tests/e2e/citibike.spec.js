@@ -516,8 +516,22 @@ test.describe('Citibike dock layer', () => {
     await openSection(page, SECTION);
     const section = page.locator(`#${SECTION}`);
     await expect(section).toContainText('Bike re-encounters');
+    // Named columns: "3x" and "300, 99 d" do not describe themselves, and a
+    // per-row tooltip only reaches one row at a time.
+    const head = section.locator('.cb-met-head');
+    await expect(head.locator('.cb-met-id')).toHaveText('bike');
+    await expect(head.locator('.cb-met-n')).toHaveText('times');
+    await expect(head.locator('.cb-met-gap')).toHaveText('days apart');
     const rows = section.locator('.cb-met-row');
     await expect(rows).toHaveCount(4);
+    // Sticky inside the scroll box, not above it: the reserved scrollbar
+    // gutter lives inside that box, so a header outside it sits a gutter's
+    // width out of true with the rows. Its columns must line up with theirs.
+    await expect(section.locator('.cb-met > .cb-met-head')).toHaveCount(1);
+    await expect(head).toHaveCSS('position', 'sticky');
+    const headGap = await head.locator('.cb-met-gap').boundingBox();
+    const rowGap = await rows.nth(0).locator('.cb-met-gap').boundingBox();
+    expect(Math.abs((headGap.x + headGap.width) - (rowGap.x + rowGap.width))).toBeLessThan(1.5);
     // Sorted by encounters, so both 3x rows come first even though the second
     // of them has nothing to play -- the list ranks on how often the bike
     // turned up, not on what is clickable.
@@ -542,15 +556,14 @@ test.describe('Citibike dock layer', () => {
     await expect(rows.nth(3)).toHaveClass(/dim/);
     await expect(rows.nth(3)).toHaveAttribute('title', /No GPS recording covers any of its trips/);
     // The (?) carries the rule, which is not inferable from the words. Both
-    // branches have to be in it: a different dock than the bike was left at,
-    // OR the same dock after 48h. Only the second ever fires on the real
-    // export, but stating one branch would describe a different rule.
-    // Scoped by index: the panel carries a second (?) for the generation
-    // chart, so a bare .cb-help is ambiguous.
+    // branches have to be in it: a different dock, OR the same dock after 48h.
+    // Only the second ever fires on the real export, but stating one branch
+    // would describe a different rule. Scoped by index: the panel carries a
+    // second (?) for the generation chart, so a bare .cb-help is ambiguous.
     const help = section.locator('.cb-help').nth(0);
-    await expect(help).toHaveAttribute('title', /different dock than I left it at/);
-    await expect(help).toHaveAttribute('title', /same dock 48\+ hours later/);
-    await expect(help).toHaveAttribute('title', /round trip, not a meeting/);
+    await expect(help).toHaveAttribute(
+      'title', 'Bikes ridden more than once (picked up either from a different ' +
+      'dock or from the same dock 48+ hours later)');
   });
 
   test('a bike chip plays its recordings, and the arrows step them', async ({ page }) => {
@@ -641,11 +654,15 @@ test.describe('Citibike dock layer', () => {
     await expect(section).toContainText('Fleet generation');
     const rows = section.locator('.cb-gen-row');
     await expect(rows).toHaveCount(3);
-    await expect(rows.nth(0).locator('.cb-gen-year')).toHaveText('23');
-    // 3 of 4 newer, 2 of 4, 4 of 4.
-    await expect(rows.nth(0).locator('.cb-gen-val')).toHaveText('75%');
-    await expect(rows.nth(1).locator('.cb-gen-val')).toHaveText('50%');
-    await expect(rows.nth(2).locator('.cb-gen-val')).toHaveText('100%');
+    await expect(rows.nth(0).locator('.cb-gen-year')).toHaveText('2023');
+    // A share each side, older on the left against its own segment: 1 of 4 and
+    // 3 of 4, then 2 and 2, then none and all.
+    await expect(rows.nth(0).locator('.cb-gen-val.older')).toHaveText('25%');
+    await expect(rows.nth(0).locator('.cb-gen-val:not(.older)')).toHaveText('75%');
+    await expect(rows.nth(1).locator('.cb-gen-val.older')).toHaveText('50%');
+    await expect(rows.nth(1).locator('.cb-gen-val:not(.older)')).toHaveText('50%');
+    await expect(rows.nth(2).locator('.cb-gen-val.older')).toHaveText('0%');
+    await expect(rows.nth(2).locator('.cb-gen-val:not(.older)')).toHaveText('100%');
     await expect(rows.nth(0)).toHaveAttribute(
       'title', '2023: 3 of 4 trips on the newer fleet, 1 on the older');
     // A year with none of a generation draws one segment, not a zero-width
