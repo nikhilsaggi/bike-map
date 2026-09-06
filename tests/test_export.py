@@ -46,7 +46,8 @@ def test_export_geojson(tmp_path, monkeypatch):
     assert props["rides"] == [[0, "08:00", 12.3, -1], [1, "12:00", None, -1]]
     assert props["rides_per_year"] == {"2024": 1, "2025": 1}
     assert abs(props["total_km"] - 0.6) < 0.05
-    assert props["updated"] >= "2026-01-01"
+    # "updated" is the last day a ride was recorded, not the run's clock.
+    assert props["updated"] == "2025-06-01"
     # No Citibike cache in this tree: the block is absent, not half-built.
     assert props["citibike"] is None
 
