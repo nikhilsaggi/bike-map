@@ -191,9 +191,13 @@ def test_summary_splits_round_trips_from_bikes_met_again(tmp_path):
 
     # r2, r3 and r8 are round trips; r4 and r6 are bikes met again.
     assert (s["reencounters"], s["resumes"]) == (2, 3)
-    # ... and each met bike gets a row, ordered by how much there is to look
-    # at. No ride index was passed, so nothing is recorded over any of them.
-    assert s["met"] == [["100-0001", 4, []], ["100-0002", 2, []]]
+    # ... and each met bike gets a row: [id, encounters, days between them,
+    # recordings]. Encounters, not trips -- bike 0001 was ridden four times
+    # but on two occasions, the middle two being the out-and-back that r1
+    # started, so it reads 2x seven days apart rather than "4 trips". Getting
+    # that wrong overstated every bike whose repeat was a round trip. No ride
+    # index was passed, so nothing is recorded over any of them.
+    assert s["met"] == [["100-0001", 2, [7], []], ["100-0002", 2, [4], []]]
 
 
 def _flows(n, a, b, start=1_000):

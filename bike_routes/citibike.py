@@ -61,6 +61,8 @@ TRIP_UNTRACED = -1
 # so does everything from 2 hours to 30 days.
 RESUME_MAX_GAP_S = 48 * 3600
 
+DAY_MS = 86_400_000
+
 try:
     from zoneinfo import ZoneInfo
 
@@ -101,14 +103,19 @@ def _median(values: list[float]) -> float:
 class _Repeats(NamedTuple):
     """The two things a repeated bike id can mean, and where to find them.
 
-    ``resumes`` is the round trips -- the bike you parked and took back --
-    and ``met`` maps each bike that genuinely turned up again to how many
-    times it did. ``trips_of`` carries every trip index per met bike, in the
-    cache's own order, so the panel can offer what was ridden on it.
+    ``resumes`` is the round trips -- the bike you parked and took back.
+    ``encounters_of`` maps each bike to the trips that *started* an encounter,
+    so a run of round trips folds into the one occasion it was: a bike ridden
+    to lunch and back is two trips and one encounter, dated by the earlier.
+    ``trips_of`` keeps all of them, because a recording over any leg is still
+    a recording of that bike.
+
+    A bike was met again when it has two or more encounters; the count of
+    meetings is one less than that.
     """
 
     resumes: int
-    met: dict[str, int]
+    encounters_of: dict[str, list[int]]
     trips_of: dict[str, list[int]]
 
 
@@ -130,9 +137,8 @@ def _reencounters(raw: list[dict[str, Any]]) -> _Repeats:
     hour later is not a bike you met.
     """
     last: dict[str, tuple[float, str]] = {}  # bike -> (end ms, dock left at)
-    seen: set[str] = set()
     resumes = 0
-    met: dict[str, int] = {}
+    encounters_of: dict[str, list[int]] = {}
     trips_of: dict[str, list[int]] = {}
     for i in sorted(range(len(raw)), key=lambda i: raw[i]["t"]):
         t = raw[i]
@@ -146,32 +152,75 @@ def _reencounters(raw: list[dict[str, Any]]) -> _Repeats:
         prev = last.get(t["bike"])
         if prev is not None and prev[1] == here and t["t"] - prev[0] <= RESUME_MAX_GAP_S * 1000:
             resumes += 1
-        elif t["bike"] in seen:
-            met[t["bike"]] = met.get(t["bike"], 0) + 1
-        seen.add(t["bike"])
+        else:
+            encounters_of.setdefault(t["bike"], []).append(i)
         trips_of.setdefault(t["bike"], []).append(i)
         last[t["bike"]] = (t["t"] + t["dur"], " ".join(t["b"].split()))
+    met = {b: e for b, e in encounters_of.items() if len(e) > 1}
     return _Repeats(resumes, met, {b: trips_of[b] for b in met})
 
 
-def _met_rows(repeats: _Repeats, traced: list[int]) -> list[list[Any]]:
-    """One row per bike met again: its id, how many trips, and what was recorded.
+def _met_rows(raw: list[dict[str, Any]], repeats: _Repeats, traced: list[int]) -> list[list[Any]]:
+    """One row per bike met again: id, encounters, days between them, recordings.
 
-    The rides are the GPS recordings running over that bike's trips, newest
-    first and deduplicated -- one recording can cover two of its trips. A bike
-    with none still gets a row: it was met, and hiding it because the renderer
-    has nothing to draw would shrink the count to suit the drawing, the same
-    mistake as dropping a dock GBFS cannot place.
+    **Encounters, not trips.** A bike ridden to lunch and back on one afternoon
+    and unlocked again two years later was encountered twice, not three times
+    -- the round trip in the middle is the same occasion. The row counts
+    occasions and dates each by its earliest trip, so the gaps below are gaps
+    between meetings rather than between legs.
 
-    Ordered by how much there is to look at -- recordings, then trips, then
-    the id -- so the rows a reader can actually follow come first.
+    The rides are the GPS recordings over any of that bike's trips, newest
+    first and deduplicated -- one recording can cover two of them. A bike with
+    none still gets a row: it was met, and hiding it because the renderer has
+    nothing to draw would shrink the list to suit the drawing, the same mistake
+    as dropping a dock GBFS cannot place.
+
+    Sorted by how many times the bike turned up, which is what the list is
+    about; recordings then id break ties, so the rows worth clicking come
+    first within a group.
     """
     rows = []
-    for bike, trips in repeats.trips_of.items():
-        rides = sorted({traced[i] for i in trips if traced[i] != TRIP_UNTRACED}, reverse=True)
-        rows.append([bike, len(trips), rides])
-    rows.sort(key=lambda r: (-len(r[2]), -r[1], r[0]))
+    for bike, encounters in repeats.encounters_of.items():
+        starts = [raw[i]["t"] for i in encounters]
+        gaps = [round((b - a) / (DAY_MS)) for a, b in zip(starts, starts[1:])]
+        rides = sorted(
+            {traced[i] for i in repeats.trips_of[bike] if traced[i] != TRIP_UNTRACED},
+            reverse=True,
+        )
+        rows.append([bike, len(encounters), gaps, rides])
+    rows.sort(key=lambda r: (-r[1], -len(r[3]), r[0]))
     return rows
+
+
+def _generations(raw: list[dict[str, Any]]) -> list[list[int]]:
+    """Trips per year split by id shape: [year, five-digit, hyphenated].
+
+    Lyft writes two shapes of `rideableName`, five digits (``16825``) and
+    hyphenated sevens (``812-7417``), and **the shape is the fleet
+    generation** -- the five-digit ids are the older bikes. That reading is
+    the owner's, from the physical bikes; nothing Citi Bike publishes maps a
+    number to a model. What the export can confirm is the replacement, and it
+    does: the hyphenated share runs 41%, 70%, 86%, 90%, 93%, 90% by year.
+
+    It is deliberately only this split. Structure *within* either shape was
+    tested for and is not there -- prefix against first-seen date is r =
+    -0.06, and the prefix space is flat and dense, which is a lot number
+    rather than a serial (findings/citibike-trips.md). So two buckets is the
+    whole of what the id encodes, and a finer chart would be invented.
+
+    Four ids are neither shape (``633-671`` and three more, hyphenated but six
+    digits). They are counted as hyphenated rather than dropped -- a trip that
+    happened is a trip -- and at 4 of 2,518 they cannot move a bar.
+    """
+    years: dict[int, list[int]] = {}
+    for t in raw:
+        bike = t["bike"]
+        if not bike:
+            continue
+        year = int(_local_date(t["t"])[:4])
+        row = years.setdefault(year, [0, 0])
+        row["-" in bike] += 1
+    return [[year, row[0], row[1]] for year, row in sorted(years.items())]
 
 
 def _trip_spans(payload: dict[str, Any]) -> list[tuple[float, float]]:
@@ -365,9 +414,12 @@ def _citibike_summary(
         # The panel draws `reencounters` alone. `resumes` rides along undrawn,
         # because it is the number the old "bikes ridden more than once" line
         # was mostly made of -- shipping it keeps the correction checkable.
-        "reencounters": sum(repeats.met.values()),
+        "reencounters": sum(len(e) - 1 for e in repeats.encounters_of.values()),
         "resumes": repeats.resumes,
         # One row per bike met again, so the panel's number can be opened up
         # rather than only read: [id, trips, rides recorded over them].
-        "met": _met_rows(repeats, cited),
+        "met": _met_rows(raw, repeats, cited),
+        # The fleet turning over underneath five years of unlocks:
+        # [year, five-digit trips, hyphenated trips].
+        "gen": _generations(raw),
     }

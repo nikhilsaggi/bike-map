@@ -185,25 +185,39 @@ result, and the line has a stats panel's worth of space, not a paragraph's. The
 export still ships `resumes` next to `reencounters` with nothing drawing it, so
 the 93 can be checked against what it was cut from.
 
-Under it is the list the number opens up — one chip per bike met again,
-88 of them:
+Under it is the list the number opens up — one row per bike met again, 88 of
+them, sorted by how many times the bike turned up:
 
 ```
 Bike re-encounters  (?)
-  [266-5628] [420-4640] [554-9324]
-  [878-6261] [405-4946] [551-1407]
+  420-4640   3×    300, 99 d
+  878-6261   3×    969, 132 d
+  405-4946   3×     40, 38 d
+  266-5628   2×        648 d
   ...
 ```
 
-Click one and the GPS recordings made on that bike play through single-ride
+Click a row and the GPS recordings made on that bike play through single-ride
 view, newest first, stepped with ↑↓ — the same cycle a dock popup's route
 link opens, and the same code. 78 of the 88 have at least one recording; 38
 have two or more, so most of the list is a route you can actually walk.
 
-**A bike with no recording keeps its chip.** Ten were met again on trips no
+**The count is encounters, not trips**, and getting that wrong was a real bug
+in the first version. `266-5628` was ridden three times — but two of those
+were one afternoon in February 2023, out to W 70 St and straight back, which
+is a single occasion. The row claimed "ridden 3 times, 2 of them after it had
+moved on"; the truth is two occasions 648 days apart. The list now folds a run
+of round trips into the encounter that started it, dates that encounter by its
+earliest trip, and shows the gaps between encounters rather than between legs.
+The headline 93 was always right — it counts meetings — so the bug was in the
+display alone, which is exactly the kind that survives a green test suite.
+
+**A bike with no recording keeps its row.** Ten were met again on trips no
 Garmin was running over, and they are dimmed with a tooltip saying why rather
 than dropped — hiding them would shrink the list to suit the renderer, which
-is the same mistake as dropping a dock GBFS cannot place.
+is the same mistake as dropping a dock GBFS cannot place. They keep their
+place in the sort too: the list ranks on how often a bike turned up, not on
+what happens to be clickable.
 
 The **(?)** carries the definition, because "re-encounter" is a rule and not a
 word a reader can be expected to infer: *bikes I rode more than once, where I

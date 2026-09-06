@@ -52,9 +52,13 @@ The pipeline exports a compressed GeoJSON that powers an interactive
   when the one on screen does
 - Bike re-encounters: the panel lists every Citibike unlocked again after it
   had moved on — 88 of them, against 200 repeats that were only the bike
-  parked and taken straight back. Clicking an id plays that bike's recordings
-  through the same cycle a dock row uses
+  parked and taken straight back. Each row gives the number of separate
+  occasions and the days between them, and clicking one plays that bike's
+  recordings through the same cycle a dock row uses
   ([what counts as one](findings/bike-reencounters.md))
+- Fleet generation: trips per year stacked by which fleet the bike came from,
+  read off the id shape — the newer bikes go from 41% of unlocks in 2021 to
+  90% in 2026 ([what the id does and does not say](findings/citibike-trips.md))
 - Ride source: each GPS ride is matched to Citibike trips by clock overlap and
   labelled where it appears, and the legend can filter the whole network to
   Citibike or own-bike rides. Rides outside the Citibike history are left

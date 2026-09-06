@@ -206,15 +206,34 @@ reads everything from `rides.geojson.gz` top-level `properties`.
   ebike can only re-meet an ebike already ridden, which is what made ebikes
   look 7x rarer than they are ([why](findings/bike-reencounters.md), rerun
   with `python tools/bike_reencounters.py`).
-- **The panel's re-encounter list is a way into the map, not a readout.**
-  `_met_rows` ships `properties.citibike.met` as `[id, trips, rides]` per bike
-  met again, and a chip opens that bike's recordings in single-ride view --
+- **The panel's re-encounter list counts encounters, not trips.** A bike
+  ridden to lunch and back on one afternoon was unlocked twice and *met* once;
+  `_reencounters` folds a run of round trips into the encounter that started
+  it and dates that encounter by its earliest trip, so the row's `n` and its
+  day-gaps are both between occasions rather than between legs. The first
+  version derived "times met" as `trips - 1` and overstated every bike whose
+  repeat was a round trip -- the headline 93 was right throughout, so nothing
+  but the row caught it. Never reintroduce a trip count here.
+- **That list is a way into the map, not a readout.**
+  `_met_rows` ships `properties.citibike.met` as `[id, encounters, gaps,
+  rides]` per bike met again, sorted by encounters, and a row opens that
+  bike's recordings in single-ride view --
   the same cycle a dock row opens, through the same `dockTrace`. That cycle
   now has two owners, so controls compare `dockTrace.key` (`d:<dock>` or
   `b:<id>`) rather than `.to`, and only a dock cycle sets `.to`, which is what
-  narrows the drawn links. **A bike with no recording keeps its chip**, dimmed
-  -- it was met, and dropping it to make the list all-clickable would shrink
-  the count to suit the renderer.
+  narrows the drawn links. **A bike with no recording keeps its row**, dimmed,
+  and keeps its place in the sort -- it was met, and ranking on what happens
+  to be clickable would shrink the list to suit the renderer.
+- **The fleet-generation chart is two buckets and may never be more.**
+  `_generations` splits trips per year on the id shape alone -- five digits is
+  the older fleet, hyphenated sevens the newer -- and that reading is the
+  owner's, from the physical bikes, since Citi Bike publishes no
+  number-to-model mapping. Structure *within* either shape was tested for and
+  is not there (prefix against first-seen date is r = -0.06; the prefix space
+  is flat and dense, a lot number rather than a serial), so a finer split
+  would be invented. The caption must keep saying the share is of one rider's
+  unlocks: it measures the racks that rider used, not the fleet
+  ([both](findings/citibike-trips.md)).
 - **A chance-test chart was built here, drawn four ways, and taken off.** The
   two permutation tests live in `tools/bike_reencounters.py` now, and a result
   needing a p-value belongs there rather than on the panel. Two of those four

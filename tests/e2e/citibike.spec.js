@@ -516,26 +516,38 @@ test.describe('Citibike dock layer', () => {
     await openSection(page, SECTION);
     const section = page.locator(`#${SECTION}`);
     await expect(section).toContainText('Bike re-encounters');
-    const chips = section.locator('.cb-met-id');
-    await expect(chips).toHaveCount(3);
-    await expect(chips.nth(0)).toHaveText('800-1234');
-    // Ridden 3 times means 2 of them after the bike had moved on -- the chip
-    // says so, because the round trips are exactly what the count excludes.
-    await expect(chips.nth(0)).toHaveAttribute(
-      'title', 'Ridden 3 times, 2 of them after it had moved on. 2 recordings — ' +
-      'click to play them');
-    await expect(chips.nth(1)).toHaveAttribute(
-      'title', 'Ridden 2 times, 1 of them after it had moved on. 1 recording — ' +
-      'click to show it');
-    // A bike met again with nothing recorded keeps its chip and says why it
+    const rows = section.locator('.cb-met-row');
+    await expect(rows).toHaveCount(4);
+    // Sorted by encounters, so both 3x rows come first even though the second
+    // of them has nothing to play -- the list ranks on how often the bike
+    // turned up, not on what is clickable.
+    await expect(rows.nth(0).locator('.cb-met-id')).toHaveText('800-1234');
+    await expect(rows.nth(1).locator('.cb-met-id')).toHaveText('800-0000');
+    await expect(rows.nth(0).locator('.cb-met-n')).toHaveText('3×');
+    await expect(rows.nth(2).locator('.cb-met-n')).toHaveText('2×');
+    // One gap per pair of encounters: three encounters show two numbers.
+    await expect(rows.nth(0).locator('.cb-met-gap')).toHaveText('40, 38 d');
+    await expect(rows.nth(2).locator('.cb-met-gap')).toHaveText('648 d');
+    // Occasions, not trips. Counting legs overstated every bike whose repeat
+    // was a round trip -- 266-5628 read as 3 rides, 2 after it had moved on,
+    // when it was unlocked twice 648 days apart.
+    await expect(rows.nth(0)).toHaveAttribute(
+      'title', 'Unlocked on 3 separate occasions, 40 and 38 days apart. ' +
+      '2 recordings — click to play them');
+    await expect(rows.nth(2)).toHaveAttribute(
+      'title', 'Unlocked on 2 separate occasions, 648 days apart. ' +
+      '1 recording — click to show it');
+    // A bike met again with nothing recorded keeps its row and says why it
     // does nothing, rather than being dropped to make the list all clickable.
-    await expect(chips.nth(2)).toHaveClass(/dim/);
-    await expect(chips.nth(2)).toHaveAttribute('title', /No GPS recording covers any of them/);
+    await expect(rows.nth(3)).toHaveClass(/dim/);
+    await expect(rows.nth(3)).toHaveAttribute('title', /No GPS recording covers any of its trips/);
     // The (?) carries the rule, which is not inferable from the words. Both
     // branches have to be in it: a different dock than the bike was left at,
     // OR the same dock after 48h. Only the second ever fires on the real
     // export, but stating one branch would describe a different rule.
-    const help = section.locator('.cb-help');
+    // Scoped by index: the panel carries a second (?) for the generation
+    // chart, so a bare .cb-help is ambiguous.
+    const help = section.locator('.cb-help').nth(0);
     await expect(help).toHaveAttribute('title', /different dock than I left it at/);
     await expect(help).toHaveAttribute('title', /same dock 48\+ hours later/);
     await expect(help).toHaveAttribute('title', /round trip, not a meeting/);
@@ -545,7 +557,7 @@ test.describe('Citibike dock layer', () => {
     await gotoMap(page);
     await openSection(page, SECTION);
     const section = page.locator(`#${SECTION}`);
-    const chip = section.locator('.cb-met-id').nth(0);   // 800-1234, rides [3, 1]
+    const chip = section.locator('.cb-met-row').nth(0);   // 800-1234, rides [3, 1]
 
     await chip.click();
     // Newest first, so the first click lands on ride 3 -- the same order a
@@ -553,37 +565,37 @@ test.describe('Citibike dock layer', () => {
     await expect(page.locator('#ride-view-bar')).toBeVisible();
     await expect(page.locator('#ride-view-label')).toContainText('2024-07-04');
     await expect(chip).toHaveClass(/on/);
-    await expect(chip).toHaveText('800-1234 1/2');
+    await expect(chip.locator('.cb-met-id')).toHaveText('800-1234 1/2');
 
     // Down steps to the older recording, and the ride-view bar counts along.
     await page.keyboard.press('ArrowDown');
     await expect(page.locator('#ride-view-label')).toContainText('2023-06-15');
-    await expect(chip).toHaveText('800-1234 2/2');
+    await expect(chip.locator('.cb-met-id')).toHaveText('800-1234 2/2');
     await expect(page.locator('.rv-step')).toContainText('route 2/2');
 
     // Up wraps rather than falling out of the cycle.
     await page.keyboard.press('ArrowUp');
-    await expect(chip).toHaveText('800-1234 1/2');
+    await expect(chip.locator('.cb-met-id')).toHaveText('800-1234 1/2');
 
     // Clicking walks the cycle and then off the end of it, so the chip that
     // started the detour can end it.
     await chip.click();
-    await expect(chip).toHaveText('800-1234 2/2');
+    await expect(chip.locator('.cb-met-id')).toHaveText('800-1234 2/2');
     await chip.click();
     await expect(page.locator('#ride-view-bar')).toBeHidden();
     await expect(chip).not.toHaveClass(/on/);
-    await expect(chip).toHaveText('800-1234');
+    await expect(chip.locator('.cb-met-id')).toHaveText('800-1234');
   });
 
   test('a bike with one recording shows it and puts the map back', async ({ page }) => {
     await gotoMap(page);
     await openSection(page, SECTION);
-    const chip = page.locator(`#${SECTION} .cb-met-id`).nth(1);  // 800-5678, [1]
+    const chip = page.locator(`#${SECTION} .cb-met-row`).nth(2);  // 800-5678, [1]
     await chip.click();
     await expect(page.locator('#ride-view-label')).toContainText('2023-06-15');
     // One recording is no cycle, so the chip stays a bare id and the bar
     // carries no step counter.
-    await expect(chip).toHaveText('800-5678');
+    await expect(chip.locator('.cb-met-id')).toHaveText('800-5678');
     await expect(page.locator('.rv-step')).toHaveCount(0);
     await chip.click();
     await expect(page.locator('#ride-view-bar')).toBeHidden();
@@ -592,7 +604,7 @@ test.describe('Citibike dock layer', () => {
   test('a bike with no recording is inert', async ({ page }) => {
     await gotoMap(page);
     await openSection(page, SECTION);
-    const chip = page.locator(`#${SECTION} .cb-met-id`).nth(2);  // 800-9999, []
+    const chip = page.locator(`#${SECTION} .cb-met-row`).nth(3);  // 800-9999, []
     await chip.click();
     await expect(page.locator('#ride-view-bar')).toBeHidden();
     await expect(chip).not.toHaveClass(/on/);
@@ -601,7 +613,7 @@ test.describe('Citibike dock layer', () => {
   test('leaving ride view any other way clears the chip too', async ({ page }) => {
     await gotoMap(page);
     await openSection(page, SECTION);
-    const chip = page.locator(`#${SECTION} .cb-met-id`).nth(0);
+    const chip = page.locator(`#${SECTION} .cb-met-row`).nth(0);
     await chip.click();
     await expect(chip).toHaveClass(/on/);
     // Escape, not a second click: the chip reads its state from rideView, so
@@ -616,10 +628,61 @@ test.describe('Citibike dock layer', () => {
     await gotoMap(page, buildFixture({ citibike: cb }));
     await openSection(page, SECTION);
     const section = page.locator(`#${SECTION}`);
-    await expect(section.locator('.cb-met-id')).toHaveCount(0);
+    await expect(section.locator('.cb-met-row')).toHaveCount(0);
     await expect(section).not.toContainText('Bike re-encounters');
     // The rest of the panel is untouched by its absence.
     await expect(section).toContainText('2 unlocks were on a bike ridden before');
+  });
+
+  test('stacks each year by which generation of bike was ridden', async ({ page }) => {
+    await gotoMap(page);
+    await openSection(page, SECTION);
+    const section = page.locator(`#${SECTION}`);
+    await expect(section).toContainText('Fleet generation');
+    const rows = section.locator('.cb-gen-row');
+    await expect(rows).toHaveCount(3);
+    await expect(rows.nth(0).locator('.cb-gen-year')).toHaveText('23');
+    // 3 of 4 newer, 2 of 4, 4 of 4.
+    await expect(rows.nth(0).locator('.cb-gen-val')).toHaveText('75%');
+    await expect(rows.nth(1).locator('.cb-gen-val')).toHaveText('50%');
+    await expect(rows.nth(2).locator('.cb-gen-val')).toHaveText('100%');
+    await expect(rows.nth(0)).toHaveAttribute(
+      'title', '2023: 3 of 4 trips on the newer fleet, 1 on the older');
+    // A year with none of a generation draws one segment, not a zero-width
+    // second one that the 2px gap would still show as a sliver.
+    await expect(rows.nth(2).locator('.cb-gen-old')).toHaveCount(0);
+    await expect(rows.nth(2).locator('.cb-gen-new')).toHaveCount(1);
+    // Segment widths carry the split, so the 50% year's two are equal and the
+    // 75% year's newer segment is the larger.
+    const even = rows.nth(1);
+    const a = await even.locator('.cb-gen-old').boundingBox();
+    const b = await even.locator('.cb-gen-new').boundingBox();
+    expect(Math.abs(a.width - b.width)).toBeLessThan(1.5);
+    const skew = rows.nth(0);
+    const oldW = (await skew.locator('.cb-gen-old').boundingBox()).width;
+    const newW = (await skew.locator('.cb-gen-new').boundingBox()).width;
+    expect(newW).toBeGreaterThan(oldW * 2);
+    // Two series, so the legend is not optional, and the caption has to say
+    // the share is of one rider's unlocks rather than of the fleet.
+    const key = section.locator('.cb-gen-key');
+    await expect(key).toContainText('older');
+    await expect(key).toContainText('newer');
+    await expect(section).toContainText('Share of my own unlocks, not a count of the fleet.');
+    // The (?) says where the labels come from, because no published source
+    // maps a bike number to a model.
+    const help = section.locator('.cb-help').nth(1);
+    await expect(help).toHaveAttribute('title', /five digits \(16825\) is the older fleet/);
+    await expect(help).toHaveAttribute('title', /publishes no number-to-model mapping/);
+  });
+
+  test('the generation chart is absent when the export has no years', async ({ page }) => {
+    const cb = { ...buildFixture().properties.citibike, gen: [] };
+    await gotoMap(page, buildFixture({ citibike: cb }));
+    await openSection(page, SECTION);
+    const section = page.locator(`#${SECTION}`);
+    await expect(section.locator('.cb-gen-row')).toHaveCount(0);
+    await expect(section).not.toContainText('Fleet generation');
+    await expect(section).toContainText('Bike re-encounters');
   });
 
   test('section, chip and toggle stay hidden without a citibike block', async ({ page }) => {

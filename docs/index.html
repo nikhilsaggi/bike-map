@@ -254,25 +254,34 @@
   .cb-cmp .label { color: #888; }
   .cb-cmp .v { color: #fff; text-align: right; font-variant-numeric: tabular-nums; }
   .cb-note { color: #777; font-size: 9px; line-height: 1.4; margin-top: 8px; }
-  /* The bikes met again, as chips rather than rows: 88 ids at eight
-     characters each browse in a quarter of the height a list needs, and the
-     chip is also the control -- clicking one puts its recordings on the map.
-     Capped and scrollable so the list cannot push the rest of the panel off
-     screen; .scrollbox is the same thin bar the dock popup uses. */
-  .cb-met { display: flex; flex-wrap: wrap; gap: 3px; max-height: 108px; overflow-y: auto; }
-  .cb-met-id {
-    font-size: 9px; font-variant-numeric: tabular-nums; padding: 2px 4px;
-    border-radius: 3px; background: #1a1a1a; color: #aaa; cursor: pointer;
-    border: 1px solid transparent; white-space: nowrap;
+  /* The bikes met again, one row each: id, how many times it turned up, and
+     the gaps between those times. Capped and scrollable so 88 rows cannot
+     push the rest of the panel off screen; .scrollbox is the dock popup's own
+     thin bar. The margin is what separates the list from its heading. */
+  .cb-met { max-height: 104px; overflow-y: auto; margin-top: 5px; }
+  /* The whole row is the control, not just the id: a 9px id is a poor hit
+     target for something whose job is to be clicked. */
+  .cb-met-row {
+    display: flex; align-items: baseline; gap: 6px; padding: 1px 3px;
+    border-radius: 3px; cursor: pointer; color: #aaa; font-size: 9px;
   }
-  .cb-met-id:hover { color: #fff; border-color: #444; }
+  .cb-met-row:hover { background: #1a1a1a; color: #fff; }
   /* Cyan is selection everywhere else on the page, so it is selection here. */
-  .cb-met-id.on { background: #14343d; border-color: #a8d8e8; color: #dff4fb; }
+  .cb-met-row.on { background: #14343d; color: #dff4fb; }
   /* A bike met again with no recording over any of its trips is still a bike
-     met again. It keeps its chip and says why it cannot be opened, rather
-     than being dropped to make the list all clickable. */
-  .cb-met-id.dim { color: #555; cursor: default; }
-  .cb-met-id.dim:hover { color: #555; border-color: transparent; }
+     met again. It keeps its row and says why it cannot be opened, rather than
+     being dropped to make the list all clickable. */
+  .cb-met-row.dim { color: #555; cursor: default; }
+  .cb-met-row.dim:hover { background: transparent; color: #555; }
+  .cb-met-id { flex: none; width: 74px; font-variant-numeric: tabular-nums; }
+  .cb-met-n { flex: none; width: 26px; text-align: right; font-variant-numeric: tabular-nums; }
+  /* Pushed right and dimmed: the gaps are context for the count, not a second
+     ranking, and the list is sorted on the count. */
+  .cb-met-gap {
+    flex: 1; text-align: right; color: #666; font-variant-numeric: tabular-nums;
+  }
+  .cb-met-row.on .cb-met-gap { color: #8fbecb; }
+
   /* A question mark that carries the definition, because "re-encounter" is a
      rule (48h, same dock) and not a word a reader can be expected to guess. */
   .cb-help {
@@ -281,6 +290,31 @@
     color: #888; font-size: 8px; cursor: help; margin-left: 4px; vertical-align: 1px;
   }
   .cb-help:hover { color: #fff; border-color: #888; }
+  /* The fleet turning over: one stacked bar per year, two ordered categories.
+     Two steps of the dock layer's own tone rather than two hues -- older and
+     newer are a sequence, not two identities, and a second hue here would
+     compete with the plasma ramp the map already spends colour on. */
+  .cb-gen-row { display: flex; align-items: center; gap: 6px; margin: 2px 0; }
+  .cb-gen-year {
+    width: 26px; text-align: right; color: #888; font-size: 10px; flex: none;
+    font-variant-numeric: tabular-nums;
+  }
+  .cb-gen-track { display: flex; flex: 1; height: 9px; gap: 2px; }
+  /* A 2px gap between the segments, not a border: a border would add width
+     to the thing whose width is the measurement. */
+  .cb-gen-old { background: #3d5a63; }
+  .cb-gen-new { background: #a8d8e8; }
+  .cb-gen-val {
+    width: 30px; color: #ccc; font-size: 10px; flex: none;
+    font-variant-numeric: tabular-nums;
+  }
+  /* Two series, so a legend is not optional. Swatches carry the identity and
+     the words stay in the panel's own text colour. nowrap on each item because
+     a 236px panel otherwise breaks one between its swatch and its label,
+     leaving orphaned squares on a line of their own. */
+  .cb-gen-key { display: flex; gap: 10px; color: #777; font-size: 9px; margin: 4px 0 0 32px; }
+  .cb-gen-key span { white-space: nowrap; }
+  .cb-gen-key i { display: inline-block; width: 8px; height: 8px; margin-right: 3px; }
 
   @media (max-width: 640px) {
     #stats-sections.open { max-height: min(240px, calc(100vh - 300px)); }
@@ -1176,6 +1210,80 @@ let metChipLabels = [];
 // the export's 293 repeats. The (?) carries that rule, because it is a rule
 // and not something a reader can infer from the word.
 // findings/bike-reencounters.md has the derivation.
+// The fleet replacing itself, sampled by five years of unlocks. Lyft writes
+// two shapes of bike id -- five digits (16825) and hyphenated sevens
+// (812-7417) -- and the shape is the generation, the five-digit ones being
+// the older bikes.
+//
+// This is a sample of one rider's docks, not a census of the fleet: you take
+// whatever is on the rack, so it estimates what was *at those docks*, which
+// is the honest claim and the one the caption makes. 2021 is 22 trips and
+// says so in its tooltip rather than being dropped -- the export's first
+// months are thin, and a bar that hides its own n is worse than a short one.
+function genChart(gen) {
+  if (!gen?.length) return null;
+  const wrap = document.createElement('div');
+  const title = document.createElement('div');
+  title.className = 'histo-title';
+  title.textContent = 'Fleet generation';
+  const help = document.createElement('span');
+  help.className = 'cb-help';
+  help.textContent = '?';
+  help.title =
+    'Which generation of bike each trip was on, read off the id: five digits ' +
+    '(16825) is the older fleet, seven with a hyphen (812-7417) the newer. ' +
+    'Citi Bike publishes no number-to-model mapping, so the labels come from ' +
+    'the bikes themselves — what the export confirms is the changeover. ' +
+    'Share is of my own unlocks at my own docks, not of the whole fleet.';
+  title.appendChild(help);
+  wrap.appendChild(title);
+
+  for (const [year, older, newer] of gen) {
+    const total = older + newer;
+    if (!total) continue;
+    const row = document.createElement('div');
+    row.className = 'cb-gen-row';
+    row.title = `${year}: ${newer.toLocaleString()} of ${total.toLocaleString()} trips ` +
+      `on the newer fleet, ${older.toLocaleString()} on the older`;
+    const y = document.createElement('span');
+    y.className = 'cb-gen-year';
+    y.textContent = String(year).slice(2);
+    const track = document.createElement('div');
+    track.className = 'cb-gen-track';
+    for (const [cls, n] of [['cb-gen-old', older], ['cb-gen-new', newer]]) {
+      if (!n) continue;
+      const seg = document.createElement('div');
+      seg.className = cls;
+      seg.style.flex = String(n);
+      track.appendChild(seg);
+    }
+    const val = document.createElement('span');
+    val.className = 'cb-gen-val';
+    val.textContent = `${Math.round(100 * newer / total)}%`;
+    row.append(y, track, val);
+    wrap.appendChild(row);
+  }
+
+  const key = document.createElement('div');
+  key.className = 'cb-gen-key';
+  for (const [cls, label] of [['cb-gen-old', 'older'], ['cb-gen-new', 'newer']]) {
+    const item = document.createElement('span');
+    const sw = document.createElement('i');
+    sw.className = cls;
+    item.append(sw, document.createTextNode(label));
+    key.appendChild(item);
+  }
+  wrap.appendChild(key);
+  // The caveat is visible rather than only in the (?), because it is the
+  // difference between "the fleet turned over" and "the fleet at my docks
+  // turned over", and only the second one is measured here.
+  const note = document.createElement('div');
+  note.className = 'cb-note';
+  note.textContent = 'Share of my own unlocks, not a count of the fleet.';
+  wrap.appendChild(note);
+  return wrap;
+}
+
 function metList(met) {
   if (!met?.length) return null;
   metChipLabels = [];
@@ -1202,9 +1310,22 @@ function metList(met) {
 
   const list = document.createElement('div');
   list.className = 'cb-met scrollbox';
-  for (const [bike, trips, rides] of met) {
-    const chip = document.createElement('span');
-    chip.className = 'cb-met-id';
+  for (const [bike, encounters, gaps, rides] of met) {
+    const row = document.createElement('div');
+    row.className = 'cb-met-row';
+    const id = document.createElement('span');
+    id.className = 'cb-met-id';
+    const count = document.createElement('span');
+    count.className = 'cb-met-n';
+    count.textContent = `${encounters}\u00d7`;
+    const gap = document.createElement('span');
+    gap.className = 'cb-met-gap';
+    // One gap per pair of encounters, so a bike met twice shows one number
+    // and a bike met three times shows two. Days, because the median is 306
+    // of them -- hours would be noise and years would round most of it away.
+    gap.textContent = gaps.length ? `${gaps.join(', ')} d` : '';
+    row.append(id, count, gap);
+
     const n = rides.length;
     const dateOf = ri => dateList[rideDateIdx[ri]] ?? '';
     // Read rather than remembered, like the dock rows: ride view is also left
@@ -1214,27 +1335,31 @@ function metList(met) {
 
     function relabel() {
       const i = at();
-      chip.classList.toggle('on', i >= 0);
-      chip.textContent = i >= 0 && n > 1 ? `${bike} ${i + 1}/${n}` : bike;
-      const ridden = `Ridden ${trips} times, ${trips - 1} of them after it had moved on`;
+      row.classList.toggle('on', i >= 0);
+      id.textContent = i >= 0 && n > 1 ? `${bike} ${i + 1}/${n}` : bike;
+      // Encounters, not trips: a bike ridden to lunch and back is one
+      // occasion, and counting the legs overstated every round trip in the
+      // list by one.
+      const met_ = `Unlocked on ${encounters} separate occasions` +
+        (gaps.length ? `, ${gaps.join(' and ')} days apart` : '');
       if (!n) {
-        chip.title = `${ridden}. No GPS recording covers any of them, so there ` +
-          'is nothing to draw.';
+        row.title = `${met_}. No GPS recording covers any of its trips, so ` +
+          'there is nothing to draw.';
       } else if (i >= 0) {
-        chip.title = `Showing ${dateOf(rides[i])} · ` +
+        row.title = `Showing ${dateOf(rides[i])} · ` +
           (n > 1 ? 'click or press ↓ for the next recording' : 'click to put the map back');
       } else {
-        chip.title = `${ridden}. ${n} recording${n !== 1 ? 's' : ''} — click to ` +
+        row.title = `${met_}. ${n} recording${n !== 1 ? 's' : ''} — click to ` +
           (n > 1 ? 'play them' : 'show it');
       }
     }
 
     if (!n) {
-      chip.classList.add('dim');
+      row.classList.add('dim');
     } else {
-      chip.addEventListener('click', () => {
+      row.addEventListener('click', () => {
         const i = at();
-        // Clicking walks the cycle and then off the end of it, so the chip
+        // Clicking walks the cycle and then off the end of it, so the row
         // that started a detour can end it. The arrow keys wrap instead.
         if (i < 0) {
           // A bike's recordings are not one dock's trips, so any open dock
@@ -1252,7 +1377,7 @@ function metList(met) {
     }
     relabel();
     metChipLabels.push(relabel);
-    list.appendChild(chip);
+    list.appendChild(row);
   }
   wrap.appendChild(list);
   return wrap;
@@ -1295,8 +1420,11 @@ function renderCitibike(cb) {
   // Appended as DOM rather than markup: a chip is a control with a listener,
   // and the bike ids come from Lyft, which has no business being interpolated
   // into HTML -- the same reason dockPopup builds its rows this way.
+  const section = document.getElementById('stat-citibike');
   const met = metList(cb.met);
-  if (met) document.getElementById('stat-citibike').appendChild(met);
+  if (met) section.appendChild(met);
+  const gen = genChart(cb.gen);
+  if (gen) section.appendChild(gen);
   showChip('stat-citibike');
 }
 
