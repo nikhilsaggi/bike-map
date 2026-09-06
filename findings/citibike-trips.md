@@ -59,9 +59,9 @@ Three properties of the raw file drove the design:
   replaced, not a change in what was ridden. Ebike is knowable only from a
   line item naming one: **189 of 2,524 trips, 7%, and a floor**, because a
   free ebike ride can carry no such item. The panel draws it as its own
-  stacked bar and writes the bound onto both numbers — `≥7%` ebike against
-  `≤93%` classic — so the qualifier travels with the figure instead of sitting
-  in a caption underneath it. That bar leaves the page's palette on purpose:
+  stacked bar, plain percentages with the bound in the (?): written onto the
+  numbers themselves (`≥7%` against `≤93%`) the signs read as clutter at 10px
+  before they read as bounds. That bar leaves the page's palette on purpose:
   Citi Bike's blue (`#255BE3`) for the classic bike and the ebike's grey
   (`#D1D5DB`) are what a reader has already seen on the street, and a colour
   that names the thing beats one that matches the panel.

@@ -659,12 +659,12 @@ test.describe('Citibike dock layer', () => {
     await expect(chart).toContainText('Bike type');
     const row = chart.locator('.cb-stack-row');
     await expect(row).toHaveCount(1);
-    // 3 of 5 trips carry an ebike charge. The bound on each side is
-    // load-bearing and rides on the number rather than on a caption: a free
-    // ebike ride carries no such charge, so 60% is a floor and the classic
-    // 40% is a ceiling.
-    await expect(row.locator('.cb-stack-val.first')).toHaveText('\u226440%');
-    await expect(row.locator('.cb-stack-val:not(.first)')).toHaveText('\u226560%');
+    // 3 of 5 trips carry an ebike charge. Plain percentages on the bar -- the
+    // bound is real (a free ebike ride carries no such charge, so 60% is a
+    // floor and the classic 40% a ceiling) but it is the (?)'s to state, not
+    // a sign hung on a 10px number.
+    await expect(row.locator('.cb-stack-val.first')).toHaveText('40%');
+    await expect(row.locator('.cb-stack-val:not(.first)')).toHaveText('60%');
     await expect(row).toHaveAttribute('title', 'at least 3 of 5 trips on an ebike');
     await expect(chart.locator('.cb-help')).toHaveAttribute('title', /this is a floor/);
     // Widths carry the split, so the ebike segment is the larger of the two.
@@ -781,30 +781,30 @@ test.describe('ride source', () => {
 
     // Citibike rides are 1 and 3. Ride 1 is on center+north, ride 3 on
     // center+south, so all three edges survive.
-    await page.click('.src-btn[data-src="citibike"]');
+    await page.click('.seg-btn[data-src="citibike"]');
     await expect.poll(() => drawn(page)).toBe(3);
 
     // Own-bike is ride 2 alone, which only touches the center edge.
-    await page.click('.src-btn[data-src="own"]');
+    await page.click('.seg-btn[data-src="own"]');
     await expect.poll(() => drawn(page)).toBe(1);
 
-    await page.click('.src-btn[data-src="all"]');
+    await page.click('.seg-btn[data-src="all"]');
     await expect.poll(() => drawn(page)).toBe(3);
   });
 
   test('says what a source filter is hiding', async ({ page }) => {
     await gotoMap(page);
     await expect(page.locator('#src-note')).toHaveText('');
-    await page.click('.src-btn[data-src="own"]');
+    await page.click('.seg-btn[data-src="own"]');
     // Ride 0 has an unknown source and belongs to neither side.
     await expect(page.locator('#src-note')).toContainText('1 ride falls outside');
-    await page.click('.src-btn[data-src="all"]');
+    await page.click('.seg-btn[data-src="all"]');
     await expect(page.locator('#src-note')).toHaveText('');
   });
 
   test('the popup lists only the rides the filter kept', async ({ page }) => {
     await gotoMap(page);
-    await page.click('.src-btn[data-src="own"]');
+    await page.click('.seg-btn[data-src="own"]');
     await clickEdge(page, EDGES.center.lat);
     const popup = page.locator('.ride-popup');
     await expect(popup.locator('.ride-row')).toHaveCount(1);

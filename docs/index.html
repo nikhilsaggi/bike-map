@@ -169,13 +169,16 @@
      (which is not a route), so it says its piece in text. */
   #src-row { display: flex; gap: 3px; margin-top: 8px; }
   #src-row.hidden { display: none; }
-  .src-btn {
+  /* One segmented control, two users: the source filter here and the
+     neighborhood list's ranking tabs. Named for the shape rather than for
+     either caller, so the second one did not have to copy it. */
+  .seg-btn {
     flex: 1; background: #1a1a1a; color: #888; border: 1px solid #333;
     border-radius: 4px; padding: 3px 4px; font: inherit; font-size: 10px;
     line-height: 1.3; cursor: pointer;
   }
-  .src-btn:hover { color: #ccc; border-color: #555; }
-  .src-btn.on { background: #7b3ff2; border-color: #7b3ff2; color: #fff; }
+  .seg-btn:hover { color: #ccc; border-color: #555; }
+  .seg-btn.on { background: #7b3ff2; border-color: #7b3ff2; color: #fff; }
   #src-note { color: #666; font-size: 9px; line-height: 1.4; margin-top: 3px; }
   /* Source tags wherever a ride is already named. Citibike takes the dock
      layer's tone so the two read as the same fact; an unknown ride is left
@@ -251,10 +254,14 @@
   .pl-grid .v { color: #fff; text-align: right; font-variant-numeric: tabular-nums; }
   .pl-grid .v.dim { color: #888; }
   .pl-top { margin-top: 8px; }
+  #pl-tabs { display: flex; gap: 3px; margin: 3px 0 5px; }
   .pl-row { display: grid; grid-template-columns: 1fr auto; gap: 10px; cursor: pointer; }
   .pl-row:hover .pl-name { color: #fff; }
   .pl-name { color: #9fd8ff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .pl-row .v { color: #ccc; font-variant-numeric: tabular-nums; }
+  /* The denominator a share is a share of, beside the share. Dim, because it
+     is context for the number rather than a second number. */
+  .pl-row .v .of { color: #666; }
   #stat-citibike { line-height: 1.5; }
   /* One grid for the header and every row, so the two columns line up
      instead of each row right-justifying its own text. */
@@ -353,10 +360,9 @@
   /* A share on each side, each against the segment it belongs to, so the bar
      is read outwards from its own split rather than against one axis end.
      Both wear the panel's text colour rather than their series' -- a number
-     tinted like its bar reads as part of the bar. Wide enough for a bounding
-     qualifier, because the ebike share carries one. */
+     tinted like its bar reads as part of the bar. */
   .cb-stack-val {
-    width: 30px; color: #ccc; font-size: 10px; flex: none;
+    width: 25px; color: #ccc; font-size: 10px; flex: none;
     font-variant-numeric: tabular-nums;
   }
   .cb-stack-val.first { text-align: right; }
@@ -534,9 +540,9 @@
        interesting question is which ones were not. Revealed only when the
        payload knows the source of at least one ride. -->
   <div id="src-row" class="hidden">
-    <button class="src-btn on" data-src="all">All</button>
-    <button class="src-btn" data-src="citibike">Citibike</button>
-    <button class="src-btn" data-src="own">Own bike</button>
+    <button class="seg-btn on" data-src="all">All</button>
+    <button class="seg-btn" data-src="citibike">Citibike</button>
+    <button class="seg-btn" data-src="own">Own bike</button>
   </div>
   <div id="src-note"></div>
   <!-- Revealed only when the payload carries a citibike block. Off by
@@ -1337,11 +1343,12 @@ function chartTitle(text, help) {
 // What kind of bike, over every trip. A floor rather than a measurement: an
 // ebike ride is only visible in the export when it was charged for, and a
 // free one names no bike type at all -- so the ebike share can only be
-// understated and the classic share overstated, which is what the bounding
-// qualifiers on the two numbers say. The two colours leave the page's palette
-// deliberately: Citi Bike's own blue and the ebike's grey are what a reader
-// has already seen on the street, and a colour that names the thing beats one
-// that matches the panel.
+// understated and the classic share overstated. That caveat is the (?)'s to
+// carry: the bars read as plain percentages, because a bounding sign on a
+// 10px number reads as clutter before it reads as a bound. The two colours
+// leave the page's palette deliberately: Citi Bike's own blue and the ebike's
+// grey are what a reader has already seen on the street, and a colour that
+// names the thing beats one that matches the panel.
 function typeChart(cb) {
   const total = cb.trips?.length || 0;
   if (!total) return null;
@@ -1355,8 +1362,8 @@ function typeChart(cb) {
     'least this many trips were on an ebike, and the classic share is at most ' +
     'what it says.'));
   wrap.appendChild(stackRow('', [
-    ['cb-type-classic', classic, `\u2264${Math.round(100 * classic / total)}%`],
-    ['cb-type-ebike', ebike, `\u2265${Math.round(100 * ebike / total)}%`],
+    ['cb-type-classic', classic, `${Math.round(100 * classic / total)}%`],
+    ['cb-type-ebike', ebike, `${Math.round(100 * ebike / total)}%`],
   ], `at least ${ebike.toLocaleString()} of ${total.toLocaleString()} trips on an ebike`));
   wrap.appendChild(stackKey([
     ['cb-type-classic', 'classic'], ['cb-type-ebike', 'ebike'],
@@ -1702,6 +1709,48 @@ function nbPopup(ai) {
   return box;
 }
 
+// The list's three rankings. It used to sort by ridden metres while printing
+// a percentage, which is two different questions in one row: the order was a
+// distance and the number beside it a share of a network, and nothing on
+// screen said so. Each tab now sorts by the number in its own column.
+//
+// All three are all-time, like the rest of this panel; `time_s` could not
+// follow the slider even if the section did, since edge_speed carries no
+// per-ride split.
+const PLACE_MODES = [
+  {
+    id: 'ridden',
+    label: 'Ridden',
+    title: 'By the distance of their streets ridden, all-time',
+    rank: a => a.ridden_m,
+    value: a => `${mi(a.ridden_m / 1000).toFixed(1)} mi`,
+  },
+  {
+    id: 'time',
+    label: 'Time',
+    title: 'By measured riding time on their streets, all-time -- a floor, ' +
+      'since a pass off the network or inside a GPS gap is not placed',
+    rank: a => a.time_s || 0,
+    value: a => fmtDuration(a.time_s),
+  },
+  {
+    id: 'explored',
+    label: 'Explored',
+    title: "By the share of each one's rideable streets ridden, all-time",
+    rank: a => (a.net_m ? a.ridden_m / a.net_m : 0),
+    value: a => `${a.net_m ? Math.round((100 * a.ridden_m) / a.net_m) : 0}%`,
+    // The one ranking a small denominator wins, and the denominator is the
+    // graph rather than the neighborhood: the box clips Fort Hamilton to 2 mi
+    // of street and riding nearly all of it reads as 92% explored. So the
+    // denominator sits in the row beside the share -- the same reason
+    // `coverage` ships both of its own -- rather than in a note under the
+    // list or behind a floor that would quietly drop the edge of the map.
+    of: a => `of ${mi(a.net_m / 1000).toFixed(1)} mi`,
+  },
+];
+let placeMode = PLACE_MODES[0];
+let placesData = [];
+
 // The stats section: the same measurement rolled up per borough, which is
 // where the citywide percentage is most misleading -- a third of Manhattan's
 // streets against 4% of Queens', both hidden inside one 9.1%.
@@ -1711,6 +1760,7 @@ function nbPopup(ai) {
 // read it would be a different and worse thing.
 function renderPlaces(nb) {
   if (!nb || !nb.areas?.length) return;
+  placesData = nb.areas;
   const boros = new Map();
   for (const a of nb.areas) {
     const b = boros.get(a.boro) || { ridden: 0, net: 0, time: 0, areas: 0, touched: 0 };
@@ -1743,26 +1793,55 @@ function renderPlaces(nb) {
       `<span class="v dim">${fmtDuration(b.time)}</span>`;
   }).join('');
 
-  // The areas are already sorted by ridden metres in the export, so the top
-  // of the list needs no re-sorting -- and each row puts its own polygon on
-  // the map, which is the point of naming them here at all.
-  const top = nb.areas.slice(0, 8).map((a, i) =>
-    `<div class="pl-row" data-area="${i}" title="Show this neighborhood">` +
-    `<span class="pl-name"></span>` +
-    `<span class="v">${a.net_m ? Math.round((100 * a.ridden_m) / a.net_m) : 0}%</span>` +
-    `</div>`).join('');
+  const tabs = PLACE_MODES.map(m =>
+    `<button class="seg-btn${m === placeMode ? ' on' : ''}" data-mode="${m.id}" ` +
+    `title="${m.title}">${m.label}</button>`).join('');
 
   const el = document.getElementById('stat-places');
   el.innerHTML =
     `<div class="pl-grid">${head}${rows}</div>` +
-    `<div class="sub-title pl-top">Most ridden</div>${top}`;
-  // textContent, not interpolation: these are names from city open data.
-  el.querySelectorAll('.pl-row').forEach((row) => {
-    const i = +row.dataset.area;
-    row.querySelector('.pl-name').textContent = nb.areas[i].name;
-    row.addEventListener('click', () => showArea(i));
-  });
+    `<div class="sub-title pl-top">Top neighborhoods</div>` +
+    `<div id="pl-tabs">${tabs}</div><div id="pl-list"></div>`;
+  for (const btn of el.querySelectorAll('#pl-tabs .seg-btn')) {
+    btn.addEventListener('click', () => {
+      placeMode = PLACE_MODES.find(m => m.id === btn.dataset.mode);
+      for (const b of el.querySelectorAll('#pl-tabs .seg-btn')) b.classList.toggle('on', b === btn);
+      renderPlaceList();
+    });
+  }
+  renderPlaceList();
   showChip('stat-places');
+}
+
+// The eight rows under the tabs. Ranked by the active tab, tie-broken by name
+// the way the export ranks its own array, and each row keeps its index into
+// `placesData` rather than its place in the list -- a click opens that
+// polygon, and the list is a way into the map before it is a table.
+function renderPlaceList() {
+  const areas = placesData;
+  const order = areas.map((a, i) => i).sort((x, y) =>
+    placeMode.rank(areas[y]) - placeMode.rank(areas[x]) ||
+    areas[x].name.localeCompare(areas[y].name)).slice(0, 8);
+  const list = document.getElementById('pl-list');
+  list.innerHTML = order.map(i =>
+    `<div class="pl-row" data-area="${i}">` +
+    `<span class="pl-name"></span>` +
+    `<span class="v">${placeMode.value(areas[i])}` +
+    `${placeMode.of ? ' <span class="of"></span>' : ''}</span></div>`).join('');
+  // textContent, not interpolation: these are names from city open data.
+  list.querySelectorAll('.pl-row').forEach((row) => {
+    const a = areas[+row.dataset.area];
+    row.querySelector('.pl-name').textContent = a.name;
+    const of = row.querySelector('.of');
+    if (of) of.textContent = placeMode.of(a);
+    // Every tab's number on every row, so switching tabs is a re-ranking
+    // rather than three lists that cannot be compared with each other.
+    row.title = `${BOROUGHS[a.boro] || a.boro} \u00b7 ` +
+      `${mi(a.ridden_m / 1000).toFixed(1)} of ${mi(a.net_m / 1000).toFixed(1)} mi ridden \u00b7 ` +
+      `${a.net_m ? Math.round((100 * a.ridden_m) / a.net_m) : 0}% \u00b7 ` +
+      `${fmtDuration(a.time_s)} \u2014 click to show it on the map`;
+    row.addEventListener('click', () => showArea(+row.dataset.area));
+  });
 }
 
 // A row in the panel puts its neighborhood on the map: turn the layer on if
@@ -2238,7 +2317,7 @@ function initSourceFilter() {
   const row = document.getElementById('src-row');
   const note = document.getElementById('src-note');
   const known = rideSrc.filter(s => s >= 0).length;
-  const buttons = [...row.querySelectorAll('.src-btn')];
+  const buttons = [...row.querySelectorAll('.seg-btn')];
   row.classList.remove('hidden');
   for (const btn of buttons) {
     btn.addEventListener('click', () => {

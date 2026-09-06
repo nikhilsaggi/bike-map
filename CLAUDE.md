@@ -198,8 +198,23 @@ reads everything from `rides.geojson.gz` top-level `properties`.
 - **The Neighborhoods stats section is all-time**, like every other section
   of that panel; the layer is the part that moves with the slider. It rolls
   the areas up per borough (Manhattan 32.4% against Queens 4.4% -- the spread
-  the one citywide number hides) and lists the most-ridden areas, each row
+  the one citywide number hides) and ranks the areas below that, each row
   opening its own polygon on the map.
+- **That ranking has three tabs and each one sorts by the number it prints.**
+  Ridden (miles), Time (`time_s`, so the floor above applies) and Explored
+  (`ridden_m / net_m`) are three different orders -- Central Park is second by
+  time and nowhere by distance -- and the single list they replaced sorted by
+  metres while printing a percentage, which reads as a ranking of the number
+  on screen and is not one. A row carries its index into `areas`, never its
+  place in the list, because the click opens a polygon.
+- **Explored prints the network it is a share of, in the row.** That ranking
+  is the one a small denominator wins, and the denominator is the graph and
+  not the neighborhood: the box clips Fort Hamilton to 2.4 mi of street and
+  riding nearly all of it comes top at 92%, above Murray Hill's 61% of 18.6.
+  Shipping the denominator beside the share is the same move `coverage`
+  makes with its two. Don't answer it with a minimum-network floor instead --
+  that silently drops the edge of the box, which is a real place the bike
+  went.
 - **The Citibike panel is a two-column comparison**, Citibike against own
   bike, on trips / time / days / typical length. The Citibike column is the
   export's own totals (every trip, including ones no GPS ride covers); the
@@ -271,9 +286,10 @@ reads everything from `rides.geojson.gz` top-level `properties`.
   deliberately**: Citi Bike's blue for the classic bike and the ebike's grey
   are what a reader has already seen on the street, and a colour that names
   the thing beats one that matches the panel. The ebike share is a floor -- a
-  free ebike ride carries no charge to count -- so the bound rides on the
-  numbers themselves (`>=7%` ebike against `<=93%` classic), never only in a
-  caption.
+  free ebike ride carries no charge to count -- and the (?) is where that
+  belongs: the bars were drawn with the bound on the numbers themselves
+  (`>=7%` against `<=93%`) and it read as clutter at 10px, so they are plain
+  percentages with the caveat stated once.
 - **A chance-test chart was built here, drawn four ways, and taken off.** The
   two permutation tests live in `tools/bike_reencounters.py` now, and a result
   needing a p-value belongs there rather than on the panel. Two of those four
