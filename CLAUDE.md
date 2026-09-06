@@ -206,8 +206,10 @@ reads everything from `rides.geojson.gz` top-level `properties`.
   the larger figure is the same streets again, not more of them. Deriving
   `dist_m` from `edge_traversals` instead -- edge length times pass count --
   was tried and rejected: it charges a whole edge for a pass that only
-  clipped it, which on the real rides overstated the total by about a third
-  and put areas at implausible average speeds against `time_s`.
+  clipped it, so it overstates the total and puts areas at average speeds
+  `time_s` contradicts ([why](findings/neighborhoods.md)). By how much is a
+  measurement of one graph and one state, and a matcher change moves it --
+  don't quote a figure here.
 - **The Neighborhoods stats section is all-time**, like every other section
   of that panel; the layer is the part that moves with the slider. It rolls
   the areas up per borough (Manhattan 32.4% against Queens 4.4% -- the spread

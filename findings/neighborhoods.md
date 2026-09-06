@@ -246,12 +246,18 @@ they are separate tabs rather than one column.
 The obvious cheaper route to the same number is edge length × `edge_traversals`
 — the pass counts the map already colours by. It was built first and rejected
 on the numbers. Charging a full edge for every pass charges the whole
-Manhattan Bridge deck to a trace that clipped one end of it, which on the real
-rides came out about a third above the measured distance and put whole
-neighborhoods at average speeds the rides never rode. Distance out of the same
-chunks as `time_s` does not have that failure, and it has the further property
-that the two tabs are a distance and a duration of the same passes, so a
-reader can hold them against each other.
+Manhattan Bridge deck to a trace that clipped one end of it, so the total runs
+above the distance the timestamps actually record and whole neighborhoods come
+out at average speeds the rides never rode. Distance out of the same chunks as
+`time_s` does not have that failure, and it has the further property that the
+two tabs are a distance and a duration of the same passes, so a reader can
+hold them against each other.
+
+The size of that overshoot is deliberately not quoted. It is a property of one
+graph and one matching run rather than of the method, and it moves whenever
+the matcher changes which edge a pass is charged to — which is the same
+sensitivity that disqualified the method. Re-derive it with
+`tools/neighborhood_audit.py` if a number is wanted for a particular run.
 
 The whole block is 88 KB gzipped on a 704 KB payload: 240 simplified polygons
 at ~11 m tolerance (the raw boundary file is 1.6 MB gzipped, more than the
