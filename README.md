@@ -277,6 +277,9 @@ part of it; `findings/` holds what they found:
 - [Citibike trips](findings/citibike-trips.md) — a second source with no
   trace: why it has no speed, why its routes are never drawn, and what two
   discarded layers taught about the difference
+- [Bike re-encounters](findings/bike-reencounters.md) —
+  `tools/bike_reencounters.py`, on whether meeting the same Citibike twice
+  beats chance (it does not, once the round trips come out)
 - [Rides by neighbourhood](findings/neighborhoods.md) — half the coverage
   denominator was not New York City, what the per-area cut says instead, and
   where assigning an edge by its midpoint goes wrong
@@ -285,7 +288,8 @@ part of it; `findings/` holds what they found:
 `tools/traversal_audit.py` checks pass counting against the raw traces, and
 `tools/neighborhood_audit.py` cuts the coverage measurement into
 neighbourhoods (`--boundaries` also measures what midpoint assignment
-misplaces).
+misplaces). `tools/bike_reencounters.py` re-derives the Citibike panel's
+repeat-bike line from `cache/citibike_trips.json` alone.
 `tools/render_readme_map.py` re-renders the image at the top of this file
 from the caches, when it should catch up with the rides.
 

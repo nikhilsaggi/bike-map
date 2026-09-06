@@ -329,10 +329,16 @@ drifted apart until five years of data made it obvious.
   days with an own-bike ride too.
 - 118 of 216 docks were used exactly once, against `Montrose Ave & Bushwick
   Ave` at 189 endpoint touches — home, and reaching 87 other docks.
-- 253 of 2,225 bikes were ridden more than once — but 198 of the 293
-  re-encounters happen on the same day, which is a round trip on a bike that
-  was still where it was left rather than meeting one again. Whether the
-  remainder beats chance is [issue #21](https://github.com/nikhilsaggi/bike-map/issues/21).
+- **Meeting the same bike twice is not a thing that happens.** 253 of 2,225
+  bikes were ridden more than once, which sounds like a small city — but 200
+  of the 293 repeats are the bike you parked and took back, and the other 93
+  are exactly what a uniform draw from the classic fleet predicts. Where you
+  left a bike says nothing about where you meet it again (p = 0.51); when you
+  last rode it does, because the fleet turns over (p = 0.003). The panel now
+  reports the 93 alone, and draws both tests under it — one dot inside its
+  band of chance, one outside
+  ([details](bike-reencounters.md), the answer to
+  [issue #21](https://github.com/nikhilsaggi/bike-map/issues/21)).
 
 ## What was measured and deliberately dropped
 

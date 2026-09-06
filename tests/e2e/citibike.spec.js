@@ -497,7 +497,10 @@ test.describe('Citibike dock layer', () => {
     await gotoMap(page);
     await openSection(page, SECTION);
     const section = page.locator(`#${SECTION}`);
-    await expect(section).toContainText('2 of 8 bikes ridden more than once');
+    // Bikes met again -- not the 5 that were simply picked back up off the
+    // dock they were parked at (findings/bike-reencounters.md).
+    await expect(section).toContainText('2 unlocks were on a bike ridden before');
+    await expect(section).not.toContainText('just parked');
     // 3 of 5 trips carry an ebike line item, and "at least" is load-bearing:
     // a free ebike ride can carry none.
     await expect(section).toContainText('at least 60% of trips on an ebike');
@@ -506,6 +509,59 @@ test.describe('Citibike dock layer', () => {
     await expect(section.locator('.cb-flow-row')).toHaveCount(0);
     await expect(section).not.toContainText('re-docked');
     await expect(section).not.toContainText('paid of');
+  });
+
+  test('plots each meeting median where it falls among the shuffles', async ({ page }) => {
+    await gotoMap(page);
+    await openSection(page, SECTION);
+    const section = page.locator(`#${SECTION}`);
+    await expect(section).toContainText('Meeting a bike again');
+    const rows = section.locator('.cb-again-row');
+    await expect(rows).toHaveCount(2);
+    // 4.828 km is 3.0 mi; 300 days rounds to itself. The value column is the
+    // measurement, and the tooltip carries what chance gave beside it.
+    await expect(rows.nth(0).locator('.cb-again-val')).toHaveText('3.0 mi');
+    await expect(rows.nth(1).locator('.cb-again-val')).toHaveText('300 d');
+    await expect(rows.nth(0)).toHaveAttribute(
+      'title', '20 meetings · 3.0 mi, against 3.0 mi from chance (2.0 mi–4.0 mi) · ' +
+      '48% of shuffles came out this low');
+    await expect(rows.nth(1)).toHaveAttribute(
+      'title', '22 meetings · 300 d, against 420 d from chance (360 d–480 d) · ' +
+      '1.2% of shuffles came out this low');
+    // The dots carry the whole finding: inside the band is a coincidence,
+    // outside it is not. Each row is framed on its own band, so a row is only
+    // ever compared against its own -- reading row 1's dot against row 0's
+    // band is meaningless, and happens to land exactly on its edge.
+    const geom = async (i) => ({
+      band: await rows.nth(i).locator('.cb-again-band').boundingBox(),
+      track: await rows.nth(i).locator('.cb-again-track').boundingBox(),
+      dot: await rows.nth(i).locator('.cb-again-dot').boundingBox(),
+    });
+    const mid = (b) => b.x + b.width / 2;
+    const where = await geom(0);
+    const when = await geom(1);
+    expect(mid(where.dot)).toBeGreaterThan(where.band.x);
+    expect(mid(where.dot)).toBeLessThan(where.band.x + where.band.width);
+    // Outside has to be *visibly* outside. Both earlier versions of this chart
+    // put the dot within a pixel or two of the band edge -- a percentile axis,
+    // where the middle 95% covers 95% of the track by construction, and then a
+    // zero-anchored one, where 306 days against a band starting at 338 was 6%
+    // of the axis. The finding is only a finding if it can be seen.
+    expect(when.band.x - mid(when.dot)).toBeGreaterThan(3);
+    expect(when.band.width).toBeLessThan(when.track.width * 0.9);
+  });
+
+  test('draws no chart when there were too few meetings to median', async ({ page }) => {
+    // citibike.py ships `again: null` under CHANCE_MIN_MEETINGS, and half a
+    // chart would be worse than none.
+    const cb = { ...buildFixture().properties.citibike, again: null };
+    await gotoMap(page, buildFixture({ citibike: cb }));
+    await openSection(page, SECTION);
+    const section = page.locator(`#${SECTION}`);
+    await expect(section.locator('.cb-again-row')).toHaveCount(0);
+    await expect(section).not.toContainText('Meeting a bike again');
+    // The rest of the panel is untouched by its absence.
+    await expect(section).toContainText('2 unlocks were on a bike ridden before');
   });
 
   test('section, chip and toggle stay hidden without a citibike block', async ({ page }) => {

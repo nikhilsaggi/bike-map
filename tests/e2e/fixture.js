@@ -77,8 +77,17 @@ export const CITIBIKE_BLOCK = {
   same_day: 2,
   median_min: 9.0,
   ebike_min: 3,
-  bikes: 8,
-  repeat_bikes: 2,
+  reencounters: 2,
+  resumes: 5,
+  // Hand-built rather than measured: `again` needs more meetings than this
+  // fixture has trips (CHANCE_MIN_MEETINGS in citibike.py), and what the page
+  // has to get right is where the two dots land. 48.0 sits mid-band and 1.2
+  // sits outside it -- the shape of the real answer. 4.828 km is exactly
+  // 3.0 mi, so the miles column cannot pass by a rounding accident.
+  again: {
+    where: { obs: 4.828, chance: 4.828, lo: 3.219, hi: 6.437, pct: 48.0, n: 20 },
+    when: { obs: 300, chance: 420, lo: 360, hi: 480, pct: 1.2, n: 22 },
+  },
   once_only: 0,
   // The own-bike column: rides no Citibike trip was found under.
   own: { rides: 3, hours: 4.0, days: 2, median_min: 41.0 },

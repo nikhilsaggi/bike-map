@@ -71,7 +71,9 @@ interactive Leaflet map (`docs/`, served via GitHub Pages) plus static PNGs.
 traces and must never land in `rides/`) and is not imported by any pipeline
 stage. `tools/` holds standalone analysis that is not
 part of the pipeline at all (`hmm_matcher_eval.py`, `weather_correlation.py`,
-`traversal_audit.py`, `neighborhood_audit.py`), plus `render_readme_map.py`,
+`traversal_audit.py`, `neighborhood_audit.py`, `bike_reencounters.py` -- which
+alone among them imports nothing from `bike_routes`, so it runs from the trips
+JSON on a checkout with no pipeline deps), plus `render_readme_map.py`,
 which crops the README's image out of the same caches; all are run from the
 repo root. `findings/`
 holds the write-ups of what that analysis found (moved out of the README to
@@ -184,6 +186,38 @@ reads everything from `rides.geojson.gz` top-level `properties`.
   recording can hold several Citibike trips but never several own-bike ones.
   A one-way-dock ranking used to live here and was dropped as not saying
   enough ([details](findings/citibike-trips.md)).
+- **A repeated bike id is two different events, and only one of them is a
+  bike met again.** `_reencounters` calls it a round trip when that bike's own
+  last trip ended at the dock this one starts from (`RESUME_MAX_GAP_S`,
+  insensitive from 2h to 30 days) -- 200 of the real export's 293 repeats, and
+  every same-day one. The panel reports only the other 93, as "unlocks on a
+  bike ridden before"; **never report the raw 253 as "bikes ridden more than
+  once"**, which is the wording this replaced and which counts a person taking
+  their own bike home. The export ships `resumes` beside `reencounters` and
+  nothing draws it -- it is there so the 93 can be checked against what it was
+  cut from. Never derive a *rate* from any of it without the exposure: an
+  ebike can only re-meet an ebike already ridden, which is what made ebikes
+  look 7x rarer than they are ([why](findings/bike-reencounters.md), rerun
+  with `python tools/bike_reencounters.py`).
+- **The panel's two chance tests are drawn together or not at all.**
+  `_chance_tests` ships `properties.citibike.again` as `where` and `when`, each
+  a median against the middle 95% of `CHANCE_TRIALS` shuffles that kept the
+  meetings and swapped the bike. `where` lands inside its band and `when`
+  outside, and the pair is the argument: one dot outside a band is a
+  statistic, two dots showing the same method found nothing in one case and
+  something in the other is evidence. Ship `None` rather than one of them
+  (`CHANCE_MIN_MEETINGS`), and keep `CHANCE_SEED` pinned -- an export is a
+  build artefact and must not move when the rides did not.
+- **That chart's axis is framed on its own band, not anchored at zero, and
+  that is only legal because the mark is a dot.** Position carries the value,
+  so the axis may start anywhere; a bar's *length* would carry it and a cut
+  baseline would lie. Zero-anchored, the whole result sat in 6% of the track.
+  Two earlier versions were built and thrown away for being unreadable rather
+  than wrong -- band histograms (93 events over 4 bands is all noise) and a
+  percentile axis (a middle-95% band covers 95% of the track by construction).
+  The e2e test asserts the dot clears the band by real pixels, because both
+  failures would have passed a test that only checked which side it was on
+  ([all three](findings/bike-reencounters.md)).
 - **The dock layer is meant to be explored, not read.** Markers resize with
   the same `filterLo`/`filterHi` range that filters the edges (`applyFilter`
   calls `applyDockFilter`), so the slider and time-lapse move them too. The
