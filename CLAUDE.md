@@ -212,9 +212,9 @@ reads everything from `rides.geojson.gz` top-level `properties`.
   are still distance and time spent there, which makes them the two figures
   in the block not restricted to `COVERAGE_EXCLUDE`-filtered edges. Neither
   can follow the slider: `edge_speed` has no per-ride breakdown. And both are
-  floors, by the same margin -- the detector places roughly two thirds of the
-  recorded hours, the rest being off-network, inside a gap, or on a pass too
-  short to admit.
+  floors, by a similar margin -- something like a quarter of what was
+  recorded never lands on an edge at all, being off-network, inside a gap, or
+  on a pass too short to admit.
 - **`dist_m` is riding and `ridden_m` is network, and the block ships both.**
   `dist_m` counts a street again on every pass over it; `ridden_m` counts it
   once however often it was ridden, and is the Explored numerator and the
