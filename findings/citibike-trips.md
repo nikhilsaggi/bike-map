@@ -218,12 +218,12 @@ criterion for a report. It is the wrong criterion here.
 
 This paragraph used to lead with "that Citibike trips cluster where the ride
 heatmap is thin", and that example was never checked. Cut into
-neighbourhoods it is false: every one of the 64 neighbourhoods with a dock
+neighborhoods it is false: every one of the 64 neighborhoods with a dock
 endpoint also has ridden street, and dock volume correlates *positively* with
 coverage (Spearman +0.71) and with ridden kilometres (+0.79) — the busiest
-dock neighbourhoods are the best-covered ones
+dock neighborhoods are the best-covered ones
 ([details](neighborhoods.md#the-citibike-claim-does-not-survive-at-this-resolution)).
-If the effect is real it is within a neighbourhood rather than between them,
+If the effect is real it is within a neighborhood rather than between them,
 and nothing here has measured it. The point about layers stands; the example
 was an assertion dressed as one.
 

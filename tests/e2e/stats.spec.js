@@ -9,7 +9,7 @@ test.describe('stats panel', () => {
     await expect(page.locator('#stat-ridden')).toHaveText('54');
     // 100 km of drawn street -> miles, rounded
     await expect(page.locator('#stat-km')).toHaveText('62');
-    // The tile is labelled "of NYC", so it shows the neighbourhood block's own
+    // The tile is labelled "of NYC", so it shows the neighborhood block's own
     // totals -- 6,600 of 30,000 m -- rather than coverage.pct, whose
     // denominator is every street in the graph, city or not.
     await expect(page.locator('#stat-coverage')).toHaveText('22.0%');
@@ -25,7 +25,7 @@ test.describe('stats panel', () => {
     // any mileage here would invite a division against those drawn miles. It
     // also carries the wider figure, so both denominators are on the page.
     await expect(page.locator('#tile-coverage')).toHaveAttribute('title',
-      'Share of the rideable street network inside a NYC neighbourhood, as far as ' +
+      'Share of the rideable street network inside a NYC neighborhood, as far as ' +
       'the map reaches (12.3% of every street in the graph, which runs past the ' +
       'city); sidewalks, service roads and motorways excluded');
   });
@@ -92,7 +92,7 @@ test.describe('stats panel', () => {
   test('names every section on a chip', async ({ page }) => {
     await gotoMap(page);
     expect(await page.locator('#stat-chips .chip:not(.hidden)').allTextContents())
-      .toEqual(['Years', 'Riding', 'Weather', 'Streets', 'Citibike']);
+      .toEqual(['Years', 'Riding', 'Weather', 'Streets', 'Citibike', 'Neighborhoods']);
   });
 
   test('opens one section at a time', async ({ page }) => {

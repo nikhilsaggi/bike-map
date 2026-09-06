@@ -1,7 +1,7 @@
-"""Per-neighbourhood coverage for the interactive map.
+"""Per-neighborhood coverage for the interactive map.
 
 The page had exactly one geographic statistic -- the citywide coverage
-percentage -- and neighbourhood is the unit a reader of a NYC bike map
+percentage -- and neighborhood is the unit a reader of a NYC bike map
 already thinks in.  This module cuts the same measurement the citywide
 number makes into NYC's 2020 Neighborhood Tabulation Areas and ships it as
 the ``properties.neighborhoods`` block: one polygon per area, the rideable
@@ -9,16 +9,16 @@ network inside it, and the metres of that network first ridden on each date.
 
 Two things follow from doing it this way rather than as a ranked table:
 
-- **Coverage of a neighbourhood is not coverage of the graph.**  The graph is
+- **Coverage of a neighborhood is not coverage of the graph.**  The graph is
   built from the rides' own bounding box (``graph._compute_bbox``), so a
   single ride out to Long Island enlarges the citywide denominator and lowers
   the percentage.  Half the rideable network in the graph is outside every
-  NYC neighbourhood.  A per-area denominator does not have that problem, and
+  NYC neighborhood.  A per-area denominator does not have that problem, and
   the areas summed give the coverage of New York City rather than of the box.
 - **The block ships the dates, not a summary of them.**  The page's slider
   and time-lapse already move the edges and the dock markers; giving each
   area the metres it first gained on each day lets them move the
-  neighbourhood layer too, so a reader watches the city fill in instead of
+  neighborhood layer too, so a reader watches the city fill in instead of
   reading a number someone else picked out.
 
 Like ``citibike``, this is a top-level properties block computed inline in
@@ -68,6 +68,10 @@ BOUNDARY_TOLERANCE_M = 55.0
 SIMPLIFY_DEG = 0.0001
 COORD_PRECISION = 5  # ~1 m; matches the export's own rounding
 
+# Slots 1 and 5 of an edge_speed chunk record are the forward and reverse
+# elapsed seconds; see edge_speed._new_chunk for the full eight-slot layout.
+_TIME_FWD, _TIME_REV = 1, 5
+
 BOROUGH_ABBR = {
     "Manhattan": "Mn",
     "Brooklyn": "Bk",
@@ -97,7 +101,7 @@ def ensure_boundaries() -> bool:
     path = config.NTA_CACHE_PATH
     if path.exists():
         return True
-    print("Fetching NYC neighbourhood boundaries...")
+    print("Fetching NYC neighborhood boundaries...")
     try:
         payload = _fetch_boundaries()
     except Exception as exc:
@@ -106,7 +110,7 @@ def ensure_boundaries() -> bool:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w") as f:
         json.dump(payload, f, separators=(",", ":"))
-    print(f"  Cached {len(payload.get('features', ()))} neighbourhoods to {path}")
+    print(f"  Cached {len(payload.get('features', ()))} neighborhoods to {path}")
     return True
 
 
@@ -119,12 +123,12 @@ def _load_boundaries() -> dict[str, Any] | None:
         with path.open() as f:
             return json.load(f)
     except Exception as exc:
-        print(f"  Neighbourhood boundary cache unreadable ({exc}); ignoring it")
+        print(f"  Neighborhood boundary cache unreadable ({exc}); ignoring it")
         return None
 
 
 class Areas:
-    """NYC neighbourhood polygons, indexed for point lookup.
+    """NYC neighborhood polygons, indexed for point lookup.
 
     Built once per export and used twice: to place every graph edge for the
     coverage denominator, and to place every drawn corridor so the page can
@@ -153,7 +157,7 @@ class Areas:
 
         A point inside a polygon takes it; one that is not takes the nearest
         polygon within BOUNDARY_TOLERANCE_M, which is what keeps a pier or a
-        bridge deck in the neighbourhood it belongs to.  Ties go to the lower
+        bridge deck in the neighborhood it belongs to.  Ties go to the lower
         index, so the answer never depends on tree order.
         """
         import numpy as np  # noqa: PLC0415 -- keeps the import next to its use
@@ -184,7 +188,7 @@ class Areas:
         """Simplified outline of one area, as Leaflet takes a multi-polygon.
 
         Nested one level deeper than a flat ring list on purpose: 34 of the
-        areas are several disjoint pieces (a neighbourhood plus its islands),
+        areas are several disjoint pieces (a neighborhood plus its islands),
         and Leaflet reads a second ring at the top level as a *hole* in the
         first.  Flattened, Rockaway would punch a hole through itself.
         """
@@ -200,14 +204,14 @@ class Areas:
 
 
 def load_areas() -> Areas | None:
-    """Load the neighbourhood polygons, or None if they cannot be had."""
+    """Load the neighborhood polygons, or None if they cannot be had."""
     payload = _load_boundaries()
     if not payload or not payload.get("features"):
         return None
     try:
         return Areas(payload["features"])
     except Exception as exc:
-        print(f"  Neighbourhood boundaries unusable ({exc}); skipping the layer")
+        print(f"  Neighborhood boundaries unusable ({exc}); skipping the layer")
         return None
 
 
@@ -216,13 +220,32 @@ def _midpoint(coords: Sequence[tuple[float, float]]) -> tuple[float, float]:
     return tuple(coords[len(coords) // 2])  # type: ignore[return-value]
 
 
+def _edge_seconds(state: dict[str, Any]) -> dict[tuple[int, int], float]:
+    """Elapsed seconds measured on each edge, both directions together.
+
+    From ``edge_speed``, which backfills the ride CSVs' timestamps onto the
+    geometry -- so this is measured time on that street, not an estimate from
+    distance.  It is a floor: the detector attributes ~370 of the ~520
+    recorded hours to an edge, and the rest is time off the network, inside a
+    recording gap, or on a pass too short to admit.  It carries no per-ride
+    breakdown, so nothing here can follow the date slider.
+    """
+    out: dict[tuple[int, int], float] = {}
+    for key, rec in state.get("edge_speed", {}).items():
+        chunks = rec.get("c") if isinstance(rec, dict) else None
+        if not chunks:
+            continue
+        out[key] = sum(c[_TIME_FWD] + c[_TIME_REV] for c in chunks)
+    return out
+
+
 def measure(
     areas: Areas | None,
     edge_geom: dict[tuple[int, int], list[tuple[float, float]]],
     edge_hw: dict[tuple[int, int], str],
     state: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    """Per-area rideable network, ridden network, and when it was first ridden.
+    """Per-area rideable network, ridden network, time on it, and when it was first ridden.
 
     Numerator and denominator are the ones ``_coverage_summary`` uses -- graph
     edges whose highway tag is rideable, not the merged corridors the map
@@ -231,6 +254,10 @@ def measure(
     of network first ridden on it, which is what lets the page's slider move
     the layer.
 
+    ``time_s`` is the exception to the rideable-only rule: time on a park path
+    or a service road is still time spent in the neighborhood, so every edge
+    with a measured record counts, whatever its highway tag.
+
     One row per area, in the boundary file's own order and including the
     areas the graph has no rideable street in; callers drop those.  Shared by
     the export and ``tools/neighborhood_audit.py``.
@@ -238,17 +265,31 @@ def measure(
     if areas is None or not edge_hw:
         return []
     edge_rides: dict[tuple[int, int], list[str]] = state.get("edge_rides", {})
+    seconds = _edge_seconds(state)
     keys = [k for k in edge_geom if edge_hw.get(k, "") not in config.COVERAGE_EXCLUDE]
-    placed = areas.locate([_midpoint(edge_geom[k]) for k in keys])
+    rideable = set(keys)
+    # Timed edges the rideable filter drops -- a park path, a service road --
+    # still have to be placed, or their time would silently land nowhere.
+    timed_only = [k for k in seconds if k not in rideable and k in edge_geom]
+    placed = areas.locate([_midpoint(edge_geom[k]) for k in [*keys, *timed_only]])
 
     rows: list[dict[str, Any]] = [
-        {"name": n, "boro": b, "net_m": 0.0, "ridden_m": 0.0, "rides": set(), "first": {}}
+        {
+            "name": n,
+            "boro": b,
+            "net_m": 0.0,
+            "ridden_m": 0.0,
+            "time_s": 0.0,
+            "rides": set(),
+            "first": {},
+        }
         for n, b in zip(areas.names, areas.boros)
     ]
     for key, area in zip(keys, placed):
         if area < 0:
             continue
         row = rows[area]
+        row["time_s"] += seconds.get(key, 0.0)
         length = _geom_len_m(edge_geom[key])
         row["net_m"] += length
         rides = edge_rides.get(key)
@@ -258,6 +299,9 @@ def measure(
         row["rides"].update(rides)
         day = min(rides)[:10]
         row["first"][day] = row["first"].get(day, 0.0) + length
+    for key, area in zip(timed_only, placed[len(keys) :]):
+        if area >= 0:
+            rows[area]["time_s"] += seconds[key]
     return rows
 
 
@@ -274,7 +318,7 @@ def _neighborhood_summary(
     The two go together because the tag is an index into the block's own
     ``areas`` array, which drops the areas holding no rideable street -- a
     feature tagged against the boundary file's numbering would point at the
-    wrong neighbourhood.  A feature outside every area (the graph reaches
+    wrong neighborhood.  A feature outside every area (the graph reaches
     well past the city) is tagged -1 and counts towards nothing.
 
     Areas ship even at 0% covered: where the bike has never been is the other
@@ -305,6 +349,10 @@ def _neighborhood_summary(
                 "boro": row["boro"],
                 "net_m": round(row["net_m"]),
                 "ridden_m": round(row["ridden_m"]),
+                # Measured on-street seconds, all-time: edge_speed has no
+                # per-ride breakdown, so unlike `new` this cannot follow the
+                # slider, and the panel that shows it says all-time.
+                "time_s": round(row["time_s"]),
                 # [date index, metres first ridden that day], chronological:
                 # the page takes a running total up to the date it is showing.
                 "new": [[d, round(m)] for d, m in first],
@@ -319,6 +367,7 @@ def _neighborhood_summary(
         # Island contributes 25 km of network and no rides at all.
         "net_m": round(sum(a["net_m"] for a in out)),
         "ridden_m": round(sum(a["ridden_m"] for a in out)),
+        "time_s": round(sum(a["time_s"] for a in out)),
         "areas": out,
     }
 

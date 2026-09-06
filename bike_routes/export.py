@@ -157,7 +157,7 @@ def _export_geojson(
 
     total_km = sum(_geom_len_m(f["geometry"]["coordinates"]) for f in features) / 1000
 
-    # Neighbourhoods, if the boundary cache is there. This also tags every
+    # Neighborhoods, if the boundary cache is there. This also tags every
     # feature with the area it sits in, so the block has to be built after
     # the merge -- a corridor is placed by its own midpoint, not its members'.
     neighborhoods = _neighborhood_summary(

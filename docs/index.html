@@ -191,7 +191,7 @@
   #cb-toggle:hover { color: #ccc; }
   #cb-check { vertical-align: -1px; margin-right: 3px; accent-color: #a8d8e8; }
 
-  /* -- Neighbourhoods ----------------------------------------------------
+  /* -- Neighborhoods ----------------------------------------------------
      A second toggle under the dock one, so the two optional layers read as
      a pair. Its own row rather than the same one: the labels are long and
      each carries a note. */
@@ -209,7 +209,6 @@
   .nb-row { display: flex; justify-content: space-between; gap: 14px; font-size: 12px; }
   .nb-row .v { color: #fff; font-variant-numeric: tabular-nums; }
   .nb-row .label { color: #888; }
-  .nb-asof { color: #777; font-size: 9px; line-height: 1.4; margin-top: 4px; }
   /* The ride history starts in 2021 and the dock trips in 2025, so most of
      the slider's range has no docks in it at all. Saying so here is the
      difference between "nothing to show" and "this is broken". */
@@ -239,6 +238,25 @@
   }
   .dock-trace:hover { color: #fff; }
   .dock-trace-note { color: #777; font-size: 9px; line-height: 1.3; margin: -2px 0 4px 10px; }
+  /* One grid for the borough header and every row, so the columns line up
+     rather than each row right-justifying its own text. Same shape as the
+     Citibike comparison above. */
+  #stat-places { line-height: 1.5; }
+  .pl-grid {
+    display: grid; grid-template-columns: 1fr auto auto;
+    gap: 2px 12px; align-items: baseline;
+  }
+  .pl-grid .head { font-size: 9px; letter-spacing: 0.3px; text-align: right; color: #888; }
+  .pl-grid .boro { color: #ccc; cursor: pointer; }
+  .pl-grid .boro:hover { color: #fff; }
+  .pl-grid .v { color: #fff; text-align: right; font-variant-numeric: tabular-nums; }
+  .pl-grid .v.dim { color: #888; }
+  .pl-note { color: #777; font-size: 9px; line-height: 1.4; margin-top: 8px; }
+  .pl-top { margin-top: 8px; }
+  .pl-row { display: grid; grid-template-columns: 1fr auto; gap: 10px; cursor: pointer; }
+  .pl-row:hover .pl-name { color: #fff; }
+  .pl-name { color: #9fd8ff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pl-row .v { color: #ccc; font-variant-numeric: tabular-nums; }
   #stat-citibike { line-height: 1.5; }
   /* One grid for the header and every row, so the two columns line up
      instead of each row right-justifying its own text. */
@@ -376,6 +394,7 @@
       <button class="chip hidden" data-section="stat-weather" aria-expanded="false" aria-controls="stat-weather">Weather</button>
       <button class="chip hidden" data-section="stat-streets" aria-expanded="false" aria-controls="stat-streets">Streets</button>
       <button class="chip hidden" data-section="stat-citibike" aria-expanded="false" aria-controls="stat-citibike">Citibike</button>
+      <button class="chip hidden" data-section="stat-places" aria-expanded="false" aria-controls="stat-places">Neighborhoods</button>
     </div>
     <div id="stats-sections" class="scrollbox">
       <div id="stat-years"></div>
@@ -389,6 +408,7 @@
         </div>
       </div>
       <div id="stat-citibike"></div>
+      <div id="stat-places"></div>
     </div>
   </div>
 </div>
@@ -423,7 +443,7 @@
     <span id="cb-range"></span>
   </label>
   <label id="nb-toggle" class="hidden">
-    <input type="checkbox" id="nb-check"> Neighbourhoods
+    <input type="checkbox" id="nb-check"> Neighborhoods
   </label>
   <div id="nb-note"></div>
 </div>
@@ -551,6 +571,15 @@ function restoreSection() {
 // Pipeline data is metric; convert to miles for display only.
 const KM_TO_MI = 0.621371;
 const mi = km => km * KM_TO_MI;
+
+// Minutes below an hour, hours above it: "0.3 h" in a table of neighborhoods
+// is a worse answer than "18 min", and "43.5 h" a better one than "2,610 min".
+function fmtDuration(seconds) {
+  if (!seconds) return '\u2014';
+  const h = seconds / 3600;
+  if (h < 1) return `${Math.round(seconds / 60)} min`;
+  return `${h < 10 ? h.toFixed(1) : Math.round(h).toLocaleString()} h`;
+}
 
 let dateList = [];
 let rideList = [];
@@ -682,7 +711,7 @@ function renderStreets(props) {
     // Both denominators, one under the other, because the gap between them
     // is itself a finding: the graph is the rides' own bounding box, so it
     // holds thousands of km of Long Island and New Jersey that no
-    // neighbourhood does. Ride further out and the wider figure falls.
+    // neighborhood does. Ride further out and the wider figure falls.
     if (nb && nb.net_m) {
       rows.push(['Of rideable NYC', `${(100 * nb.ridden_m / nb.net_m).toFixed(1)}%`,
         excludedLabel(cov) || null]);
@@ -1153,15 +1182,15 @@ function renderCitibike(cb) {
   showChip('stat-citibike');
 }
 
-// -- Neighbourhoods ---------------------------------------------------------
+// -- Neighborhoods ---------------------------------------------------------
 // The map's other geographic number is one percentage of "the network", and
 // half of that network is not in New York City -- the graph is built from the
 // rides' own bounding box, so a single ride out to Long Island enlarges the
-// denominator. Cut into neighbourhoods the question does not arise, and the
+// denominator. Cut into neighborhoods the question does not arise, and the
 // answer is a different sentence: a third of Manhattan's streets against 5%
 // of the graph.
 //
-// Fill is the share of a neighbourhood's rideable streets ridden by the end
+// Fill is the share of a neighborhood's rideable streets ridden by the end
 // of the visible date range, so the slider and the time-lapse fill the city
 // in rather than leaving 240 polygons sitting still. One neutral tone at
 // varying opacity, not a third colour scale: plasma already means passes and
@@ -1225,25 +1254,36 @@ function applyNbFilter() {
   for (let i = 0; i < nbShapes.length; i++) nbShapes[i].setStyle(nbStyle(i));
 }
 
-// Passes drawn inside one area, in the visible range. Counted on the click
-// that asks rather than kept as an array applyFilter has to maintain: one
-// walk of the features costs nothing next to the redraw a popup already
+// Distinct rides that touched one area, in the visible range. Counted on the
+// click that asks rather than kept as an array applyFilter has to maintain:
+// one walk of the features costs nothing next to the redraw a popup already
 // triggers, and there is no cached total to go stale.
-function nbPassesIn(ai) {
-  let n = 0;
+//
+// Rides, NOT passes. Passes are a property of one stretch of street -- "4
+// passes" on a street popup means that stretch was ridden four times -- and
+// summing them over an area counts segment-crossings instead. Forest Hills
+// held 104 drawn segments each ridden once by the same two rides, and the
+// row read "104", which any reader takes as having been there 104 times. A
+// ride either went through a neighborhood or it did not, so that is what
+// the row counts. (How many times a ride entered and left an area would be
+// the real "passes" and nothing in the export can say: a feature's rides
+// carry no order and no clock.)
+function nbRidesIn(ai) {
+  const seen = new Set();
   geoLayer.eachLayer(layer => {
-    if (layer.feature.properties.n === ai) {
-      n += countInRange(layer.feature.properties.rides || []);
+    if (layer.feature.properties.n !== ai) return;
+    for (const ri of layer.feature.properties.rides || []) {
+      const di = rideDateIdx[ri];
+      if (di >= filterLo && di <= filterHi && sourceMatches(ri)) seen.add(ri);
     }
   });
-  return n;
+  return seen.size;
 }
 
 function nbPopup(ai) {
   const a = nbData.areas[ai];
   const ridden = nbRiddenBy(ai, filterHi);
   const share = a.net_m ? Math.round((100 * ridden) / a.net_m) : 0;
-  const asOf = filterHi === Infinity ? dateList[dateList.length - 1] : dateList[filterHi];
   const box = document.createElement('div');
   box.className = 'nb-popup';
   const head = document.createElement('div');
@@ -1252,26 +1292,104 @@ function nbPopup(ai) {
   const sub = document.createElement('div');
   sub.className = 'nb-sub';
   sub.textContent = BOROUGHS[a.boro] || a.boro;
+  // The two are asked over different spans -- coverage is everything ridden
+  // up to the date on screen, passes are what the slider has selected -- and
+  // that used to be a line of prose under every card. The dates are already
+  // on screen under the slider, so it is a title here instead of a caption
+  // three readers deep would stop reading.
   const rows = [
-    ['Streets ridden', `${mi(ridden / 1000).toFixed(1)} of ${mi(a.net_m / 1000).toFixed(1)} mi`],
-    ['Of its network', `${share}%`],
-    ['Passes', nbPassesIn(ai).toLocaleString()],
+    ['Streets ridden', `${mi(ridden / 1000).toFixed(1)} of ${mi(a.net_m / 1000).toFixed(1)} mi`,
+      'Ridden at any point up to the later date on the slider'],
+    ['Of its network', `${share}%`, 'Share of its rideable streets ridden by then'],
+    ['Rides through', nbRidesIn(ai).toLocaleString(),
+      'Rides with any drawn street here, within the date range'],
+    ['Time here', fmtDuration(a.time_s),
+      'Measured riding time on these streets, all-time -- the timestamps ' +
+      'carry no per-ride split, so this one does not follow the slider'],
   ];
   box.append(head, sub);
-  for (const [k, v] of rows) {
+  for (const [k, v, title] of rows) {
     const row = document.createElement('div');
     row.className = 'nb-row';
+    row.title = title;
     row.innerHTML = `<span class="label">${k}</span><span class="v">${v}</span>`;
     box.appendChild(row);
   }
-  const note = document.createElement('div');
-  note.className = 'nb-asof';
-  // Two different questions on one card: coverage is everything ridden up to
-  // the date on screen, passes are what the slider has selected. Saying which
-  // is which is cheaper than making them agree.
-  note.textContent = `Ridden by ${asOf}; passes within the selected range.`;
-  box.appendChild(note);
   return box;
+}
+
+// The stats section: the same measurement rolled up per borough, which is
+// where the citywide percentage is most misleading -- a third of Manhattan's
+// streets against 4% of Queens', both hidden inside one 9.1%.
+//
+// All-time, like every other section of this panel. The layer is the part
+// that follows the slider; a table that moved under the reader while they
+// read it would be a different and worse thing.
+function renderPlaces(nb) {
+  if (!nb || !nb.areas?.length) return;
+  const boros = new Map();
+  for (const a of nb.areas) {
+    const b = boros.get(a.boro) || { ridden: 0, net: 0, time: 0, areas: 0, touched: 0 };
+    b.ridden += a.ridden_m;
+    b.net += a.net_m;
+    b.time += a.time_s || 0;
+    b.areas += 1;
+    if (a.ridden_m > 0) b.touched += 1;
+    boros.set(a.boro, b);
+  }
+  const order = [...boros.entries()].sort((x, y) => y[1].ridden - x[1].ridden);
+
+  const head =
+    `<span></span><span class="head">Covered</span><span class="head">Time</span>`;
+  const rows = order.map(([code, b]) => {
+    const pct = b.net ? (100 * b.ridden) / b.net : 0;
+    const name = BOROUGHS[code] || code;
+    const title = `${Math.round(mi(b.ridden / 1000))} of ` +
+      `${Math.round(mi(b.net / 1000)).toLocaleString()} mi ridden \u00b7 ` +
+      `${b.touched} of ${b.areas} neighborhoods touched`;
+    return `<span class="boro" title="${title}">${name}</span>` +
+      `<span class="v">${pct.toFixed(1)}%</span>` +
+      `<span class="v dim">${fmtDuration(b.time)}</span>`;
+  }).join('');
+
+  // The areas are already sorted by ridden metres in the export, so the top
+  // of the list needs no re-sorting -- and each row puts its own polygon on
+  // the map, which is the point of naming them here at all.
+  const top = nb.areas.slice(0, 8).map((a, i) =>
+    `<div class="pl-row" data-area="${i}" title="Show this neighborhood">` +
+    `<span class="pl-name"></span>` +
+    `<span class="v">${a.net_m ? Math.round((100 * a.ridden_m) / a.net_m) : 0}%</span>` +
+    `</div>`).join('');
+
+  const el = document.getElementById('stat-places');
+  el.innerHTML =
+    `<div class="pl-grid">${head}${rows}</div>` +
+    `<div class="sub-title pl-top">Most ridden</div>${top}` +
+    `<div class="pl-note">Share of each borough's rideable streets that have ` +
+    `been ridden, and measured time on them. All-time; the map layer follows ` +
+    `the date slider.</div>`;
+  // textContent, not interpolation: these are names from city open data.
+  el.querySelectorAll('.pl-row').forEach((row) => {
+    const i = +row.dataset.area;
+    row.querySelector('.pl-name').textContent = nb.areas[i].name;
+    row.addEventListener('click', () => showArea(i));
+  });
+  showChip('stat-places');
+}
+
+// A row in the panel puts its neighborhood on the map: turn the layer on if
+// it is off, fly to the polygon, and open its popup -- the same "the list is
+// a way into the map" move the speed corridors and the dock rows make.
+function showArea(ai) {
+  const check = document.getElementById('nb-check');
+  if (!check.checked) {
+    check.checked = true;
+    check.dispatchEvent(new Event('change'));
+  }
+  const poly = nbShapes[ai];
+  if (!poly) return;
+  map.flyToBounds(poly.getBounds(), { maxZoom: 14, duration: 0.6 });
+  poly.openPopup();
 }
 
 function initNeighborhoods(nb) {
@@ -1291,7 +1409,7 @@ function initNeighborhoods(nb) {
   nbShapes = nb.areas.map((a, i) => {
     // Rings arrive as [lon, lat]; Leaflet wants [lat, lng]. The nesting is
     // polygon -> ring -> point, which is Leaflet's multi-polygon shape: a
-    // neighbourhood that is several disjoint pieces must not read as one
+    // neighborhood that is several disjoint pieces must not read as one
     // piece with holes punched in it.
     const rings = a.rings.map(poly => poly.map(r => r.map(([lon, lat]) => [lat, lon])));
     const poly = L.polygon(rings, nbStyle(i));
@@ -1315,7 +1433,7 @@ function initNeighborhoods(nb) {
     if (check.checked) {
       nbLayer.addTo(map);
       applyNbFilter();
-      // Under the streets, which are the subject: the neighbourhoods are
+      // Under the streets, which are the subject: the neighborhoods are
       // ground for them. Once, because every later filter change ends in
       // restackLayers, which lifts the edges back over anything below.
       nbLayer.eachLayer(l => l.bringToBack());
@@ -1887,14 +2005,14 @@ fetch('rides.geojson.gz')
       // against every edge in the graph, and the graph is the rides' own
       // bounding box -- half of it is Long Island and New Jersey, which drags
       // the percentage down for riding further out rather than less. When the
-      // neighbourhood block is there it gives the same measurement over the
-      // part of the graph inside a NYC neighbourhood, which is the number the
+      // neighborhood block is there it gives the same measurement over the
+      // part of the graph inside a NYC neighborhood, which is the number the
       // label has always claimed.
       const nb = data.properties?.neighborhoods;
       document.getElementById('stat-coverage').textContent =
         nb && nb.net_m ? `${(100 * nb.ridden_m / nb.net_m).toFixed(1)}%` : `${coverage.pct}%`;
       tile.title = (nb && nb.net_m
-        ? 'Share of the rideable street network inside a NYC neighbourhood, ' +
+        ? 'Share of the rideable street network inside a NYC neighborhood, ' +
           `as far as the map reaches (${coverage.pct}% of every street in the graph, ` +
           'which runs past the city)'
         : 'Share of the rideable NYC street network') + (excl ? `; ${excl}` : '');
@@ -1977,6 +2095,7 @@ fetch('rides.geojson.gz')
     renderCitibike(data.properties?.citibike);
     initDockLayer(data.properties?.citibike);
     initNeighborhoods(data.properties?.neighborhoods);
+    renderPlaces(data.properties?.neighborhoods);
     restoreSection();
 
     sqrtMax = Math.sqrt(maxCount);

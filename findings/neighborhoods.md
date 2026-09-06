@@ -1,7 +1,7 @@
-# Rides by neighbourhood: what one citywide percentage was hiding
+# Rides by neighborhood: what one citywide percentage was hiding
 
 The map had exactly one geographic statistic — `coverage.pct`, "5.1% of NYC" —
-and one place name, the busiest segment. Neighbourhood is the unit a reader of
+and one place name, the busiest segment. Neighborhood is the unit a reader of
 a NYC bike map already thinks in, and nothing on the page spoke it. This is
 what came out of cutting the ridden map into NYC's 2020 Neighborhood
 Tabulation Areas (262 polygons, NYC Open Data `9nt8-h7nd`), and what shipped
@@ -16,9 +16,9 @@ the graph.
 | | km |
 |---|---|
 | rideable network in the graph (the shipped denominator) | 19,235 |
-| of that, inside a NYC neighbourhood | **10,063** |
-| further than 55 m from every neighbourhood | 9,172 |
-| ridden, inside a NYC neighbourhood | 916.1 of 978.2 |
+| of that, inside a NYC neighborhood | **10,063** |
+| further than 55 m from every neighborhood | 9,172 |
+| ridden, inside a NYC neighborhood | 916.1 of 978.2 |
 
 **Coverage of New York City is 9.1%, not 5.1%.**
 
@@ -26,7 +26,7 @@ The gap is not a bug. `graph._compute_bbox` builds the street network from the
 *rides'* own bounding box, clamped to `NYC_BBOX` — so riding to Long Island
 once widens the box, pulls in every street in it, and lowers the percentage.
 The figure went down for riding further, which is the opposite of what a
-coverage number is for. A per-neighbourhood denominator does not have the
+coverage number is for. A per-neighborhood denominator does not have the
 problem at all, and summing the areas gives the citywide figure the label was
 always claiming.
 
@@ -59,11 +59,10 @@ feels: the top 5 areas hold 14% of ridden km, the top 20 hold 39%, the top 50
 hold 65%.
 
 Passes below are counted over the same rideable edges as the coverage column,
-so the two agree. The map's own popup counts every drawn corridor in the area
-— sidewalks and service roads included, and merged corridors rather than graph
-edges — and runs about 3x higher.
+so the two agree. **The map's popup does not show them** — see "Rides, not
+passes" below.
 
-| neighbourhood | | ridden | of it | rides | passes |
+| neighborhood | | ridden | of it | rides | passes |
 |---|---|---|---|---|---|
 | East Williamsburg | Bk | 36.3 km | 45.5% | 182 | 2,013 |
 | Midtown-Times Square | Mn | 25.2 km | 55.9% | 302 | 1,319 |
@@ -109,7 +108,7 @@ never splits a count across two areas. Splitting every ridden edge on the
 polygons it crosses (`--boundaries`) gives the error:
 
 > 750 of the ridden edges cross a boundary, and **44.9 km — 4.9% of ridden
-> length — sits outside the neighbourhood its midpoint fell in.**
+> length — sits outside the neighborhood its midpoint fell in.**
 
 That 4.9% is not spread thinly. It is a handful of long ways that span a
 boundary by design:
@@ -134,19 +133,19 @@ stronger than a fill colour.
 ## The Citibike claim does not survive at this resolution
 
 That write-up says a reader of the dock layer can find "that Citibike trips
-cluster where the ride heatmap is thin". Per neighbourhood, they do the
+cluster where the ride heatmap is thin". Per neighborhood, they do the
 opposite:
 
-- **Every** neighbourhood with a Citibike dock endpoint also has ridden street.
+- **Every** neighborhood with a Citibike dock endpoint also has ridden street.
   Zero exceptions out of 64.
 - Dock volume correlates *positively* with coverage (Spearman **+0.71**) and
   with ridden km (**+0.79**).
-- The busiest dock neighbourhoods are the best-covered ones: Midtown-Times
+- The busiest dock neighborhoods are the best-covered ones: Midtown-Times
   Square (1,627 endpoints, 55.9% covered), Hell's Kitchen (414, 48.5%), Lower
   East Side (407, 59.5%).
 
-The docks and the bike go to the same neighbourhoods. If the effect the
-write-up describes is real it is *within* a neighbourhood — a dock on an
+The docks and the bike go to the same neighborhoods. If the effect the
+write-up describes is real it is *within* a neighborhood — a dock on an
 avenue the bike never turns down — and a 262-polygon cut cannot see it. The
 claim has been corrected there rather than deleted, because the point it was
 making (a layer lets a reader find things nobody ranked) still stands; it was
@@ -154,7 +153,7 @@ the example that was unchecked.
 
 ## Why it is a layer and not a table
 
-A ranked table of neighbourhoods states one finding. Per `CLAUDE.md` — and per
+A ranked table of neighborhoods states one finding. Per `CLAUDE.md` — and per
 the dock layer's own [detour](citibike-trips.md#the-detour-worth-recording),
 where a five-row list was chosen over a map and then reverted — that is the
 wrong test for this project. So the export ships polygons, and the page draws
@@ -168,10 +167,71 @@ Two decisions made it worth the payload:
   up to `filterHi`. So the slider and the time-lapse fill the city in, and 240
   polygons are not the one thing on the page that sits still while everything
   else moves. It follows the range's upper end only, because "how much had I
-  ridden by then" is a running total; the popup says so.
+  ridden by then" is a running total.
 - **Every drawn feature carries the area it is in** (`properties.n`), so a
-  popup can count the passes inside one neighbourhood in the visible range.
+  popup can count the rides through one neighborhood in the visible range.
   That is the number tying the polygon to the streets under it.
+
+## Rides, not passes
+
+The popup's third row counted passes at first, and it was wrong. **Forest
+Hills read "104".** It holds 104 drawn segments, each ridden exactly once, by
+the same **two** rides — the row was summing a per-street number across an
+area, and 104 segment-crossings reads as having been there 104 times.
+
+A pass is a property of one stretch of street. "4 passes" on a street popup
+means that stretch was ridden four times, which is exactly right there and
+meaningless once added up over a neighborhood. The row counts distinct rides
+now: Forest Hills 2, East Williamsburg 254, Midtown-Times Square 726.
+
+There is no honest area-level pass count available. The real one — how many
+times a ride entered and left the area — needs the order and the clock of a
+ride's edges, and a feature's `rides` array carries neither. Distinct rides
+is the question the data can answer.
+
+The per-area ride counts run higher than the audit's (254 against 182 for
+East Williamsburg) because they come from the drawn corridors: sidewalks and
+service roads are included, and a merged corridor placed by its midpoint can
+reach well past the boundary. The audit's column is over rideable graph edges
+only. Both are stated; neither is claimed to be the other.
+
+## Time in a neighborhood
+
+`time_s` sums `edge_speed`'s elapsed seconds over the area's edges. It is a
+measurement, not an estimate: the seconds come from the ride CSVs' own
+timestamps projected onto known geometry, never from distance over an assumed
+speed.
+
+Three things it is not:
+
+- **Not date-filterable.** `edge_speed` aggregates across rides with no
+  per-ride breakdown, so unlike `new` this cannot follow the slider. The
+  panel that shows it says all-time, and the popup's row says so on hover.
+- **Not restricted to rideable tags.** It is the one figure in the block that
+  counts every timed edge whatever its highway tag — time on a park path is
+  still time spent in the neighborhood. That is why Staten Island can show
+  0.0% covered and 10 minutes.
+- **Not a total.** The pass detector places ~357 of the ~519 recorded hours;
+  the rest is off-network, inside a recording gap, or on a pass too short to
+  admit. It is a floor.
+
+What it turns out to be good for is separating the neighborhoods you ride
+*through* from the ones you ride *in*. Central Park: 2.6 of 14.1 miles ridden,
+131 rides, **20 hours** — a park ridden round and round. Forest Hills: 2 rides,
+17 minutes. Midtown-Times Square, the busiest: 44 hours.
+
+| borough | covered | time |
+|---|---|---|
+| Manhattan | 32.4% | 238 h |
+| Brooklyn | 10.5% | 90 h |
+| Queens | 4.4% | 22 h |
+| Bronx | 4.1% | 7.1 h |
+| Staten Island | 0.0% | 10 min |
+
+That table is the Neighborhoods stats section. It is all-time, like every
+other section of that panel — the layer is the part that follows the slider,
+and a table that moved under the reader while they read it would be a
+different and worse thing.
 
 The whole block is 88 KB gzipped on a 704 KB payload: 240 simplified polygons
 at ~11 m tolerance (the raw boundary file is 1.6 MB gzipped, more than the
@@ -187,7 +247,7 @@ and a third ramp would need a third legend.
   metres and dates. Everything else the popup shows is counted from the
   features already on the page.
 - **It does not change `coverage`.** `coverage.pct` is still measured over
-  every rideable edge in the graph; the neighbourhood block adds the NYC-only
+  every rideable edge in the graph; the neighborhood block adds the NYC-only
   totals beside it. Two denominators, both shipped, both labelled.
 - **Boundaries are 2020 vintage and pinned.** NTA boundaries were redrawn for
   2020; mixing vintages would double-count the areas that changed, so

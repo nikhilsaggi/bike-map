@@ -136,7 +136,7 @@ def main(argv: list[str] | None = None) -> None:
         os.environ["MATCH_WORKERS"] = str(args.workers)
 
     # 1. Load state (relocating any caches left over from the flat layout).
-    # The neighbourhood boundaries are fetched here rather than at export
+    # The neighborhood boundaries are fetched here rather than at export
     # time: it is a one-off 4.6 MB download, and the export stays offline.
     _migrate_legacy_caches()
     ensure_boundaries()

@@ -1,4 +1,4 @@
-"""Tests for the per-neighbourhood coverage block (no network, synthetic polygons)."""
+"""Tests for the per-neighborhood coverage block (no network, synthetic polygons)."""
 
 from __future__ import annotations
 
@@ -83,6 +83,36 @@ def test_measure_splits_the_coverage_measurement_by_area(areas):
     assert round(east["ridden_m"]) == 100
     # First ridden: the earliest ride on the edge, not the last one written.
     assert list(west["first"]) == ["2024-01-05"]
+
+
+def test_measure_sums_the_time_measured_on_each_area(areas):
+    """Time comes from edge_speed, and counts tags coverage leaves out."""
+    edge_geom = {
+        (1, 2): [lonlat(100.0, 0.0), lonlat(200.0, 0.0)],  # west, rideable
+        (4, 5): [lonlat(700.0, 0.0), lonlat(800.0, 0.0)],  # east, rideable
+        (6, 7): [lonlat(700.0, 100.0), lonlat(800.0, 100.0)],  # east, a footway
+    }
+    edge_hw = {(1, 2): "residential", (4, 5): "residential", (6, 7): "footway"}
+    # One chunk each: [f_dist, f_time, f_moving, f_n, r_dist, r_time, r_moving, r_n].
+    state = {
+        "edge_rides": {},
+        "edge_speed": {
+            (1, 2): {"b": 90.0, "c": [[100.0, 60.0, 55.0, 1.0, 0.0, 0.0, 0.0, 0.0]]},
+            (4, 5): {"b": 90.0, "c": [[100.0, 20.0, 20.0, 1.0, 100.0, 25.0, 25.0, 1.0]]},
+            # A sidewalk is out of the coverage denominator, but the time on
+            # it was still spent in the neighborhood.
+            (6, 7): {"b": 90.0, "c": [[100.0, 30.0, 30.0, 1.0, 0.0, 0.0, 0.0, 0.0]]},
+        },
+    }
+    west, east = neighborhoods.measure(areas, edge_geom, edge_hw, state)
+    assert west["time_s"] == 60.0  # forward only
+    assert east["time_s"] == 75.0  # both directions, plus the footway's 30 s
+
+
+def test_measure_without_speed_records_reports_no_time(areas):
+    edge_geom = {(1, 2): [lonlat(100.0, 0.0), lonlat(200.0, 0.0)]}
+    rows = neighborhoods.measure(areas, edge_geom, {(1, 2): "residential"}, {"edge_rides": {}})
+    assert rows[0]["time_s"] == 0.0
 
 
 def test_measure_without_boundaries_is_empty():
