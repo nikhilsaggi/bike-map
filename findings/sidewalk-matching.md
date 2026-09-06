@@ -121,6 +121,21 @@ penalised states still occupy the eight slots, so the road alternatives that
 should have been explored are still crowded out. Removal is what frees the
 lattice, which is also why it is 2.4x faster rather than 20% faster.
 
+## The limitation this leaves
+
+A protected bike path mapped in a pedestrian class, running beside the street
+it belongs to, is a sidewalk as far as this filter can tell: parallel, close,
+pedestrian-tagged. Geometry cannot separate the two, because there is nothing
+geometric to separate — the difference is what the way is *for*, which lives
+in tags the cached graph does not carry. Where such a path is one candidate
+among several the result is usually right anyway, since the street beside it
+is still reachable and the fixes decide. Where it is the only candidate a ride
+has, the same mechanism that removes a pavement removes the thing the rider
+was actually on.
+
+That is the strongest argument for the subtag route below, and the reason the
+threshold is set where the sweep says rather than where recall would like.
+
 ## If the graph is ever refetched
 
 Adding `footway` and `bicycle` to `ox.settings.useful_tags_way` would let
@@ -172,16 +187,20 @@ fixes as arbiter had found that 95% of that area's counted-but-unridden
 street metres — 18.8 of 19.9 km — had a ridden footway running within 15 m
 and 20 degrees of them. That is what those metres were.
 
-**The seven areas that got worse are the filter's real cost**, and they are
-small: Chinatown-Two Bridges 56.2 -> 54.5%, Canarsie Park & Pier 47.9 ->
-43.8%, Fordham Heights 11.3 -> 10.2%. Two different mechanisms, both visible
-in the edge sets. Fordham Heights lost 186 m of Grand Concourse and gained
-nothing; Canarsie lost 340 m of Seaview Avenue and gained nothing — these are
-the ~100 m skip holes, landing somewhere rather than nowhere. Chinatown is
-churn between parallel candidates: it lost 3.4 km including Chrystie Street
-and gained 2.9 km including Pike Street's cycleway, for a net half kilometre.
-Neither is a reason to widen the filter, and both are what the 0.6% skip cost
-looks like from close up.
+**The seven areas that got worse are small and mixed**: Chinatown-Two Bridges
+56.2 -> 54.5%, Canarsie Park & Pier 47.9 -> 43.8%, Fordham Heights 11.3 ->
+10.2%. Chinatown is churn between parallel candidates — 3.4 km lost including
+Chrystie Street, 2.9 km gained including Pike Street's cycleway, a net half
+kilometre. The other two lost a single short stretch each and gained nothing:
+186 m of Grand Concourse, 340 m of Seaview Avenue.
+
+Whether such a loss is a skip hole or a correction has to be asked of the
+crediting ride's own fixes, and the answer is not uniform. Of the three Grand
+Concourse edges, one is plainly a correction — that ride's fixes come within
+1 m of the pedestrian edge the filter removed against 10 m of the carriageway,
+so the credit it lost was never earned — while on the other two the fixes are
+nearer the carriageway (8 m against 13, 10 m against 69). Small losses of both
+kinds, then, and no case among them argues for widening the filter.
 
 One measurement that did *not* move is the check on all of it. Distance
 ridden — metres along the trace, from `edge_speed` — moved +1.5% per area
