@@ -211,9 +211,13 @@ Three things they are not:
   that count every measured edge whatever its highway tag — distance and time
   on a park path are still distance and time spent in the neighborhood. That
   is why Staten Island can show 0.0% covered and 10 minutes.
-- **Not totals.** The pass detector places ~364 of the ~519 recorded hours;
-  the rest is off-network, inside a recording gap, or on a pass too short to
-  admit. Distance is short by the same passes. Both are floors.
+- **Not totals.** The pass detector places 373 of the 519 recorded hours and
+  5,048 of the 6,726 recorded km — around a quarter of what was recorded
+  never lands on an edge at all, being off-network, inside a recording gap,
+  or on a pass too short to admit. Both are floors. The per-area figures in
+  this block sum to less again (364 hours), because they count only the time
+  inside a NYC neighborhood: that last ten hours is geography, not the
+  detector missing anything.
 
 What it turns out to be good for is separating the neighborhoods you ride
 *through* from the ones you ride *in*. Central Park: 3.1 of 14.1 miles ridden,
