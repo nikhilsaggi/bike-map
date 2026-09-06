@@ -1186,12 +1186,17 @@ function metList(met) {
   const help = document.createElement('span');
   help.className = 'cb-help';
   help.textContent = '?';
+  // States the rule as what counts, not what is excluded: both branches of it
+  // are real, even though on this export only one of them ever fires. "a
+  // different dock than I left it at" is the load-bearing half -- the
+  // comparison is against where that bike's own last trip ended, not against
+  // where I started last time.
   help.title =
-    'Bikes I unlocked more than once, counting only the times the bike had ' +
-    'moved on in between. Picking a bike back up off the dock I parked it at ' +
-    'within 48 hours is a round trip, not a meeting, and is left out — that ' +
-    'is 200 of 293 repeats. Click an id to play the recordings made on that ' +
-    'bike; ↑↓ steps them.';
+    'Bikes I rode more than once, where I picked the bike up either from a ' +
+    'different dock than I left it at, or from the same dock 48+ hours later. ' +
+    'Sooner than that at the same dock is a round trip, not a meeting — 200 ' +
+    'of 293 repeats. Click an id to play that bike’s recordings; ' +
+    '↑↓ steps them.';
   title.appendChild(help);
   wrap.appendChild(title);
 

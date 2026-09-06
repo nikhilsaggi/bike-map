@@ -190,8 +190,15 @@ reads everything from `rides.geojson.gz` top-level `properties`.
   bike met again.** `_reencounters` calls it a round trip when that bike's own
   last trip ended at the dock this one starts from (`RESUME_MAX_GAP_S`,
   insensitive from 2h to 30 days) -- 200 of the real export's 293 repeats, and
-  every same-day one. The panel reports only the other 93, as "unlocks on a
-  bike ridden before"; **never report the raw 253 as "bikes ridden more than
+  every same-day one. **Both halves of that condition are load-bearing even
+  though only one ever fires**: no repeat in five years is "different dock,
+  back within 48h", because same-dock repeats are all inside 48h or 16+ days
+  out while different-dock ones are all 41+ days out. Do not simplify the
+  predicate to the clock alone on the evidence that the other branch is empty
+  -- that reclassifies the first bike to turn up across town the same
+  afternoon, which is the case the rule exists for. The panel reports only
+  the other 93, as "unlocks on a bike ridden before";
+  **never report the raw 253 as "bikes ridden more than
   once"**, which is the wording this replaced and which counts a person taking
   their own bike home. The export ships `resumes` beside `reencounters` and
   nothing draws it -- it is there so the 93 can be checked against what it was

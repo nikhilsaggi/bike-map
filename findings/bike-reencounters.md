@@ -206,11 +206,23 @@ than dropped — hiding them would shrink the list to suit the renderer, which
 is the same mistake as dropping a dock GBFS cannot place.
 
 The **(?)** carries the definition, because "re-encounter" is a rule and not a
-word a reader can be expected to infer: *picking a bike back up off the dock I
-parked it at within 48 hours is a round trip, not a meeting, and is left out —
-that is 200 of 293 repeats.* Putting the rule behind a hover was the only way
-to keep the 48-hour window on the page at all; as a sentence it crowded out
-the list, and without it "re-encounter" is just a word.
+word a reader can be expected to infer: *bikes I rode more than once, where I
+picked the bike up either from a different dock than I left it at, or from the
+same dock 48+ hours later. Sooner than that at the same dock is a round trip,
+not a meeting — 200 of 293 repeats.* Putting the rule behind a hover was the
+only way to keep it on the page at all; as a sentence it crowded out the list,
+and without it "re-encounter" is just a word.
+
+It states the rule as what *counts* rather than what is thrown out, which took
+a rewrite to get to. Both branches have to be in it even though **only one of
+them ever fires**: no repeat in five years is "different dock, back within 48
+hours". Every same-dock repeat is either inside 48h (200 of them) or 16 to 227
+days later (7); every different-dock repeat is at least 41 days later (86). The
+two populations do not overlap at all, which is why the split is so insensitive
+to the window — there is nothing in the data between "same dock, same day" and
+"somewhere else, over a month later". Describing only the branch that fires
+would be describing a different rule, and would silently reclassify the first
+bike that turns up across town the same afternoon.
 
 This is a list where a chart used to be, and the swap is the point. The two
 chance tests below were built, drawn, and taken off the panel:

@@ -531,10 +531,14 @@ test.describe('Citibike dock layer', () => {
     // does nothing, rather than being dropped to make the list all clickable.
     await expect(chips.nth(2)).toHaveClass(/dim/);
     await expect(chips.nth(2)).toHaveAttribute('title', /No GPS recording covers any of them/);
-    // The (?) carries the 48-hour rule, which is not inferable from the words.
+    // The (?) carries the rule, which is not inferable from the words. Both
+    // branches have to be in it: a different dock than the bike was left at,
+    // OR the same dock after 48h. Only the second ever fires on the real
+    // export, but stating one branch would describe a different rule.
     const help = section.locator('.cb-help');
+    await expect(help).toHaveAttribute('title', /different dock than I left it at/);
+    await expect(help).toHaveAttribute('title', /same dock 48\+ hours later/);
     await expect(help).toHaveAttribute('title', /round trip, not a meeting/);
-    await expect(help).toHaveAttribute('title', /48 hours/);
   });
 
   test('a bike chip plays its recordings, and the arrows step them', async ({ page }) => {
