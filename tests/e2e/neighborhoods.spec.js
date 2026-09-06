@@ -35,7 +35,8 @@ test.describe('Neighborhood layer', () => {
     await gotoMap(page);
     await expect(page.locator('#nb-check')).not.toBeChecked();
     expect(await page.evaluate(() => map.hasLayer(nbLayer))).toBe(false);
-    await expect(page.locator('#nb-note')).toHaveText(/2 tabulation areas/);
+    // What the fill means lives on the control, not in a caption under it.
+    await expect(page.locator('#nb-toggle')).toHaveAttribute('title', /2 NYC tabulation areas/);
 
     await showAreas(page);
     expect(await page.evaluate(() => nbLayer.getLayers().length)).toBe(2);

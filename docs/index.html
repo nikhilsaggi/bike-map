@@ -202,7 +202,6 @@
   #nb-toggle.hidden { display: none; }
   #nb-toggle:hover { color: #ccc; }
   #nb-check { vertical-align: -1px; margin-right: 3px; accent-color: #cfc3a8; }
-  #nb-note { color: #555; font-size: 9px; line-height: 1.4; margin: 2px 0 0 17px; }
   .nb-popup { min-width: 150px; }
   .nb-head { color: #e8dcc0; font-weight: 600; }
   .nb-sub { color: #666; font-size: 10px; margin-bottom: 4px; }
@@ -251,7 +250,6 @@
   .pl-grid .boro:hover { color: #fff; }
   .pl-grid .v { color: #fff; text-align: right; font-variant-numeric: tabular-nums; }
   .pl-grid .v.dim { color: #888; }
-  .pl-note { color: #777; font-size: 9px; line-height: 1.4; margin-top: 8px; }
   .pl-top { margin-top: 8px; }
   .pl-row { display: grid; grid-template-columns: 1fr auto; gap: 10px; cursor: pointer; }
   .pl-row:hover .pl-name { color: #fff; }
@@ -445,7 +443,6 @@
   <label id="nb-toggle" class="hidden">
     <input type="checkbox" id="nb-check"> Neighborhoods
   </label>
-  <div id="nb-note"></div>
 </div>
 
 <script>
@@ -1339,8 +1336,15 @@ function renderPlaces(nb) {
   }
   const order = [...boros.entries()].sort((x, y) => y[1].ridden - x[1].ridden);
 
+  // The two columns are asked over different spans, and the headings carry
+  // that on hover rather than in a caption under the table: coverage is a
+  // running total the layer can follow, time is all-time because edge_speed
+  // has no per-ride split to filter by.
   const head =
-    `<span></span><span class="head">Covered</span><span class="head">Time</span>`;
+    `<span></span>` +
+    `<span class="head" title="Share of the borough's rideable streets ridden, all-time">` +
+    `Covered</span>` +
+    `<span class="head" title="Measured riding time on them, all-time">Time</span>`;
   const rows = order.map(([code, b]) => {
     const pct = b.net ? (100 * b.ridden) / b.net : 0;
     const name = BOROUGHS[code] || code;
@@ -1364,10 +1368,7 @@ function renderPlaces(nb) {
   const el = document.getElementById('stat-places');
   el.innerHTML =
     `<div class="pl-grid">${head}${rows}</div>` +
-    `<div class="sub-title pl-top">Most ridden</div>${top}` +
-    `<div class="pl-note">Share of each borough's rideable streets that have ` +
-    `been ridden, and measured time on them. All-time; the map layer follows ` +
-    `the date slider.</div>`;
+    `<div class="sub-title pl-top">Most ridden</div>${top}`;
   // textContent, not interpolation: these are names from city open data.
   el.querySelectorAll('.pl-row').forEach((row) => {
     const i = +row.dataset.area;
@@ -1423,11 +1424,14 @@ function initNeighborhoods(nb) {
     nbLayer.addLayer(poly);
     return poly;
   });
-  document.getElementById('nb-note').textContent =
-    `${nb.areas.length} tabulation areas · filled by streets ridden by the ` +
-    `date on screen`;
   const toggle = document.getElementById('nb-toggle');
   const check = document.getElementById('nb-check');
+  // On the control rather than under it: what the fill means is worth one
+  // sentence, and a caption sitting permanently under a checkbox is not
+  // where that sentence earns its place.
+  toggle.title =
+    `${nb.areas.length} NYC tabulation areas, each filled by the share of its ` +
+    'streets ridden by the later date on the slider';
   toggle.classList.remove('hidden');
   check.addEventListener('change', () => {
     if (check.checked) {
@@ -1674,7 +1678,7 @@ document.getElementById('ride-view-exit').addEventListener('click', exitRideView
 // Each row expands into the recap that used to be a separate modal.  The
 // table already carried rides/miles/new-miles per year, so the modal was
 // mostly a second rendering of this data one year at a time; what only it
-// had -- the year-over-year deltas, longest ride, biggest month, favourite
+// had -- the year-over-year deltas, longest ride, biggest month, favorite
 // time -- is now the row's detail.
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
@@ -1728,7 +1732,7 @@ function yearDetail(year) {
       ` title="Show this ride's route">${cur.longest.date} &middot; ` +
       `${Math.round(mi(cur.longest.km))} mi</span>`] : null,
     bigM !== null ? ['Biggest month', `${MONTHS[bigM]} &middot; ${cur.months[bigM]} rides`] : null,
-    ['Favourite time', `${WEEKDAYS[topWd]}s &middot; ${hourLabel(topH)}`],
+    ['Favorite time', `${WEEKDAYS[topWd]}s &middot; ${hourLabel(topH)}`],
   ].filter(Boolean);
   const vs = (dN || dKm)
     ? `<div class="yd-vs">vs ${+year - 1}: ${[dN && `${dN} rides`, dKm && `${dKm} mi`]
