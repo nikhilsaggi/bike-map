@@ -1724,8 +1724,7 @@ const PLACE_MODES = [
   {
     id: 'time',
     label: 'Time',
-    title: 'By measured riding time on their streets, all-time -- a floor, ' +
-      'since a pass off the network or inside a GPS gap is not placed',
+    title: 'By measured riding time on their streets, all-time',
     rank: a => a.time_s || 0,
     value: a => fmtDuration(a.time_s),
   },
