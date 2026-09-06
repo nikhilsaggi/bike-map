@@ -1746,12 +1746,15 @@ const PLACE_MODES = [
     title: "By the share of each one's rideable streets ridden, all-time",
     rank: a => (a.net_m ? a.ridden_m / a.net_m : 0),
     value: a => `${a.net_m ? Math.round((100 * a.ridden_m) / a.net_m) : 0}%`,
-    // The one ranking a small denominator wins, and the denominator is the
-    // graph rather than the neighborhood: the box clips Fort Hamilton to 2 mi
-    // of street and riding nearly all of it reads as 92% explored. So the
-    // denominator sits in the row beside the share -- the same reason
-    // `coverage` ships both of its own -- rather than in a note under the
-    // list or behind a floor that would quietly drop the edge of the map.
+    // The one ranking a small denominator wins, and the denominator is
+    // neither the neighborhood nor the drawn map: it is the rideable tags
+    // only. Fort Hamilton reads 92% off 2.4 mi because 130 graph edges in it
+    // reduce to four that count -- the army base's grid is `service` and the
+    // Belt Parkway is `motorway` -- so the streets on screen were never in
+    // the question. The denominator therefore sits in the row beside the
+    // share, the same reason `coverage` ships both of its own, rather than
+    // in a note under the list or behind a floor that would quietly drop the
+    // edge of the box.
     of: a => `of ${mi(a.net_m / 1000).toFixed(1)} mi`,
   },
 ];
