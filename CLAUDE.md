@@ -208,13 +208,23 @@ reads everything from `rides.geojson.gz` top-level `properties`.
   on screen and is not one. A row carries its index into `areas`, never its
   place in the list, because the click opens a polygon.
 - **Explored prints the network it is a share of, in the row.** That ranking
-  is the one a small denominator wins, and the denominator is the graph and
-  not the neighborhood: the box clips Fort Hamilton to 2.4 mi of street and
-  riding nearly all of it comes top at 92%, above Murray Hill's 61% of 18.6.
-  Shipping the denominator beside the share is the same move `coverage`
-  makes with its two. Don't answer it with a minimum-network floor instead --
-  that silently drops the edge of the box, which is a real place the bike
-  went.
+  is the one a small denominator wins, and the denominator is neither the
+  neighborhood nor the drawn map but `COVERAGE_EXCLUDE`-filtered graph edges:
+  Fort Hamilton comes top at 92% because 130 edges inside it reduce to 3.9 km
+  counted, 3.6 of it one cycleway -- the army base's own grid is 85 `service`
+  edges and the Belt Parkway is `motorway`, so neither is in the question the
+  percentage answers. Shipping the denominator beside the share is the same
+  move `coverage` makes with its two. Don't answer it with a minimum-network
+  floor instead -- that silently drops the edge of the box, which is a real
+  place the bike went.
+- **What is drawn and what is counted are two different sets, and the gap is
+  widest where the map looks fullest.** `_export_geojson` draws every matched
+  edge with no highway filter, so ridden footways, service roads and
+  motorways are all on screen in the same cyan as the counted streets;
+  coverage then measures only the filtered ones. Midtown-Times Square draws
+  91 km of ridden line and is credited 25 of 45 km, which is why full-looking
+  blocks read 56%. Before calling such a number wrong, check both sets --
+  `tools/neighborhood_audit.py` splits an area by highway tag.
 - **The Citibike panel is a two-column comparison**, Citibike against own
   bike, on trips / time / days / typical length. The Citibike column is the
   export's own totals (every trip, including ones no GPS ride covers); the
