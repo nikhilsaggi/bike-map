@@ -71,7 +71,9 @@ interactive Leaflet map (`docs/`, served via GitHub Pages) plus static PNGs.
 traces and must never land in `rides/`) and is not imported by any pipeline
 stage. `tools/` holds standalone analysis that is not
 part of the pipeline at all (`hmm_matcher_eval.py`, `weather_correlation.py`,
-`traversal_audit.py`, `neighborhood_audit.py`), plus `render_readme_map.py`,
+`traversal_audit.py`, `neighborhood_audit.py`, `bike_reencounters.py` -- which
+alone among them imports nothing from `bike_routes`, so it runs from the trips
+JSON on a checkout with no pipeline deps), plus `render_readme_map.py`,
 which crops the README's image out of the same caches; all are run from the
 repo root. `findings/`
 holds the write-ups of what that analysis found (moved out of the README to
@@ -184,6 +186,66 @@ reads everything from `rides.geojson.gz` top-level `properties`.
   recording can hold several Citibike trips but never several own-bike ones.
   A one-way-dock ranking used to live here and was dropped as not saying
   enough ([details](findings/citibike-trips.md)).
+- **A repeated bike id is two different events, and only one of them is a
+  bike met again.** `_reencounters` calls it a round trip when that bike's own
+  last trip ended at the dock this one starts from (`RESUME_MAX_GAP_S`,
+  insensitive from 2h to 30 days) -- 200 of the real export's 293 repeats, and
+  every same-day one. **Both halves of that condition are load-bearing even
+  though only one ever fires**: no repeat in five years is "different dock,
+  back within 48h", because same-dock repeats are all inside 48h or 16+ days
+  out while different-dock ones are all 41+ days out. Do not simplify the
+  predicate to the clock alone on the evidence that the other branch is empty
+  -- that reclassifies the first bike to turn up across town the same
+  afternoon, which is the case the rule exists for. The panel reports only
+  the other 93, as "unlocks on a bike ridden before";
+  **never report the raw 253 as "bikes ridden more than
+  once"**, which is the wording this replaced and which counts a person taking
+  their own bike home. The list's own tooltip does open with that phrase, and
+  it is not the same claim: it is immediately qualified by the rule ("picked
+  up either from a different dock or from the same dock 48+ hours later") and
+  it labels the 88 bikes, not the 253. Do not reconcile the two by loosening
+  either. The export ships `resumes` beside `reencounters` and
+  nothing draws it -- it is there so the 93 can be checked against what it was
+  cut from. Never derive a *rate* from any of it without the exposure: an
+  ebike can only re-meet an ebike already ridden, which is what made ebikes
+  look 7x rarer than they are ([why](findings/bike-reencounters.md), rerun
+  with `python tools/bike_reencounters.py`).
+- **The panel's re-encounter list counts encounters, not trips.** A bike
+  ridden to lunch and back on one afternoon was unlocked twice and *met* once;
+  `_reencounters` folds a run of round trips into the encounter that started
+  it and dates that encounter by its earliest trip, so the row's `n` and its
+  day-gaps are both between occasions rather than between legs. The first
+  version derived "times met" as `trips - 1` and overstated every bike whose
+  repeat was a round trip -- the headline 93 was right throughout, so nothing
+  but the row caught it. Never reintroduce a trip count here.
+- **That list is a way into the map, not a readout.**
+  `_met_rows` ships `properties.citibike.met` as `[id, encounters, gaps,
+  rides]` per bike met again, sorted by encounters, and a row opens that
+  bike's recordings in single-ride view --
+  the same cycle a dock row opens, through the same `dockTrace`. That cycle
+  now has two owners, so controls compare `dockTrace.key` (`d:<dock>` or
+  `b:<id>`) rather than `.to`, and only a dock cycle sets `.to`, which is what
+  narrows the drawn links. **A bike with no recording keeps its row**, dimmed,
+  and keeps its place in the sort -- it was met, and ranking on what happens
+  to be clickable would shrink the list to suit the renderer.
+- **The fleet-generation chart is two buckets and may never be more.**
+  `_generations` splits trips per year on the id shape alone -- five digits is
+  the older fleet, hyphenated sevens the newer -- and that reading is the
+  owner's, from the physical bikes, since Citi Bike publishes no
+  number-to-model mapping. Structure *within* either shape was tested for and
+  is not there (prefix against first-seen date is r = -0.06; the prefix space
+  is flat and dense, a lot number rather than a serial), so a finer split
+  would be invented. The caption must keep saying the share is of one rider's
+  unlocks: it measures the racks that rider used, not the fleet
+  ([both](findings/citibike-trips.md)).
+- **A chance-test chart was built here, drawn four ways, and taken off.** The
+  two permutation tests live in `tools/bike_reencounters.py` now, and a result
+  needing a p-value belongs there rather than on the panel. Two of those four
+  versions were wrong in ways only rendering revealed -- band histograms (93
+  events over 4 bands is all noise) and a percentile axis (a middle-95% band
+  covers 95% of the track by construction). If a chart is ever reinstated
+  here, read [why each failed](findings/bike-reencounters.md) first, and note
+  that the working one still lost to a list you can click.
 - **The dock layer is meant to be explored, not read.** Markers resize with
   the same `filterLo`/`filterHi` range that filters the edges (`applyFilter`
   calls `applyDockFilter`), so the slider and time-lapse move them too. The

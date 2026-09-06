@@ -254,6 +254,89 @@
   .cb-cmp .label { color: #888; }
   .cb-cmp .v { color: #fff; text-align: right; font-variant-numeric: tabular-nums; }
   .cb-note { color: #777; font-size: 9px; line-height: 1.4; margin-top: 8px; }
+  /* The bikes met again, one row each: id, how many times it turned up, and
+     the gaps between those times. Capped and scrollable so 88 rows cannot
+     push the rest of the panel off screen; .scrollbox is the dock popup's own
+     thin bar. The margin is what separates the list from its heading. */
+  /* scrollbar-gutter so the bar's width is reserved whether or not the list
+     overflows -- the header sits outside the scroll box, and without a stable
+     gutter its right-aligned column would sit 6px off from the rows' whenever
+     the list happens to be short enough not to scroll. */
+  .cb-met {
+    max-height: 116px; overflow-y: auto; scrollbar-gutter: stable; margin-top: 5px;
+  }
+  /* Column labels, sticky inside the scroll box rather than sitting above it:
+     the reserved scrollbar gutter is *inside* that box, so a header outside it
+     is a gutter's width out of true with the rows it labels. Sticky also keeps
+     the labels on screen through all 88 rows. Opaque, or rows scroll under it
+     and show through. It borrows the rows' own column classes rather than
+     repeating the widths, so the two cannot drift apart. */
+  .cb-met-head {
+    position: sticky; top: 0; z-index: 1; background: #101010;
+    display: flex; gap: 6px; padding: 2px 3px 3px;
+    color: #666; font-size: 9px; letter-spacing: 0.3px;
+  }
+  /* The whole row is the control, not just the id: a 9px id is a poor hit
+     target for something whose job is to be clicked. */
+  .cb-met-row {
+    display: flex; align-items: baseline; gap: 6px; padding: 1px 3px;
+    border-radius: 3px; cursor: pointer; color: #aaa; font-size: 9px;
+  }
+  .cb-met-row:hover { background: #1a1a1a; color: #fff; }
+  /* Cyan is selection everywhere else on the page, so it is selection here. */
+  .cb-met-row.on { background: #14343d; color: #dff4fb; }
+  /* A bike met again with no recording over any of its trips is still a bike
+     met again. It keeps its row and says why it cannot be opened, rather than
+     being dropped to make the list all clickable. */
+  .cb-met-row.dim { color: #555; cursor: default; }
+  .cb-met-row.dim:hover { background: transparent; color: #555; }
+  .cb-met-id { flex: none; width: 74px; font-variant-numeric: tabular-nums; }
+  .cb-met-n { flex: none; width: 26px; text-align: right; font-variant-numeric: tabular-nums; }
+  /* Pushed right and dimmed: the gaps are context for the count, not a second
+     ranking, and the list is sorted on the count. */
+  .cb-met-gap {
+    flex: 1; text-align: right; color: #666; font-variant-numeric: tabular-nums;
+  }
+  .cb-met-row.on .cb-met-gap { color: #8fbecb; }
+
+  /* A question mark that carries the definition, because "re-encounter" is a
+     rule (48h, same dock) and not a word a reader can be expected to guess. */
+  .cb-help {
+    display: inline-block; width: 11px; height: 11px; line-height: 11px;
+    text-align: center; border-radius: 50%; border: 1px solid #444;
+    color: #888; font-size: 8px; cursor: help; margin-left: 4px; vertical-align: 1px;
+  }
+  .cb-help:hover { color: #fff; border-color: #888; }
+  /* The fleet turning over: one stacked bar per year, two ordered categories.
+     Two steps of the dock layer's own tone rather than two hues -- older and
+     newer are a sequence, not two identities, and a second hue here would
+     compete with the plasma ramp the map already spends colour on. */
+  .cb-gen-row { display: flex; align-items: center; gap: 6px; margin: 2px 0; }
+  .cb-gen-year {
+    width: 24px; text-align: right; color: #888; font-size: 10px; flex: none;
+    font-variant-numeric: tabular-nums;
+  }
+  .cb-gen-track { display: flex; flex: 1; height: 9px; gap: 2px; }
+  /* A 2px gap between the segments, not a border: a border would add width
+     to the thing whose width is the measurement. */
+  .cb-gen-old { background: #3d5a63; }
+  .cb-gen-new { background: #a8d8e8; }
+  /* A share on each side, each against the segment it belongs to, so the bar
+     is read outwards from its own split rather than against one axis end.
+     Both wear the panel's text colour rather than their series' -- a number
+     tinted like its bar reads as part of the bar. */
+  .cb-gen-val {
+    width: 25px; color: #ccc; font-size: 10px; flex: none;
+    font-variant-numeric: tabular-nums;
+  }
+  .cb-gen-val.older { text-align: right; }
+  /* Two series, so a legend is not optional. Swatches carry the identity and
+     the words stay in the panel's own text colour. nowrap on each item because
+     a 236px panel otherwise breaks one between its swatch and its label,
+     leaving orphaned squares on a line of their own. */
+  .cb-gen-key { display: flex; gap: 10px; color: #777; font-size: 9px; margin: 4px 0 0 32px; }
+  .cb-gen-key span { white-space: nowrap; }
+  .cb-gen-key i { display: inline-block; width: 8px; height: 8px; margin-right: 3px; }
 
   @media (max-width: 640px) {
     #stats-sections.open { max-height: min(240px, calc(100vh - 300px)); }
@@ -330,14 +413,22 @@
     border: 1px solid #444; backdrop-filter: blur(6px);
   }
   .ride-popup .leaflet-popup-tip { background: rgba(13, 13, 13, 0.92); }
-  .ride-popup .leaflet-popup-close-button { color: #888; }
-  .ride-popup .leaflet-popup-close-button:hover { color: #fff; }
+  /* The close button sits directly over the list's scroll bar, so the two
+     read as one band down the right edge instead of two marks in the corner.
+     That is what the narrow right gutter below is for: 9px of content margin
+     puts the 6px bar's centre 12px from the edge, where the button's centre
+     already is. Move one and the other has to follow. */
+  .ride-popup a.leaflet-popup-close-button {
+    color: #888; width: 18px; height: 18px;
+    font-size: 15px; line-height: 18px; right: 3px; top: 3px;
+  }
+  .ride-popup a.leaflet-popup-close-button:hover { color: #fff; }
 
   /* A popup opens on top of the very stretch of map it describes, so it gets
      a grab bar to move it aside. Only the bar drags: the rows under it are
      links and the list scrolls. The tip goes once the box has been moved,
      because it would be pointing at nothing. */
-  .ride-popup .leaflet-popup-content { margin-top: 6px; }
+  .ride-popup .leaflet-popup-content { margin-top: 6px; margin-right: 7px; }
   .popup-drag {
     height: 14px; display: flex; align-items: center; justify-content: center;
     cursor: grab; touch-action: none;
@@ -771,10 +862,14 @@ let dockMarkers = [];      // index-aligned with cbData.docks
 let dockTrips = [];        // dock index -> indices into cbData.trips
 let dockSelected = null;   // dock index whose trips are drawn, if any
 let dockTraceLabels = [];  // relabel callbacks for the open popup's route links
-// The pair of docks whose recordings are being stepped through, if any:
-// { to: partner dock index, rides: [ride id, ...] newest first, at: which one
-// is drawn }. It lives out here rather than in the row that started it so the
-// keyboard and the ride-view bar can address the same cycle.
+// The recordings being stepped through, if any:
+// { key: what started it, to: partner dock index or null, rides: [ride id, ...]
+//   newest first, at: which one is drawn }.
+// It lives out here rather than in the control that started it so the keyboard
+// and the ride-view bar can address the same cycle. `key` is what a control
+// compares itself against, because two of them can now open a cycle -- a dock
+// popup's row ("d:<dock>") and the stats panel's bike chips ("b:<bike id>") --
+// and only the dock case narrows the drawn links, which is what `to` is for.
 let dockTrace = null;
 let dockSqrtMax = 1;
 
@@ -845,7 +940,7 @@ function showDockLinks(di) {
   // pair's route is up that pair is the only line: the trip, and the ride
   // that was made on it.
   for (const p of dockPartners(di, lo, hi)) {
-    if (dockTrace && p.idx !== dockTrace.to) continue;
+    if (dockTrace && dockTrace.to !== null && p.idx !== dockTrace.to) continue;
     const to = cbData.docks[p.idx];
     if (!to.at) continue;
     L.polyline([[from.at[1], from.at[0]], [to.at[1], to.at[0]]], {
@@ -867,14 +962,15 @@ function focusDock(di) {
   if (m && dockLayer.hasLayer(m)) m.openPopup();  // auto-pans if off screen
 }
 
-// Show one of a pair's recordings and make it the cycle. `at` wraps, so the
-// arrow keys can run off either end without falling out of the pair.
-function startDockTrace(to, rides, at) {
+// Show one of a set of recordings and make it the cycle. `at` wraps, so the
+// arrow keys can run off either end without falling out of the set.
+function startDockTrace(key, to, rides, at) {
   const i = ((at % rides.length) + rides.length) % rides.length;
-  dockTrace = { to, rides, at: i };
+  dockTrace = { key, to, rides, at: i };
   viewRide(rides[i], true);       // keep the popup: its rows are the point
   // ... and narrow the links to this pair, so the route is not lost in the
-  // starburst of a dock that reaches a hundred others.
+  // starburst of a dock that reaches a hundred others. Only a dock cycle has
+  // a pair to narrow to; a bike's recordings are not one dock's trips.
   if (dockSelected !== null) showDockLinks(dockSelected);
 }
 
@@ -882,7 +978,9 @@ function startDockTrace(to, rides, at) {
 // is what Escape and the bar's own button are for, and a keypress that
 // silently ended the detour would be easy to hit by accident.
 function stepDockTrace(delta) {
-  if (dockTrace) startDockTrace(dockTrace.to, dockTrace.rides, dockTrace.at + delta);
+  if (dockTrace) {
+    startDockTrace(dockTrace.key, dockTrace.to, dockTrace.rides, dockTrace.at + delta);
+  }
 }
 
 // A dock pair the export found a GPS recording for can put that recording on
@@ -904,7 +1002,8 @@ function addTraceControl(meta, p) {
   // Where this row sits in the cycle on screen, or -1 when the cycle belongs
   // to another row, or to nothing. Read rather than remembered: ride view is
   // left from Escape, the exit bar and the date filter too.
-  const at = () => (dockTrace && dockTrace.to === p.idx && rideView !== null ? dockTrace.at : -1);
+  const at = () =>
+    (dockTrace && dockTrace.key === `d:${p.idx}` && rideView !== null ? dockTrace.at : -1);
 
   function relabel() {
     const i = at();
@@ -943,7 +1042,7 @@ function addTraceControl(meta, p) {
     const i = at();
     // Clicking walks the cycle and then off the end of it, so the row that
     // started a detour can end it. The arrow keys wrap instead.
-    if (i < 0) startDockTrace(p.idx, p.rides, 0);
+    if (i < 0) startDockTrace(`d:${p.idx}`, p.idx, p.rides, 0);
     else if (i + 1 < n) stepDockTrace(1);
     else exitRideView();
     relabel();
@@ -1120,6 +1219,213 @@ function initDockLayer(cb) {
   });
 }
 
+// Relabel callbacks for the bike chips, one per chip. They outlive any dock
+// popup, so they are kept apart from dockTraceLabels, which dockPopup clears.
+let metChipLabels = [];
+
+// The bikes met again, one chip each, and each chip is a way into the map:
+// click it and the GPS recordings made on that bike play through single-ride
+// view, the same cycle a dock popup's route link opens.
+//
+// A re-encounter is a bike unlocked again after it moved on -- not one picked
+// back up off the dock it was parked at, which is a round trip and is 200 of
+// the export's 293 repeats. The (?) carries that rule, because it is a rule
+// and not something a reader can infer from the word.
+// findings/bike-reencounters.md has the derivation.
+// The fleet replacing itself, sampled by five years of unlocks. Lyft writes
+// two shapes of bike id -- five digits (16825) and hyphenated sevens
+// (812-7417) -- and the shape is the generation, the five-digit ones being
+// the older bikes.
+//
+// This is a sample of one rider's docks, not a census of the fleet: you take
+// whatever is on the rack, so it estimates what was *at those docks*, which
+// is the honest claim and the one the caption makes. 2021 is 22 trips and
+// says so in its tooltip rather than being dropped -- the export's first
+// months are thin, and a bar that hides its own n is worse than a short one.
+function genChart(gen) {
+  if (!gen?.length) return null;
+  const wrap = document.createElement('div');
+  const title = document.createElement('div');
+  title.className = 'histo-title';
+  title.textContent = 'Fleet generation';
+  const help = document.createElement('span');
+  help.className = 'cb-help';
+  help.textContent = '?';
+  // Provenance only. The sampling caveat is not repeated here because it is
+  // already under the chart in full sight, where it has to stay -- it is the
+  // difference between "the fleet turned over" and "the fleet at my docks
+  // turned over", and a caveat that decides the claim does not belong on a
+  // hover.
+  help.title =
+    'Which generation of bike each trip was on, read off the id: five digits ' +
+    '(16825) is the older fleet, seven with a hyphen (812-7417) the newer. ' +
+    'Citi Bike publishes no number-to-model mapping, so the labels come from ' +
+    'the bikes themselves.';
+  title.appendChild(help);
+  wrap.appendChild(title);
+
+  for (const [year, older, newer] of gen) {
+    const total = older + newer;
+    if (!total) continue;
+    const row = document.createElement('div');
+    row.className = 'cb-gen-row';
+    row.title = `${year}: ${newer.toLocaleString()} of ${total.toLocaleString()} trips ` +
+      `on the newer fleet, ${older.toLocaleString()} on the older`;
+    const y = document.createElement('span');
+    y.className = 'cb-gen-year';
+    y.textContent = String(year);
+    const track = document.createElement('div');
+    track.className = 'cb-gen-track';
+    for (const [cls, n] of [['cb-gen-old', older], ['cb-gen-new', newer]]) {
+      if (!n) continue;
+      const seg = document.createElement('div');
+      seg.className = cls;
+      seg.style.flex = String(n);
+      track.appendChild(seg);
+    }
+    // Rounded independently, so the pair can read 41% / 59% or, on a year
+    // that splits near a half, 50% / 50% off 49.6 -- the bar carries the exact
+    // split and the labels are for reading, not for summing.
+    const oldVal = document.createElement('span');
+    oldVal.className = 'cb-gen-val older';
+    oldVal.textContent = `${Math.round(100 * older / total)}%`;
+    const val = document.createElement('span');
+    val.className = 'cb-gen-val';
+    val.textContent = `${Math.round(100 * newer / total)}%`;
+    row.append(y, oldVal, track, val);
+    wrap.appendChild(row);
+  }
+
+  const key = document.createElement('div');
+  key.className = 'cb-gen-key';
+  for (const [cls, label] of [['cb-gen-old', 'older'], ['cb-gen-new', 'newer']]) {
+    const item = document.createElement('span');
+    const sw = document.createElement('i');
+    sw.className = cls;
+    item.append(sw, document.createTextNode(label));
+    key.appendChild(item);
+  }
+  wrap.appendChild(key);
+  // The caveat is visible rather than only in the (?), because it is the
+  // difference between "the fleet turned over" and "the fleet at my docks
+  // turned over", and only the second one is measured here.
+  const note = document.createElement('div');
+  note.className = 'cb-note';
+  note.textContent = 'Share of my own unlocks, not a count of the fleet.';
+  wrap.appendChild(note);
+  return wrap;
+}
+
+function metList(met) {
+  if (!met?.length) return null;
+  metChipLabels = [];
+  const wrap = document.createElement('div');
+  const title = document.createElement('div');
+  title.className = 'histo-title';
+  title.textContent = 'Bike re-encounters';
+  const help = document.createElement('span');
+  help.className = 'cb-help';
+  help.textContent = '?';
+  // States the rule as what counts rather than what is excluded, and keeps
+  // both branches: the dock test and the clock test are separate conditions,
+  // and naming only the one that ever fires on this export would describe a
+  // different rule. The rows carry their own counts and click hints, so this
+  // says the definition and stops.
+  help.title =
+    'Bikes ridden more than once (picked up either from a different dock or ' +
+    'from the same dock 48+ hours later)';
+  title.appendChild(help);
+  wrap.appendChild(title);
+
+  // Three columns need naming: "3x" and "300, 99 d" are not self-describing,
+  // and the tooltip that spells them out only reaches one row at a time.
+  const head = document.createElement('div');
+  head.className = 'cb-met-head';
+  for (const [cls, label] of [
+    ['cb-met-id', 'bike'], ['cb-met-n', 'times'], ['cb-met-gap', 'days apart'],
+  ]) {
+    const cell = document.createElement('span');
+    cell.className = cls;
+    cell.textContent = label;
+    head.appendChild(cell);
+  }
+
+  const list = document.createElement('div');
+  list.className = 'cb-met scrollbox';
+  list.appendChild(head);
+  for (const [bike, encounters, gaps, rides] of met) {
+    const row = document.createElement('div');
+    row.className = 'cb-met-row';
+    const id = document.createElement('span');
+    id.className = 'cb-met-id';
+    const count = document.createElement('span');
+    count.className = 'cb-met-n';
+    count.textContent = `${encounters}\u00d7`;
+    const gap = document.createElement('span');
+    gap.className = 'cb-met-gap';
+    // One gap per pair of encounters, so a bike met twice shows one number
+    // and a bike met three times shows two. Days, because the median is 306
+    // of them -- hours would be noise and years would round most of it away.
+    gap.textContent = gaps.length ? `${gaps.join(', ')} d` : '';
+    row.append(id, count, gap);
+
+    const n = rides.length;
+    const dateOf = ri => dateList[rideDateIdx[ri]] ?? '';
+    // Read rather than remembered, like the dock rows: ride view is also left
+    // by Escape, the exit bar and the date filter.
+    const at = () =>
+      (dockTrace && dockTrace.key === `b:${bike}` && rideView !== null ? dockTrace.at : -1);
+
+    function relabel() {
+      const i = at();
+      row.classList.toggle('on', i >= 0);
+      id.textContent = i >= 0 && n > 1 ? `${bike} ${i + 1}/${n}` : bike;
+      // Encounters, not trips: a bike ridden to lunch and back is one
+      // occasion, and counting the legs overstated every round trip in the
+      // list by one.
+      const met_ = `Unlocked on ${encounters} separate occasions` +
+        (gaps.length ? `, ${gaps.join(' and ')} days apart` : '');
+      if (!n) {
+        row.title = `${met_}. No GPS recording covers any of its trips, so ` +
+          'there is nothing to draw.';
+      } else if (i >= 0) {
+        row.title = `Showing ${dateOf(rides[i])} · ` +
+          (n > 1 ? 'click or press ↓ for the next recording' : 'click to put the map back');
+      } else {
+        row.title = `${met_}. ${n} recording${n !== 1 ? 's' : ''} — click to ` +
+          (n > 1 ? 'play them' : 'show it');
+      }
+    }
+
+    if (!n) {
+      row.classList.add('dim');
+    } else {
+      row.addEventListener('click', () => {
+        const i = at();
+        // Clicking walks the cycle and then off the end of it, so the row
+        // that started a detour can end it. The arrow keys wrap instead.
+        if (i < 0) {
+          // A bike's recordings are not one dock's trips, so any open dock
+          // popup and its links belong to a different question -- close it.
+          map.closePopup();
+          clearDockLinks();
+          startDockTrace(`b:${bike}`, null, rides, 0);
+        } else if (i + 1 < n) {
+          stepDockTrace(1);
+        } else {
+          exitRideView();
+        }
+        relabel();
+      });
+    }
+    relabel();
+    metChipLabels.push(relabel);
+    list.appendChild(row);
+  }
+  wrap.appendChild(list);
+  return wrap;
+}
+
 function renderCitibike(cb) {
   if (!cb || !cb.trips?.length) return;
   const own = cb.own || {};
@@ -1144,12 +1450,24 @@ function renderCitibike(cb) {
       `<span class="label">${k}</span><span class="v">${a}</span><span class="v">${b}</span>`
     ).join('') +
     `</div>` +
-    `<div class="cb-note">${cb.repeat_bikes.toLocaleString()} of ` +
-    `${cb.bikes.toLocaleString()} bikes ridden more than once ` +
+    // Bikes actually met again, not bikes ridden twice. The line used to say
+    // "253 of 2,225 bikes ridden more than once", and 200 of those repeats
+    // were the bike you parked and took straight back -- a round trip, not a
+    // meeting. `resumes` holds that discarded 200 (findings/bike-reencounters.md).
+    `<div class="cb-note">${cb.reencounters.toLocaleString()} unlocks were on ` +
+    `a bike ridden before ` +
     // "at least" is load-bearing: a free ebike ride can carry no line item
     // naming one, so this is a floor rather than a measurement.
     `\u00b7 at least ${Math.round(100 * cb.ebike_min / cb.trips.length)}% of ` +
     `trips on an ebike</div>`;
+  // Appended as DOM rather than markup: a chip is a control with a listener,
+  // and the bike ids come from Lyft, which has no business being interpolated
+  // into HTML -- the same reason dockPopup builds its rows this way.
+  const section = document.getElementById('stat-citibike');
+  const met = metList(cb.met);
+  if (met) section.appendChild(met);
+  const gen = genChart(cb.gen);
+  if (gen) section.appendChild(gen);
   showChip('stat-citibike');
 }
 
@@ -1531,6 +1849,10 @@ function toggleRide(ri) {
 // another row put on the map, so they read their state from here too.
 function syncYearLinks() {
   for (const relabel of dockTraceLabels) relabel();
+  // The stats panel's bike chips are the same case as a dock row, but they
+  // outlive any one popup, so they keep their own list rather than the one
+  // dockPopup clears on every open.
+  for (const relabel of metChipLabels) relabel();
   for (const link of document.querySelectorAll('#stat-years .yd-link')) {
     const on = rideView !== null && +link.dataset.ride === rideView;
     link.classList.toggle('on', on);
