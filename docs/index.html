@@ -117,6 +117,36 @@
   .yd-link { color: #9fd8ff; cursor: pointer; }
   .yd-link:hover { text-decoration: underline; }
   .yd-link.on { color: #00e5ff; font-weight: 600; }
+  /* -- Ride calendar ----------------------------------------------------
+     A month grid per year, one row of twelve cells shaded by the rides in
+     them, so the riding has a shape to scan before it has a row to read.
+     The cells sit on the same 12px rhythm as the year rows above them. */
+  #stat-calendar { line-height: 1.5; }
+  .cal-head, .cal-row {
+    display: grid; grid-template-columns: 26px repeat(12, 1fr); gap: 2px;
+    align-items: center;
+  }
+  .cal-head { color: #666; font-size: 9px; margin-bottom: 1px; }
+  .cal-head span { text-align: center; }
+  .cal-row { margin-bottom: 2px; }
+  .cal-year { color: #888; font-size: 10px; font-variant-numeric: tabular-nums; }
+  .cal-cell { height: 12px; border-radius: 2px; background: #1a1a1a; }
+  .cal-cell.has { cursor: pointer; }
+  .cal-cell.has:hover { outline: 1px solid #ccc; }
+  .cal-cell.open { outline: 1px solid #fff; }
+  /* Last, so the month holding the ride on screen outranks the month whose
+     list is open -- they are usually the same cell. */
+  .cal-cell.on { outline: 1px solid #00e5ff; }
+  .cal-detail {
+    display: none; margin: 0 0 6px 26px; padding-left: 8px;
+    border-left: 1px solid #333; color: #888; font-size: 10px; line-height: 1.6;
+    max-height: 150px; overflow-y: auto;
+  }
+  .cal-detail.open { display: block; }
+  .cal-month { color: #888; margin-bottom: 1px; }
+  .cal-ride { display: grid; grid-template-columns: 1fr auto; gap: 6px; }
+  .cal-ride .v { color: #ccc; font-variant-numeric: tabular-nums; }
+  .cal-note { color: #666; font-size: 9px; margin-top: 4px; }
   .delta { color: #7bd88f; }
   .delta.neg { color: #e07a7a; }
   .r-row { display: flex; justify-content: space-between; gap: 16px; }
@@ -499,6 +529,7 @@
     <div id="stat-updated-row"><span class="label">Last ride</span> <strong id="stat-updated">&mdash;</strong></div>
     <div id="stat-chips" role="group" aria-label="Stat sections">
       <button class="chip hidden" data-section="stat-years" aria-expanded="false" aria-controls="stat-years">Years</button>
+      <button class="chip hidden" data-section="stat-calendar" aria-expanded="false" aria-controls="stat-calendar">Calendar</button>
       <button class="chip hidden" data-section="stat-riding" aria-expanded="false" aria-controls="stat-riding">Riding</button>
       <button class="chip hidden" data-section="stat-weather" aria-expanded="false" aria-controls="stat-weather">Weather</button>
       <button class="chip hidden" data-section="stat-streets" aria-expanded="false" aria-controls="stat-streets">Streets</button>
@@ -507,6 +538,7 @@
     </div>
     <div id="stats-sections" class="scrollbox">
       <div id="stat-years"></div>
+      <div id="stat-calendar"></div>
       <div id="stat-riding"></div>
       <div id="stat-weather"></div>
       <div id="stat-streets">
@@ -2128,17 +2160,26 @@ function toggleRide(ri) {
 // Ride view is also left by Escape, the exit button and the date filter, so
 // a link's selected state is synced from rideView rather than set on click.
 // The dock popup's route links are the same case: one row can show a ride
-// another row put on the map, so they read their state from here too.
+// another row put on the map, so they read their state from here too, and so
+// does the calendar -- three owners of one highlight, none of them holding it.
 function syncYearLinks() {
   for (const relabel of dockTraceLabels) relabel();
   // The stats panel's bike chips are the same case as a dock row, but they
   // outlive any one popup, so they keep their own list rather than the one
   // dockPopup clears on every open.
   for (const relabel of metChipLabels) relabel();
-  for (const link of document.querySelectorAll('#stat-years .yd-link')) {
+  // Every .yd-link in the panel, wherever it was written: the year recap's
+  // longest ride and the calendar's rows are the same link doing the same job.
+  for (const link of document.querySelectorAll('.yd-link')) {
     const on = rideView !== null && +link.dataset.ride === rideView;
     link.classList.toggle('on', on);
     link.title = on ? 'Hide this ride' : "Show this ride's route";
+  }
+  // The calendar marks the month the shown ride is in, so a ride reached from
+  // a street popup still lands somewhere on the date axis.
+  const shown = rideView !== null ? (dateList[rideDateIdx[rideView]] || '').slice(0, 7) : '';
+  for (const cell of document.querySelectorAll('#stat-calendar .cal-cell')) {
+    cell.classList.toggle('on', shown !== '' && cell.dataset.month === shown);
   }
 }
 
@@ -2264,6 +2305,152 @@ function renderYears(ridesPerYear, kmByYear, newByYear) {
     });
   }
   showChip('stat-years');
+}
+
+// -- Ride calendar -----------------------------------------------------------
+// The one index into the rides that is not a street: a month grid per year,
+// shaded by the rides in each month, opening into those rides one row apiece.
+// Date is the axis the slider, the time-lapse and every ride row already speak
+// in, and it is the thing a rider remembers about a ride that the map could
+// not otherwise be asked about -- until this, a ride was reachable only
+// sideways, through a street it happened to use.
+//
+// A grid rather than a search box because the shape is half the answer: the
+// dense summers and the empty Februaries are visible before any question has
+// been formed, and a box only answers one that has.
+//
+// All-time, like every other section of this panel. The slider and the source
+// buttons move the map, and ride view draws its ride whole whatever they say,
+// so an index that hid what they hide would offer a way in that the way out
+// contradicts.
+//
+// It is a third owner of "which ride is shown", after ride view's own bar and
+// the dock/bike cycles, so like .yd-link it never sets that highlight: its
+// rows carry .yd-link and read their state back from rideView in
+// syncYearLinks, and the cells take the month of whatever ride is on screen
+// from the same place.
+
+// One open month at a time, keyed "YYYY-MM". Several lists of ride rows at
+// once in a 200px panel is clutter, and a reader here is after one ride.
+let calOpen = null;
+
+// Rides in a month, in the payload's own chronological order.
+function calMonthRides(ym) {
+  const out = [];
+  rideList.forEach((r, i) => {
+    if ((dateList[r[0]] || '').startsWith(ym)) out.push(i);
+  });
+  return out;
+}
+
+// Day, weekday and clock name the ride; the distance is right-justified in
+// its own column, the way the year table's numbers are. The month is already
+// on the row above, so it is not repeated here.
+function calMonthDetail(ym) {
+  const ids = calMonthRides(ym);
+  let km = 0;
+  const rows = ids.map(i => {
+    const r = rideList[i];
+    const d = dateList[r[0]] || '';
+    km += r[2] || 0;
+    const wd = WEEKDAYS[new Date(`${d}T12:00:00`).getDay()].slice(0, 3);
+    const t = clockLabel(r[1]);
+    return `<div class="cal-ride"><span class="yd-link" data-ride="${i}"` +
+      ` title="Show this ride's route">${wd} ${+d.slice(8)}` +
+      `${t ? ` &middot; ${t}` : ''}${sourceTag(i) ? ` &middot; ${sourceTag(i)}` : ''}</span>` +
+      `<span class="v">${r[2] != null ? `${Math.round(mi(r[2]))} mi` : '&mdash;'}</span></div>`;
+  });
+  const head = `${MONTHS[+ym.slice(5, 7) - 1]} ${ym.slice(0, 4)} &middot; ` +
+    `${ids.length} ride${ids.length === 1 ? '' : 's'}` +
+    `${km ? ` &middot; ${Math.round(mi(km))} mi` : ''}`;
+  return `<div class="cal-month">${head}</div>${rows.join('')}`;
+}
+
+// ym === null closes everything.
+function openCalMonth(ym) {
+  const el = document.getElementById('stat-calendar');
+  calOpen = ym;
+  for (const cell of el.querySelectorAll('.cal-cell.has')) {
+    const on = ym !== null && cell.dataset.month === ym;
+    cell.classList.toggle('open', on);
+    cell.setAttribute('aria-expanded', String(on));
+  }
+  for (const detail of el.querySelectorAll('.cal-detail')) {
+    const on = ym !== null && detail.dataset.year === ym.slice(0, 4);
+    detail.innerHTML = on ? calMonthDetail(ym) : '';
+    detail.classList.toggle('open', on);
+  }
+  // The rows were just built, so their selected state has to be read back.
+  syncYearLinks();
+}
+
+function renderCalendar() {
+  // [rides, km] per month, and the years to draw a row for. Years with no
+  // ride at all are still drawn: an empty row is the gap, and dropping it
+  // would close a hole the calendar exists to show.
+  const byMonth = {};
+  let first = null;
+  let last = null;
+  for (const r of rideList) {
+    const d = dateList[r[0]] || '';
+    if (d.length < 7) continue;
+    const y = +d.slice(0, 4);
+    if (first === null || y < first) first = y;
+    if (last === null || y > last) last = y;
+    const cell = byMonth[d.slice(0, 7)] || (byMonth[d.slice(0, 7)] = [0, 0]);
+    cell[0]++;
+    cell[1] += r[2] || 0;
+  }
+  if (first === null) return;
+  const max = Math.max(...Object.values(byMonth).map(c => c[0]));
+
+  const years = [];
+  for (let y = first; y <= last; y++) years.push(String(y));
+  const el = document.getElementById('stat-calendar');
+  el.innerHTML =
+    `<div class="cal-head"><span></span>` +
+    // Initials off the month names themselves, so the header cannot drift
+    // out of step with the cells below it.
+    MONTHS.map(m => `<span title="${m}">${m[0]}</span>`).join('') +
+    `</div>` +
+    years.map(y =>
+      `<div class="cal-row"><span class="cal-year">${y}</span>` +
+      MONTHS.map((month, i) => {
+        const ym = `${y}-${String(i + 1).padStart(2, '0')}`;
+        const c = byMonth[ym];
+        const when = `${month} ${y}`;
+        if (!c) return `<span class="cal-cell" title="${when} &middot; no rides"></span>`;
+        // Same square-root ramp and palette as the map, lifted off the dark
+        // end so one ride in a month still reads as a ride rather than as
+        // an empty cell.
+        const t = 0.2 + 0.8 * Math.sqrt(c[0] / max);
+        return `<span class="cal-cell has" role="button" tabindex="0" data-month="${ym}"` +
+          ` aria-expanded="false" style="background:${plasmaColor(t)}"` +
+          ` title="${when} &middot; ${c[0]} ride${c[0] === 1 ? '' : 's'}` +
+          `${c[1] ? ` &middot; ${Math.round(mi(c[1]))} mi` : ''}"></span>`;
+      }).join('') +
+      `</div><div class="cal-detail" data-year="${y}"></div>`
+    ).join('') +
+    `<div class="cal-note">Brighter months hold more rides.</div>`;
+
+  const openFrom = target => {
+    const ym = target.dataset.month;
+    openCalMonth(calOpen === ym ? null : ym);
+  };
+  el.addEventListener('click', e => {
+    const link = e.target.closest('.yd-link');
+    if (link) { toggleRide(+link.dataset.ride); return; }
+    const cell = e.target.closest('.cal-cell.has');
+    if (cell) openFrom(cell);
+  });
+  el.addEventListener('keydown', e => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const cell = e.target.closest('.cal-cell.has');
+    if (!cell) return;
+    e.preventDefault();
+    openFrom(cell);
+  });
+  showChip('stat-calendar');
 }
 
 // renormalize=true rescales colors to the filtered max and restyles every
@@ -2507,6 +2694,7 @@ fetch('rides.geojson.gz')
     if (ridesPerYear && Object.keys(ridesPerYear).length) {
       renderYears(ridesPerYear, riding?.km_by_year || {}, coverage?.new_km_by_year || {});
     }
+    renderCalendar();
 
     if (riding) {
       const histo = (counts, labels) => {

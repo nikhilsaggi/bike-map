@@ -30,6 +30,11 @@ The pipeline exports a compressed GeoJSON that powers an interactive
 - Riding stats: distance/time totals, average speed, longest ride,
   miles and new-street miles per year, rides-by-hour and weekday
   histograms (data is stored metric; the UI displays miles)
+- A calendar of the riding: one row of twelve month cells per year, shaded by
+  the rides in each, so the dense summers and the thin Februaries are visible
+  before anything is clicked. A month opens into its own rides — day, clock,
+  distance and whether it was a Citibike — and any of them onto the map. It is
+  the only way into a ride that is not a street
 - Optional neighborhood layer: NYC's tabulation areas, each filled by the
   share of its own streets ridden by the date on screen, so the slider and the
   time-lapse fill the city in. Click one for its coverage, the rides that went
