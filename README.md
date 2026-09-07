@@ -30,6 +30,10 @@ The pipeline exports a compressed GeoJSON that powers an interactive
   The stats panel and the legend hold the right edge, top and bottom. On a
   narrow screen the panel becomes a bottom sheet.
 - Date-range slider with time-lapse playback (watch the network grow)
+- A layer switcher under the legend: the pass-frequency network, the Citibike
+  docks and the neighborhoods, one checkbox each. Only the network starts on.
+  Switching it off leaves the other layers against the basemap alone; a ride
+  put on screen still draws, the way it already draws outside the date filter
 - Collapsible stats panel with total rides, edges covered, and street
   miles
 - Riding stats: distance/time totals, average speed, longest ride,

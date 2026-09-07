@@ -8,6 +8,15 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
+  /* Everything in the right rail that is not the open stats section: the
+     panel's own header, the legend under it, and the rail's own margins. The
+     open section is the one part that can give up height, so this is what it
+     has to leave behind -- and it has to be kept in step with the legend,
+     which grew by a row when the layer switcher gained its third toggle.
+     Desktop enforces this through the rail's flex-shrink and only reads the
+     value as a cap; the mobile rail has no height of its own to shrink
+     against, so there it is the only thing holding the panel off the bottom. */
+  :root { --rail-fixed: 320px; }
   body { background: #0d0d0d; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
   #map { width: 100vw; height: 100vh; }
 
@@ -91,7 +100,7 @@
     display: block; margin-top: 8px; padding-top: 8px;
     border-top: 1px solid #333; padding-right: 4px;
     flex: 0 1 auto; min-height: 0;
-    max-height: min(320px, calc(100vh - 300px)); overflow-y: auto;
+    max-height: min(320px, calc(100vh - var(--rail-fixed))); overflow-y: auto;
     font-size: 11px; line-height: 1.6;
   }
   #stats-sections > div { display: none; }
@@ -235,25 +244,31 @@
   .src-tag { font-size: 10px; }
   .src-tag.cb { color: #a8d8e8; }
   .src-tag.own { color: #888; }
-  #cb-toggle {
-    display: block; margin-top: 8px; padding-top: 8px; border-top: 1px solid #333;
+
+  /* -- Layer switcher ----------------------------------------------------
+     The three drawn layers, one row each rather than one wrapped row: the
+     labels are long and each carries a note. One box owns the rule above the
+     group and the spacing inside it, rather than whichever toggle happens to
+     be first -- the two optional ones stay hidden until their payload
+     arrives, so a rule hung on the first row would come and go with the
+     data. Each checkbox wears its own layer's colour, which is the same job
+     the inspector's heading does. */
+  #layers {
+    margin-top: 8px; padding-top: 8px; border-top: 1px solid #333;
+    display: flex; flex-direction: column; gap: 5px;
+  }
+  #layers label {
     color: #888; font-size: 11px; cursor: pointer; user-select: none;
   }
-  #cb-toggle.hidden { display: none; }
-  #cb-toggle:hover { color: #ccc; }
-  #cb-check { vertical-align: -1px; margin-right: 3px; accent-color: #a8d8e8; }
+  #layers label:hover { color: #ccc; }
+  #layers label.hidden { display: none; }
+  #layers input { vertical-align: -1px; margin-right: 3px; }
+  /* The bright end of the plasma ramp the bar above is drawn in. */
+  #rf-check { accent-color: #f0a02a; }
+  #cb-check { accent-color: #a8d8e8; }
+  #nb-check { accent-color: #cfc3a8; }
 
-  /* -- Neighborhoods ----------------------------------------------------
-     A second toggle under the dock one, so the two optional layers read as
-     a pair. Its own row rather than the same one: the labels are long and
-     each carries a note. */
-  #nb-toggle {
-    display: block; margin-top: 6px; color: #888; font-size: 11px;
-    cursor: pointer; user-select: none;
-  }
-  #nb-toggle.hidden { display: none; }
-  #nb-toggle:hover { color: #ccc; }
-  #nb-check { vertical-align: -1px; margin-right: 3px; accent-color: #cfc3a8; }
+  /* -- Neighborhoods ---------------------------------------------------- */
   .nb-detail { min-width: 150px; }
   .nb-sub { color: #666; font-size: 10px; margin-bottom: 4px; }
   .nb-row { display: flex; justify-content: space-between; gap: 14px; font-size: 12px; }
@@ -575,7 +590,7 @@
   .inspector-empty { color: #777; font-size: 11px; line-height: 1.5; }
 
   @media (max-width: 640px) {
-    #stats-sections.open { max-height: min(240px, calc(100vh - 300px)); }
+    #stats-sections.open { max-height: min(240px, calc(100vh - var(--rail-fixed))); }
     /* The panel is most of a phone's width, so the left rail lies down: a
        sheet along the bottom. That is where a bottom-anchored legend would be
        too, so the right rail gives up its bottom and the legend stacks under
@@ -669,15 +684,22 @@
       <button class="seg-btn" data-src="own">Own bike</button>
     </div>
     <div id="src-note"></div>
-    <!-- Revealed only when the payload carries a citibike block. Off by
-         default: the map opens as the map of rides it has always been. -->
-    <label id="cb-toggle" class="hidden">
-      <input type="checkbox" id="cb-check"> Citibike docks
-      <span id="cb-range"></span>
-    </label>
-    <label id="nb-toggle" class="hidden">
-      <input type="checkbox" id="nb-check"> Neighborhoods
-    </label>
+    <!-- The layer switcher. The drawn network leads it and is the one that
+         starts on: it is what the box above describes and what the map has
+         always opened as. The two below it are revealed only when the payload
+         carries their block, and stay off until asked for. -->
+    <div id="layers">
+      <label id="rf-toggle">
+        <input type="checkbox" id="rf-check" checked> Pass frequency
+      </label>
+      <label id="cb-toggle" class="hidden">
+        <input type="checkbox" id="cb-check"> Citibike docks
+        <span id="cb-range"></span>
+      </label>
+      <label id="nb-toggle" class="hidden">
+        <input type="checkbox" id="nb-check"> Neighborhoods
+      </label>
+    </div>
   </div>
 </div>
 
@@ -2351,6 +2373,9 @@ function viewRide(ri, fromTrace = false) {
   geoLayer.eachLayer(layer => {
     const ids = layer.feature.properties.rides || [];
     const isOn = hasRide(ids, ri);
+    // With the network switched off there is nothing to ghost: the ride is
+    // drawn against the basemap alone.
+    if (!isOn && !routesOn) { map.removeLayer(layer); return; }
     if (!map.hasLayer(layer)) {
       if (!isOn) return;
       layer.addTo(map);  // show the full ride even outside the date filter
@@ -2693,6 +2718,33 @@ function renderCalendar() {
   showChip('stat-calendar');
 }
 
+// -- Layer switcher ----------------------------------------------------------
+
+// The drawn network is what the map is, so its checkbox starts on while the
+// dock and neighborhood ones start off. Switching it off is the same lever the
+// date filter already pulls -- the child layers leave the map and keep their
+// counts -- so applyFilter is both the way out and the way back.
+let routesOn = true;
+
+function initRouteLayer() {
+  const check = document.getElementById('rf-check');
+  // Read the control rather than trusting the attribute: a browser restores
+  // checkbox state across a reload, so the box can come back cleared.
+  routesOn = check.checked;
+  if (!routesOn) applyFilter();
+  check.addEventListener('change', () => {
+    routesOn = check.checked;
+    // Only a street's own panel goes with the layer, the way a dock's goes
+    // with the dock one.
+    if (!routesOn && inspector?.kind === 'edge') closeInspector();
+    // A ride on screen outlives the switch: it is an explicit request for one
+    // recording, which already overrides the date filter for the same reason.
+    // What changes is what it has to ghost.
+    if (rideView !== null) viewRide(rideView, dockTrace !== null);
+    else applyFilter();
+  });
+}
+
 // renormalize=true rescales colors to the filtered max and restyles every
 // layer; renormalize=false keeps the current scale and only restyles layers
 // whose count changed (cheap enough to run every animation frame).
@@ -2719,7 +2771,11 @@ function applyFilter(renormalize = true) {
     const c = layer._newCount;
     if (!renormalize && c === layer._filteredCount) return;
     layer._filteredCount = c;
-    if (c === 0) {
+    // A switched-off network is filtered out the same way an out-of-range
+    // one is -- the child leaves the map and keeps its count. The switch
+    // itself always renormalizes, so every layer passes through here on the
+    // way out and on the way back.
+    if (c === 0 || !routesOn) {
       map.removeLayer(layer);
     } else {
       if (!map.hasLayer(layer)) layer.addTo(map);
@@ -2740,7 +2796,7 @@ function applyFilter(renormalize = true) {
 // small next to the full redraw each frame already triggers.
 function restackLayers() {
   const visible = [];
-  geoLayer.eachLayer(l => { if (l._filteredCount > 0) visible.push(l); });
+  if (routesOn) geoLayer.eachLayer(l => { if (l._filteredCount > 0) visible.push(l); });
   visible.sort((a, b) => a._filteredCount - b._filteredCount);
   for (const l of visible) l.bringToFront();
   // The edges above draw into the same canvas as the dock markers, so a
@@ -3049,6 +3105,7 @@ fetch('rides.geojson.gz')
       },
     }).addTo(map);
 
+    initRouteLayer();
     initDateFilter();
     initSourceFilter();
   })
