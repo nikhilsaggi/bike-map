@@ -88,6 +88,21 @@ owned what; don't reintroduce that.
 `docs/index.html` is a single self-contained Leaflet page (no build step); it
 reads everything from `rides.geojson.gz` top-level `properties`.
 
+**The three drawn layers share one switcher (`#layers`), and only the network
+starts on.** Switching the network off is the same lever the date filter
+already pulls -- `routesOn` gates `applyFilter`'s add/remove, so the children
+leave the map and keep their counts, and the switch always renormalizes so
+every layer passes through on the way out and back. **Ride view outlives the
+switch**: it is an explicit request for one recording and already overrides
+the date filter for that reason, so `viewRide` draws the ride and drops the
+ghosts rather than refusing. The rule above the group belongs to `#layers`,
+never to the first toggle -- the dock and neighborhood rows are hidden until
+their payload arrives, so a border hung on a row would come and go with the
+data. `--rail-fixed` is what the open stats section has to leave behind for
+the rest of the right rail, the legend included; it has to grow when the
+legend does, because the mobile rail has no height of its own to shrink
+against and the cap is all that holds the panel off the bottom there.
+
 **A click answers in the docked inspector, never a popup.** A popup opens over
 the feature it describes, which is the one thing a reader clicked it to look
 at; the page carried ~70 lines of drag machinery to work around that. The panel
