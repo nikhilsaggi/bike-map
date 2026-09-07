@@ -18,8 +18,10 @@ this script is the evidence for the two judgement calls that involves:
    travel and adding the two directions.  Plain sum would turn one pass
    drifting between the ways into two; plain max would read an out-and-back
    riding one way out and the other back as one.  --merge runs the whole
-   merge under all three rules and reports how far apart they land, so the
-   rule can be revisited with numbers rather than argument.
+   merge under all three rules, reports how far apart they land, and names
+   the corridors they disagree on most -- street, length, midpoint, both
+   counts and the rides that moved -- so the rule can be revisited with
+   numbers rather than argument, and the numbers can be checked.
 
 Reads cache/state.pkl, cache/render_cache.pkl and rides/; writes nothing.
 Safe to run before the pipeline has ever computed traversals -- it measures
@@ -126,13 +128,53 @@ def _report_top_pairs(
         print(f"  {n:>3}  {length:>6.0f}m  {ride[:10]:<10}  {name}")
 
 
+def _report_disagreements(
+    label: str,
+    keys: list[str],
+    by_dir: dict[str, dict[str, Any]],
+    other: dict[str, dict[str, Any]],
+) -> None:
+    """Name the corridors the two rules count differently, worst first.
+
+    The disagreement totals say how much the rules part; each of those
+    differences is either a genuine out-and-back on separately mapped
+    directions or one pass counted twice, and only the corridor itself
+    settles which.  So the row carries what it takes to go and look: the
+    street, its length, a midpoint to paste into a map, both counts, and the
+    rides whose pass count moved -- their dates are how the trace is found.
+    """
+    if not keys:
+        return
+    ranked = sorted(keys, key=lambda k: (-abs(other[k]["count"] - by_dir[k]["count"]), k))
+    shown = ranked[:TOP_N]
+    print(f"\n  Top {len(shown):,} of {len(ranked):,} by disagreement:")
+    print(f"    {'dir':>4} {label:>4}  {'length':>7}  {'lat,lon':<19}  street")
+    for k in shown:
+        d, o = by_dir[k], other[k]
+        lon, lat = d["mid"]
+        name = d["name"] or o["name"] or "unnamed"
+        print(
+            f"    {d['count']:>4} {o['count']:>4}  {d['length']:>6.0f}m  "
+            f"{lat:.5f},{lon:.5f}  {name}"
+        )
+        moved = [
+            (r, d["rides"].get(r, 0), o["rides"].get(r, 0))
+            for r in sorted(set(d["rides"]) | set(o["rides"]))
+            if d["rides"].get(r, 0) != o["rides"].get(r, 0)
+        ]
+        detail = ", ".join(f"{r[:10]} {a}->{b}" for r, a, b in moved[:3])
+        if len(moved) > 3:
+            detail += f", +{len(moved) - 3:,} more"
+        print(f"         {detail}")
+
+
 def _report_merge_rule(
     state: dict[str, Any],
     traversals: dict[tuple[int, int], dict[str, list[int]]],
     edge_geom: dict[tuple[int, int], list[tuple[float, float]]],
     edge_name: dict[tuple[int, int], str],
 ) -> None:
-    """Run the whole merge under both rules and report the disagreement."""
+    """Run the whole merge under each rule, report and name the disagreement."""
 
     def features() -> list[dict[str, Any]]:
         out = []
@@ -152,15 +194,30 @@ def _report_merge_rule(
             )
         return out
 
-    def summarize(label: str) -> dict[str, int]:
+    def summarize(label: str) -> dict[str, dict[str, Any]]:
+        """Merge under the installed rule, keyed by rounded midpoint.
+
+        Keeps enough of each corridor to name it afterwards: the counts alone
+        say how far the rules land apart, never which street to go and look at.
+        """
         out = merge._merge_parallel_features(features())  # noqa: SLF001
-        counts = {}
+        corridors: dict[str, dict[str, Any]] = {}
         for f in out:
-            mid = f["geometry"]["coordinates"][len(f["geometry"]["coordinates"]) // 2]
-            counts[f"{round(mid[0], 5)},{round(mid[1], 5)}"] = f["properties"]["ride_count"]
-        total = sum(counts.values())
-        print(f"  {label:<5} corridors {len(out):,}  total {total:,}  max {max(counts.values()):,}")
-        return counts
+            coords = f["geometry"]["coordinates"]
+            mid = coords[len(coords) // 2]
+            corridors[f"{round(mid[0], 5)},{round(mid[1], 5)}"] = {
+                "count": f["properties"]["ride_count"],
+                "name": f["properties"].get("_name"),
+                "length": _geom_len_m(coords),
+                "mid": mid,
+                # One entry per pass, so a ride that gained a pass under the
+                # other rule shows up as a count that moved, not a new ride.
+                "rides": Counter(f["properties"]["rides"]),
+            }
+        total = sum(c["count"] for c in corridors.values())
+        peak = max(c["count"] for c in corridors.values())
+        print(f"  {label:<5} corridors {len(out):,}  total {total:,}  max {peak:,}")
+        return corridors
 
     print("\nMerge rule: shipped (max per direction) vs the two it replaced:")
     by_dir = summarize("dir")
@@ -188,17 +245,18 @@ def _report_merge_rule(
         finally:
             merge._merge_ride_counts = original  # noqa: SLF001
 
+    print("\n  Each difference is a genuine out-and-back on separately mapped")
+    print("  directions, or one pass double-counted. The rows say which to check.")
     for label in ("max", "sum"):
         other = by_rule[label]
         shared = set(by_dir) & set(other)
-        differ = [k for k in shared if by_dir[k] != other[k]]
-        delta = sum(other[k] - by_dir[k] for k in differ)
+        differ = [k for k in shared if by_dir[k]["count"] != other[k]["count"]]
+        delta = sum(other[k]["count"] - by_dir[k]["count"] for k in differ)
         print(
             f"  vs {label}: {len(differ):,}/{len(shared):,} corridors differ "
             f"({100 * len(differ) / max(len(shared), 1):.1f}%), {delta:+,} passes"
         )
-    print("  Every one of those is either a genuine out-and-back on separately")
-    print("  mapped directions, or one pass double-counted. Spot-check a few.")
+        _report_disagreements(label, differ, by_dir, other)
 
 
 def main() -> None:

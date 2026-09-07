@@ -63,7 +63,11 @@ the max. Without it, one physical pass on two oppositely-stored members reads
 as an out-and-back.
 
 `tools/traversal_audit.py --merge` runs the whole merge under all three rules
-and reports how far apart they land.
+and reports how far apart they land, then names the corridors they disagree on
+most -- street, length, midpoint, both counts, and the rides whose pass count
+moved. Every disagreement is either a genuine out-and-back on separately mapped
+directions or one pass double-counted, and only the corridor settles which, so
+the totals are a question and those rows are where it gets answered.
 
 ## Reading the audit
 
