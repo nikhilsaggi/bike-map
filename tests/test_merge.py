@@ -357,3 +357,47 @@ def test_redundant_span_absorbed():
     for f in out:
         assert f["properties"]["ride_count"] == 2  # own ride + absorbed span ride
         assert R3 in f["properties"]["rides"]
+
+
+def _drawn(points_m):
+    """Build a finished (post-merge) feature, which is all the audit reads."""
+    return {
+        "type": "Feature",
+        "geometry": {"type": "LineString", "coordinates": [lonlat(x, y) for x, y in points_m]},
+        "properties": {},
+    }
+
+
+def _audit_line(features, capsys):
+    merge._audit_merge(features)
+    return capsys.readouterr().out
+
+
+def test_audit_warns_on_a_pair_a_raw_count_would_pass(capsys):
+    """One unmerged pair on a two-feature map is a regression, not a rounding.
+
+    The offset is inside config.MERGE_CONNECT_M so the endpoints read as
+    joined: the warning here has to come from the duplicate share alone.
+    """
+    out = _audit_line([_drawn(_line(0, 300, 0.0)), _drawn(_line(0, 300, 5.0))], capsys)
+    assert "1 residual duplicate pairs (50.00% of features" in out
+    assert "dangling endpoints (0.0%)" in out
+    assert "WARNING" in out
+
+
+def test_audit_warns_on_the_share_not_the_count(capsys):
+    """The same one pair is healthy on a map large enough to earn it.
+
+    Duplicates arise per parallel-way opportunity, so a raw count rises with
+    the drawn map and a fixed one warns on every run once the riding spreads.
+    """
+    dup = [_drawn(_line(0, 300, 0.0)), _drawn(_line(0, 300, 5.0))]
+    # Far enough apart to neither cover nor dangle onto each other.
+    rest = [
+        _drawn(_line(1000 * i, 1000 * i + 100, 1000 * j)) for i in range(1, 21) for j in range(20)
+    ]
+    assert 1 / (len(dup) + len(rest)) < config.MERGE_AUDIT_DUP_SHARE
+
+    out = _audit_line(dup + rest, capsys)
+    assert "1 residual duplicate pairs (0.25% of features" in out
+    assert "WARNING" not in out

@@ -141,6 +141,7 @@ MERGE_KEEP_COV = 0.97  # cluster extent that kept geometries must cover
 MERGE_SNAP_M = 40.0  # reconnect feature endpoints to neighbours within this
 MERGE_CONNECT_M = 6.0  # endpoints this close to another feature stay put
 MERGE_MOVE_M = 15.0  # endpoint gaps up to this close by moving the endpoint
+MERGE_AUDIT_DUP_SHARE = 0.003  # residual duplicate pairs per feature before the audit warns
 RING_MAX_GAP_M = 15.0  # endpoints closer than this make a feature a closed ring
 RING_MIN_LEN_M = 30.0  # shorter features are corridor pieces, not rings
 RING_MAX_LEN_M = 300.0  # rings up to this perimeter may be dropped as redundant

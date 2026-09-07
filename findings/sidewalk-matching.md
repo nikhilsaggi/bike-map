@@ -253,3 +253,59 @@ River Park Esplanade, Flatbush Avenue Greenway, Shore Road Greenway, the East
 River and Riverside esplanades. The half sitting at 12-20 m is the threshold
 decision rather than an escape, and the sweep above is the argument for
 leaving it there.
+
+## What it also fixed: the merge audit's standing warning
+
+Every pipeline run through 2026-08 ended on a warning nobody could act on:
+
+```
+Audit: 108 residual duplicate pairs (7.2 km), 18/42,256 dangling endpoints (0.0%)
+WARNING: merge regression suspected -- metrics well above baseline
+```
+
+`merge._audit_merge` counts features of 30 m or more that still mutually cover
+each other after merging, and it fired at 100 against a healthy baseline
+recorded as ~50. The obvious readings were that the merge had regressed or
+that the baseline had gone stale. It was neither: the pairs were sidewalks.
+
+The audit reads only the finished feature list, which is exactly what
+`docs/rides.geojson.gz` holds, so committed exports can be re-audited without
+the pipeline. Across the four exports before the filter and the one after:
+
+```
+                        features   pairs      km   dangling
+before the filter         21,131     107     7.1   18 (0.0%)
+after                     15,449      22     7.3   12 (0.0%)
+```
+
+That commit changed `hmm.py`, `config.py` and `cache.py` and left `merge.py`
+and `export.py` alone, so nothing about how features merge moved. What moved
+was which features existed to merge.
+
+The pairs say the same thing more directly. Measure each pair's median lateral
+separation — the shorter feature's samples to the nearest point on the longer:
+
+```
+median separation of a residual pair
+  before   11.0 m   (p25 8.8, p75 12.8)   65 of 107 at 10 m or more
+  after     3.9 m   (p25 3.0, p75  7.3)    3 of  22 at 10 m or more
+```
+
+Ten to thirteen metres is a street and its pavement, against a
+`SIDEWALK_PARALLEL_M` of 12. Under 4 m is not two ways at all: it is one
+cluster's kept siblings after `_average_parallel_geometry` has pulled them onto
+a shared centerline, which is what the original ~50 baseline described. The two
+populations barely overlap, which makes separation the first thing to measure
+when this warns — a residual at pavement spacing is a matching problem and no
+merge threshold will reach it.
+
+The count itself was still wrong as an alarm. Duplicates arise per
+parallel-way opportunity, so the count rises with the drawn map, and a rider
+covering more ground walks it into any fixed threshold. As a share of features
+the healthy and regressed states are 0.14% and 0.51% — far enough apart to sit
+a threshold between, and stable as the map grows. `MERGE_AUDIT_DUP_SHARE` is
+0.003.
+
+Duplicate km did not follow the pairs down, and it is not meant to: three
+multi-kilometre bridge and greenway pairs carry 6.1 of the remaining 7.3 km,
+so one long corridor drawn twice outweighs eighty short ones.

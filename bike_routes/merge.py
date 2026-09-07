@@ -735,9 +735,24 @@ def _audit_merge(features: list[dict[str, Any]]) -> None:
     Residual duplicate pairs: features >= 30m that still mutually cover each
     other (should have been merged).  Dangling endpoints: endpoints near
     another feature (within config.MERGE_SNAP_M) but not touching it (beyond
-    config.MERGE_CONNECT_M) -- broken corridor joins.  Healthy baseline as of
-    2026-07: ~50 duplicate pairs (mostly cluster siblings converged onto
-    the same centerline by averaging), ~0.0% dangling.
+    config.MERGE_CONNECT_M) -- broken corridor joins.
+
+    The duplicate alarm is a share of features rather than a count of pairs:
+    duplicates arise per parallel-way opportunity, so a count grows with the
+    drawn map and any fixed one goes stale as the riding spreads.  A count
+    warned on every run through 2026-08 for exactly that reason.
+
+    Read a residual by the pair's lateral separation before touching a merge
+    threshold, because the two populations do not overlap.  Benign pairs are
+    cluster siblings _average_parallel_geometry converged onto one
+    centerline, a few metres apart.  The excess that fired the alarm sat at
+    roadway-to-pavement spacing -- sidewalks matched beside their streets,
+    which keeping them out of the matcher's map index removed without
+    touching this module ([why](../findings/sidewalk-matching.md)).
+
+    Duplicate km is not a second reading of the share: a handful of
+    multi-kilometre bridge and greenway pairs carry most of it, so the two
+    move independently.
     """
     samples = [_sample_line(f["geometry"]["coordinates"]) for f in features]
     hits = _sample_hits(samples)
@@ -790,11 +805,13 @@ def _audit_merge(features: list[dict[str, Any]]) -> None:
             if connect_sq < best < snap_sq:
                 dangling += 1
 
+    dup_share = dup_pairs / len(features) if features else 0.0
     total_ends = 2 * len(features)
     pct = 100 * dangling / total_ends if total_ends else 0.0
     print(
-        f"  Audit: {dup_pairs:,} residual duplicate pairs ({dup_km:.1f} km), "
+        f"  Audit: {dup_pairs:,} residual duplicate pairs "
+        f"({100 * dup_share:.2f}% of features, {dup_km:.1f} km), "
         f"{dangling:,}/{total_ends:,} dangling endpoints ({pct:.1f}%)"
     )
-    if dup_pairs > 100 or pct > 2.0:
+    if dup_share > config.MERGE_AUDIT_DUP_SHARE or pct > 2.0:
         print("  WARNING: merge regression suspected -- metrics well above baseline")
