@@ -118,16 +118,52 @@ test.describe('inspector panel', () => {
   // map, it says which feature it is about, and it stays true while the map
   // keeps being used.
 
-  test('it docks at the left edge without covering the legend', async ({ page }) => {
+  test('the panel and the controls take opposite edges', async ({ page }) => {
     await gotoMap(page);
     await clickEdge(page, EDGES.center.lat);
     const panel = await page.locator('#inspector').boundingBox();
-    const legend = await page.locator('#legend').boundingBox();
     const view = page.viewportSize();
 
     expect(panel.x).toBeLessThan(40);                     // hard against the left
     expect(panel.x + panel.width).toBeLessThan(view.width / 3);
-    expect(panel.y + panel.height).toBeLessThanOrEqual(legend.y + 1);
+    for (const other of ['#legend', '#stats', '#stats-toggle']) {
+      const b = await page.locator(other).boundingBox();
+      const overlaps = panel.x < b.x + b.width && b.x < panel.x + panel.width
+        && panel.y < b.y + b.height && b.y < panel.y + panel.height;
+      expect(overlaps, `#inspector overlaps ${other}`).toBe(false);
+    }
+  });
+
+  // The regression this replaced: the rail used `justify-content:
+  // space-between`, which parks a lone item at the *top*. With the panel
+  // hidden the legend was the only item, so it rode at the top of the window
+  // and dropped to the bottom the moment anything was clicked.
+  test('the legend holds the bottom right whether or not a panel is open', async ({ page }) => {
+    await gotoMap(page);
+    const legend = page.locator('#legend');
+    const view = page.viewportSize();
+
+    const closed = await legend.boundingBox();
+    expect(closed.x).toBeGreaterThan(view.width / 2);              // right half
+    expect(closed.y + closed.height).toBeGreaterThan(view.height * 0.8);  // bottom
+
+    await clickEdge(page, EDGES.center.lat);
+    await expect(page.locator('#inspector')).toBeVisible();
+    expect(await legend.boundingBox()).toEqual(closed);
+
+    await page.locator('#inspector-close').click();
+    await expect(page.locator('#inspector')).toBeHidden();
+    expect(await legend.boundingBox()).toEqual(closed);
+  });
+
+  // The panel used to be a fixed 272px column, which is wider than any of the
+  // three kinds needs and spends the difference covering map.
+  test('the panel is sized to its rows, not to a column', async ({ page }) => {
+    await gotoMap(page);
+    await clickEdge(page, EDGES.center.lat);
+    const box = await page.locator('#inspector').boundingBox();
+    expect(box.width).toBeGreaterThanOrEqual(180);   // the floor
+    expect(box.width).toBeLessThan(272);             // ... and under the cap
   });
 
   test('the close button, Escape and a click on empty map each close it', async ({ page }) => {

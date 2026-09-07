@@ -258,6 +258,14 @@ test.describe('streets', () => {
         return s.bottom <= window.innerHeight;
       });
       expect(fits, `#${section} keeps the panel on screen`).toBe(true);
+      // ... and off the legend below it: they share the right rail, so the
+      // open section gives up height rather than the two overlapping.
+      const clears = await page.evaluate(() => {
+        const s = document.getElementById('stats').getBoundingClientRect();
+        const l = document.getElementById('legend').getBoundingClientRect();
+        return s.bottom <= l.top + 1;
+      });
+      expect(clears, `#${section} keeps the panel off the legend`).toBe(true);
       // Both the way in and the way out stay reachable without scrolling.
       await expect(page.locator('#stat-chips')).toBeInViewport();
       await expect(page.locator('#stats-toggle')).toBeInViewport();

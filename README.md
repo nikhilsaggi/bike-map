@@ -24,10 +24,11 @@ The pipeline exports a compressed GeoJSON that powers an interactive
 - Hover for the pass count, click for the full list of ride dates
 - Detail (street, dock or neighborhood) opens in a panel docked to the left
   edge rather than a popup over the feature it describes: it covers no map,
-  the clicked feature is highlighted instead of being pointed at, the map pans
-  only when the feature would fall behind the panel, and the panel follows the
-  date and source filters while it is open. On a narrow screen it becomes a
-  bottom sheet.
+  it is sized to its own rows, the clicked feature is highlighted instead of
+  being pointed at, the map pans only when the feature would fall behind the
+  panel, and the panel follows the date and source filters while it is open.
+  The stats panel and the legend hold the right edge, top and bottom. On a
+  narrow screen the panel becomes a bottom sheet.
 - Date-range slider with time-lapse playback (watch the network grow)
 - Collapsible stats panel with total rides, edges covered, and street
   miles

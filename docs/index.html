@@ -15,7 +15,10 @@
      one detail section at a time.  Stacking every section at once ran to ~32
      rows and 670-1080px, burying the map the panel floats over. */
   #stats {
-    position: absolute; top: 12px; right: 12px; z-index: 1000;
+    /* relative, not absolute: the rail places it, but #stats-toggle inside
+       still needs this box as its containing block. */
+    position: relative; flex: 0 1 auto; min-height: 0;
+    display: flex; flex-direction: column;
     /* Fixed content width, not a share of the viewport: everything inside is
        width-driven (hero grid, right-justified rows, flex:1 histogram bars),
        so a phone-width panel stretches them all to ~1.7x. Only a viewport
@@ -37,9 +40,14 @@
   #stats.collapsed #stats-body { display: none; }
   #stats.collapsed { width: auto; padding: 8px 32px 8px 14px; }
   #stats.collapsed #stats-collapsed-label { display: inline; }
-  /* Backstop only.  With one section open the panel fits every viewport we
-     target; a very short window still needs somewhere to scroll. */
-  #stats-body { max-height: calc(100vh - 72px); overflow-y: auto; }
+  /* The rail bounds the panel, so the squeeze is passed down to the one part
+     that can absorb it -- the open section, which already scrolls. The header
+     and the chip strip do not shrink: they are how the panel is navigated, and
+     a chip strip scrolled out of reach is worse than a shorter section. */
+  #stats-body {
+    flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column;
+  }
+  #stat-hero, #stat-updated-row, #stat-chips { flex: none; }
 
   /* The page's one scroll bar: a thin dark thumb over no track, so a
      scrollable box reads as part of the panel it sits in rather than as a
@@ -82,6 +90,7 @@
   #stats-sections.open {
     display: block; margin-top: 8px; padding-top: 8px;
     border-top: 1px solid #333; padding-right: 4px;
+    flex: 0 1 auto; min-height: 0;
     max-height: min(320px, calc(100vh - 300px)); overflow-y: auto;
     font-size: 11px; line-height: 1.6;
   }
@@ -399,27 +408,34 @@
   .cb-stack-key span { white-space: nowrap; }
   .cb-stack-key i { display: inline-block; width: 8px; height: 8px; margin-right: 3px; }
 
-  /* -- Left rail ---------------------------------------------------------
-     The inspector and the legend share one column, as a flex stack rather
-     than two absolutely-positioned boxes: the inspector's height depends on
-     what was clicked, so any fixed cap that kept it off the legend would be
-     either a magic number or wrong. Here the legend holds the bottom and the
-     inspector takes what is left.
+  /* -- Rails -------------------------------------------------------------
+     Two columns down the edges of the map. Each is a flex stack rather than a
+     set of absolutely-positioned boxes, so its contents cannot overlap however
+     tall they grow -- the inspector's height depends on what was clicked and
+     the stats panel's on which section is open, and any fixed cap that kept
+     those off the legend would be either a magic number or wrong.
 
-     `top` clears the Leaflet zoom control in the same corner. The rail itself
-     is transparent to the pointer -- it spans most of the map's height and
-     would otherwise swallow drags in the empty space above the legend. */
-  #left-rail {
-    position: absolute; left: 12px; top: 86px; bottom: 28px; z-index: 1000;
-    display: flex; flex-direction: column; justify-content: space-between;
-    align-items: flex-start; gap: 12px; pointer-events: none;
+     `margin-top: auto` is what pins the legend to the bottom, rather than
+     `justify-content: space-between`: a rail whose other box is hidden has one
+     item in flow, and space-between puts a lone item at the *top*. That is
+     exactly the bug that had the legend riding at the top of the window until
+     something was clicked.
+
+     The rails are transparent to the pointer -- they span the map's height and
+     would otherwise swallow drags in the empty space between their boxes. */
+  #left-rail, #right-rail {
+    position: absolute; top: 12px; bottom: 28px; z-index: 1000;
+    display: flex; flex-direction: column; gap: 12px; pointer-events: none;
   }
-  #left-rail > * { pointer-events: auto; }
+  /* Clear of the Leaflet zoom control in the same corner. */
+  #left-rail { left: 12px; top: 86px; align-items: flex-start; }
+  #right-rail { right: 12px; align-items: flex-end; }
+  #left-rail > *, #right-rail > * { pointer-events: auto; }
 
   #legend {
     background: rgba(13, 13, 13, 0.88); color: #ccc; padding: 12px 16px;
     border-radius: 8px; font-size: 12px; border: 1px solid #333;
-    backdrop-filter: blur(6px); flex: none;
+    backdrop-filter: blur(6px); flex: none; margin-top: auto;
   }
   #legend .title { font-weight: 600; color: #fff; margin-bottom: 8px; }
   #legend .bar {
@@ -505,9 +521,15 @@
      network, not a caption. */
   #inspector {
     flex: 0 1 auto; min-height: 0; display: flex; flex-direction: column;
-    /* Wider than #stats' 236px: dock names are long, and every row carries a
-       second line under it. */
-    width: min(272px, calc(100vw - 24px));
+    /* Sized to what is in it, not to a column: a street's rows measure ~248px,
+       a dock's ~227 and a neighborhood's ~208, and a box padded out to the
+       widest of those spends the difference covering map. The cap is what a
+       long dock name would otherwise stretch it to -- past that it wraps --
+       and the floor keeps the empty state from becoming a sliver.
+       (#stats does the opposite deliberately: its content wants 434px, so its
+       236 is already a squeeze, not slack.) */
+    width: fit-content; min-width: 180px;
+    max-width: min(272px, calc(100vw - 24px));
     background: rgba(13, 13, 13, 0.88); color: #ccc; padding: 10px 14px 12px;
     border-radius: 8px; font-size: 12px; line-height: 1.6;
     border: 1px solid #333; backdrop-filter: blur(6px);
@@ -544,16 +566,22 @@
 
   @media (max-width: 640px) {
     #stats-sections.open { max-height: min(240px, calc(100vh - 300px)); }
-    /* A 272px column is most of a phone's width, so the rail lies down: full
-       width along the bottom, legend above the sheet. `order` does it, so the
-       markup stays in reading order. */
+    /* The panel is most of a phone's width, so the left rail lies down: a
+       sheet along the bottom. That is where a bottom-anchored legend would be
+       too, so the right rail gives up its bottom and the legend stacks under
+       the stats panel instead -- the two are one control cluster, and the
+       sheet gets the bottom to itself. */
     #left-rail {
       left: 0; right: 0; top: auto; bottom: 0; gap: 8px;
       align-items: stretch; padding: 0 8px 8px;
     }
-    #legend { align-self: flex-start; }
+    #right-rail { bottom: auto; }
+    #legend { margin-top: 0; }
+    /* width:auto so `align-items: stretch` above takes effect: a sheet reads
+       as a sheet by spanning the screen, where the desktop panel is sized to
+       its rows. */
     #inspector {
-      order: 2; width: auto; max-height: 45vh;
+      width: auto; max-width: none; max-height: 45vh;
       border-radius: 10px 10px 0 0; margin: 0 -8px -8px;
     }
     #inspector.entering { transform: translateY(8px); }
@@ -568,51 +596,43 @@
   <button id="ride-view-exit" title="Back to all rides (Esc)">&times;</button>
 </div>
 
-<div id="stats">
-  <button id="stats-toggle" title="Collapse stats">&ndash;</button>
-  <span id="stats-collapsed-label">Stats</span>
-  <div id="stats-body" class="scrollbox">
-    <div id="stat-hero">
-      <div class="hero-tile"><strong id="stat-rides">&mdash;</strong><span class="label">rides</span></div>
-      <div class="hero-tile hidden" id="tile-ridden"><strong id="stat-ridden">&mdash;</strong><span class="label">mi ridden</span></div>
-      <div class="hero-tile" id="tile-km"><strong id="stat-km">&mdash;</strong><span class="label">unique street mi</span></div>
-      <div class="hero-tile hidden" id="tile-coverage"><strong id="stat-coverage">&mdash;</strong><span class="label">of NYC</span></div>
-    </div>
-    <div id="stat-updated-row"><span class="label">Last ride</span> <strong id="stat-updated">&mdash;</strong></div>
-    <div id="stat-chips" role="group" aria-label="Stat sections">
-      <button class="chip hidden" data-section="stat-years" aria-expanded="false" aria-controls="stat-years">Years</button>
-      <button class="chip hidden" data-section="stat-calendar" aria-expanded="false" aria-controls="stat-calendar">Calendar</button>
-      <button class="chip hidden" data-section="stat-riding" aria-expanded="false" aria-controls="stat-riding">Riding</button>
-      <button class="chip hidden" data-section="stat-weather" aria-expanded="false" aria-controls="stat-weather">Weather</button>
-      <button class="chip hidden" data-section="stat-streets" aria-expanded="false" aria-controls="stat-streets">Streets</button>
-      <button class="chip hidden" data-section="stat-citibike" aria-expanded="false" aria-controls="stat-citibike">Citibike</button>
-      <button class="chip hidden" data-section="stat-places" aria-expanded="false" aria-controls="stat-places">Neighborhoods</button>
-    </div>
-    <div id="stats-sections" class="scrollbox">
-      <div id="stat-years"></div>
-      <div id="stat-calendar"></div>
-      <div id="stat-riding"></div>
-      <div id="stat-weather"></div>
-      <div id="stat-streets">
-        <div id="streets-totals"></div>
-        <div id="speed-block">
-          <div class="sub-title">Faster one way</div>
-          <div id="speed-list"></div>
-        </div>
+<div id="right-rail">
+  <div id="stats">
+    <button id="stats-toggle" title="Collapse stats">&ndash;</button>
+    <span id="stats-collapsed-label">Stats</span>
+    <div id="stats-body">
+      <div id="stat-hero">
+        <div class="hero-tile"><strong id="stat-rides">&mdash;</strong><span class="label">rides</span></div>
+        <div class="hero-tile hidden" id="tile-ridden"><strong id="stat-ridden">&mdash;</strong><span class="label">mi ridden</span></div>
+        <div class="hero-tile" id="tile-km"><strong id="stat-km">&mdash;</strong><span class="label">unique street mi</span></div>
+        <div class="hero-tile hidden" id="tile-coverage"><strong id="stat-coverage">&mdash;</strong><span class="label">of NYC</span></div>
       </div>
-      <div id="stat-citibike"></div>
-      <div id="stat-places"></div>
+      <div id="stat-updated-row"><span class="label">Last ride</span> <strong id="stat-updated">&mdash;</strong></div>
+      <div id="stat-chips" role="group" aria-label="Stat sections">
+        <button class="chip hidden" data-section="stat-years" aria-expanded="false" aria-controls="stat-years">Years</button>
+        <button class="chip hidden" data-section="stat-calendar" aria-expanded="false" aria-controls="stat-calendar">Calendar</button>
+        <button class="chip hidden" data-section="stat-riding" aria-expanded="false" aria-controls="stat-riding">Riding</button>
+        <button class="chip hidden" data-section="stat-weather" aria-expanded="false" aria-controls="stat-weather">Weather</button>
+        <button class="chip hidden" data-section="stat-streets" aria-expanded="false" aria-controls="stat-streets">Streets</button>
+        <button class="chip hidden" data-section="stat-citibike" aria-expanded="false" aria-controls="stat-citibike">Citibike</button>
+        <button class="chip hidden" data-section="stat-places" aria-expanded="false" aria-controls="stat-places">Neighborhoods</button>
+      </div>
+      <div id="stats-sections" class="scrollbox">
+        <div id="stat-years"></div>
+        <div id="stat-calendar"></div>
+        <div id="stat-riding"></div>
+        <div id="stat-weather"></div>
+        <div id="stat-streets">
+          <div id="streets-totals"></div>
+          <div id="speed-block">
+            <div class="sub-title">Faster one way</div>
+            <div id="speed-list"></div>
+          </div>
+        </div>
+        <div id="stat-citibike"></div>
+        <div id="stat-places"></div>
+      </div>
     </div>
-  </div>
-</div>
-
-<div id="left-rail">
-  <div id="inspector" hidden>
-    <div id="inspector-head">
-      <span id="inspector-title"></span>
-      <button id="inspector-close" title="Close (Esc)">&times;</button>
-    </div>
-    <div id="inspector-body" class="scrollbox"></div>
   </div>
 
   <div id="legend">
@@ -647,6 +667,16 @@
     <label id="nb-toggle" class="hidden">
       <input type="checkbox" id="nb-check"> Neighborhoods
     </label>
+  </div>
+</div>
+
+<div id="left-rail">
+  <div id="inspector" hidden>
+    <div id="inspector-head">
+      <span id="inspector-title"></span>
+      <button id="inspector-close" title="Close (Esc)">&times;</button>
+    </div>
+    <div id="inspector-body" class="scrollbox"></div>
   </div>
 </div>
 
