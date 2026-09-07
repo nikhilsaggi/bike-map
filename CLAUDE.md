@@ -138,7 +138,14 @@ neighborhood's ~208, so a fixed column spends the difference covering map.
 content wants 434px (705 with the streets section open), and everything in it
 is width-driven -- the hero grid, the right-justified rows, the `flex: 1`
 histogram bars -- so sizing it to content would widen it and sizing it to the
-viewport would stretch those to ~1.7x on a phone.
+viewport would stretch those to ~1.7x on a phone. **That holds on a phone
+too**: under 640px the panel moves to the bottom of the screen, but it is
+still sized to its rows and capped at 272px, so the map stays visible beside
+it. It was a full-bleed sheet first, which spent most of a 360px portrait
+screen restating a box whose widest kind measures ~250px. What lies down at
+that breakpoint is the *rail*, not the panel -- the rail keeps the full width
+because `railPadding()` reads its width to tell the bottom layout from the
+side one.
 
 ## Invariants
 

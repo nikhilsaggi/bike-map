@@ -598,24 +598,28 @@
 
   @media (max-width: 640px) {
     #stats-sections.open { max-height: min(240px, calc(100vh - var(--rail-fixed))); }
-    /* The panel is most of a phone's width, so the left rail lies down: a
-       sheet along the bottom. That is where a bottom-anchored legend would be
-       too, so the right rail gives up its bottom and the legend stacks under
-       the stats panel instead -- the two are one control cluster, and the
-       sheet gets the bottom to itself. */
+    /* The left rail lies down along the bottom of a phone -- the top-left
+       corner belongs to the zoom control, and the bottom is where a thumb is.
+       It keeps the full width even though the panel in it does not: the rail's
+       own width is how railPadding() tells the two layouts apart, and a
+       bottom-anchored panel still has to be panned out from under, however
+       narrow it is. That is where a bottom-anchored legend would sit too, so
+       the right rail gives up its bottom and the legend stacks under the stats
+       panel instead -- the two are one control cluster. */
     #left-rail {
-      left: 0; right: 0; top: auto; bottom: 0; gap: 8px;
-      align-items: stretch; padding: 0 8px 8px;
+      left: 0; right: 0; top: auto; gap: 8px;
+      align-items: flex-start; padding: 0 12px;
     }
     #right-rail { bottom: auto; }
     #legend { margin-top: 0; }
-    /* width:auto so `align-items: stretch` above takes effect: a sheet reads
-       as a sheet by spanning the screen, where the desktop panel is sized to
-       its rows. */
-    #inspector {
-      width: auto; max-width: none; max-height: 45vh;
-      border-radius: 10px 10px 0 0; margin: 0 -8px -8px;
-    }
+    /* Nothing about the width here, deliberately: `align-items: flex-start`
+       above leaves the desktop rule in charge, so the box is still sized to
+       its rows and capped at the narrower of 272px and the viewport, and the
+       12px rail padding is the margin that cap is measured against. A
+       full-bleed sheet was tried first and spent most of a portrait screen
+       stretching a box whose content measures ~250px. Only the height is a
+       phone's own problem: 45vh, so the panel can never take the screen. */
+    #inspector { max-height: 45vh; }
     #inspector.entering { transform: translateY(8px); }
     /* The bar and the stats panel both want the top of the screen, and the
        panel is most of a phone's width, so a centred bar lands on top of it.
@@ -2253,7 +2257,9 @@ const inspectorBodyEl = document.getElementById('inspector-body');
 // the panel: the legend is in there too, and on a phone it is the piece that
 // ends up over the map. Measured off the rail's own rect rather than restating
 // the stylesheet's breakpoint here -- a rail as wide as the map is the phone's
-// bottom sheet, and anything narrower is the desktop column.
+// bottom row, and anything narrower is the desktop column. It is the rail that
+// is measured, not the panel: the panel is sized to its rows on a phone too,
+// so its own width says nothing about which edge it is parked against.
 function railPadding() {
   const box = railEl.getBoundingClientRect();
   const view = map.getContainer().getBoundingClientRect();

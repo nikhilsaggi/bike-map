@@ -196,6 +196,51 @@ test.describe('inspector panel', () => {
     expect(box.width).toBeLessThan(272);             // ... and under the cap
   });
 
+  // Same rule on a phone, where it used to be suspended: the panel went
+  // full-bleed under 640px, so a box whose widest kind measures ~250px took
+  // the whole of a 360px portrait screen and none of the map was left beside
+  // it. All three kinds are checked because all three open the one panel.
+  test('a portrait phone keeps the panel sized to its rows', async ({ page }) => {
+    await page.setViewportSize({ width: 360, height: 780 });
+    await gotoMap(page);
+
+    const box = () => page.locator('#inspector').boundingBox();
+    const open = [
+      // Not clickEdge: edgePoint projects at the desktop zoom, and fitBounds
+      // lands a 360px-wide map somewhere else. This is what the click handler
+      // itself calls.
+      ['street', () => page.evaluate(() => {
+        const layer = geoLayer.getLayers().find((l) => l._filteredCount > 0);
+        selectEdge(layer, layer.feature.properties.rides, layer.getBounds().getCenter());
+      })],
+      ['dock', async () => {
+        await page.locator('#cb-check').check();
+        await page.evaluate(() => selectDock(0));
+      }],
+      ['area', async () => {
+        await page.locator('#nb-check').check();
+        await page.evaluate(() => selectArea(0));
+      }],
+    ];
+
+    for (const [kind, show] of open) {
+      await show();
+      await expect(page.locator('#inspector')).toBeVisible();
+      // The panel slides in, so its box is 8px off until the transition ends.
+      await page.locator('#inspector')
+        .evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)));
+      const b = await box();
+      expect(b.width, `${kind} is under the cap`).toBeLessThanOrEqual(272);
+      expect(b.width, `${kind} leaves map beside it`).toBeLessThan(360 - 24);
+      expect(b.x, `${kind} keeps its left margin`).toBe(12);
+      // Anchored to the bottom, clear of the attribution, and never more than
+      // 45vh of a screen that has to show the feature as well.
+      expect(b.height).toBeLessThanOrEqual(780 * 0.45);
+      expect(b.y + b.height).toBeLessThanOrEqual(780 - 28);
+      await page.locator('#inspector-close').click();
+    }
+  });
+
   test('the close button, Escape and a click on empty map each close it', async ({ page }) => {
     await gotoMap(page);
     const panel = page.locator('#inspector');
