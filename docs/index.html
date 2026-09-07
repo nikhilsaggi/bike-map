@@ -510,8 +510,13 @@
   /* The row whose ride is on the map, in ride view's own cyan -- the same
      contract .yd-link already carries. */
   .ride-row.on, .ride-row.on:hover { color: #00e5ff; font-weight: 600; }
+  /* Centred over the map on a desktop, where nothing else is; on a phone it
+     lies down into the rail below (see the breakpoint). It lives in the left
+     rail so that it can, but `fixed` rather than `absolute` is what keeps it
+     out of the rail's flow here -- the rail is itself positioned, so an
+     absolute bar would centre on the rail's own width instead of the map's. */
   #ride-view-bar {
-    display: none; position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+    display: none; position: fixed; top: 12px; left: 50%; transform: translateX(-50%);
     z-index: 1000; background: rgba(13, 13, 13, 0.88); color: #ccc; padding: 8px 14px;
     border-radius: 8px; font-size: 12px; border: 1px solid #333;
     backdrop-filter: blur(6px); align-items: center; gap: 10px;
@@ -612,16 +617,22 @@
       border-radius: 10px 10px 0 0; margin: 0 -8px -8px;
     }
     #inspector.entering { transform: translateY(8px); }
+    /* The bar and the stats panel both want the top of the screen, and the
+       panel is most of a phone's width, so a centred bar lands on top of it.
+       Rejoining the rail's flow is the fix the rest of the page already uses:
+       a flex column cannot overlap itself, whatever the label wraps to, where
+       an offset under a reserved strip would be a number that goes stale the
+       first time the bar grows a second line. The bottom is also where the
+       exit button is reachable, and it puts the bar next to the sheet whose
+       row opened the ride. */
+    #ride-view-bar {
+      position: static; transform: none; justify-content: space-between;
+    }
   }
 </style>
 </head>
 <body>
 <div id="map"></div>
-
-<div id="ride-view-bar">
-  <span>Ride <strong id="ride-view-label"></strong></span>
-  <button id="ride-view-exit" title="Back to all rides (Esc)">&times;</button>
-</div>
 
 <div id="right-rail">
   <div id="stats">
@@ -705,6 +716,10 @@
 </div>
 
 <div id="left-rail">
+  <div id="ride-view-bar">
+    <span>Ride <strong id="ride-view-label"></strong></span>
+    <button id="ride-view-exit" title="Back to all rides (Esc)">&times;</button>
+  </div>
   <div id="inspector" hidden>
     <div id="inspector-head">
       <span id="inspector-title"></span>

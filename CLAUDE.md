@@ -106,21 +106,28 @@ against and the cap is all that holds the panel off the bottom there.
 **A click answers in the docked inspector, never a popup.** A popup opens over
 the feature it describes, which is the one thing a reader clicked it to look
 at; the page carried ~70 lines of drag machinery to work around that. The panel
-owns `#left-rail`; `#stats` and `#legend` share `#right-rail`. Both rails are
-flex columns rather than sets of absolutely-positioned boxes, so their contents
-cannot overlap however tall they grow -- the panel's height depends on what was
-clicked and the stats panel's on which section is open, and the open section
-gives up height rather than running into the legend. **The legend is pinned by
-`margin-top: auto`, never `justify-content: space-between`**: a rail whose
-other box is hidden has one item in flow, and space-between puts a lone item at
-the *top* -- which had the legend riding at the top of the window until
-something was clicked. `map.panInside` moves the map only when the clicked
-feature would fall behind the panel (`showArea` frames the whole
-polygon itself instead, so `selectArea` is told not to pan on top of the
-flight). One panel serves all three layers: a source is
-`{ kind, latlng, render }`, and `render()` returns `{ title, body }`. Because
-it covers nothing it can also outlive the click: `applyFilter` re-renders it,
-gated on `renormalize` so playback frames do not rebuild a 141-row dock, and
+shares `#left-rail` with the ride-view bar; `#stats` and `#legend` share
+`#right-rail`. Both rails are flex columns rather than sets of
+absolutely-positioned boxes, so their contents cannot overlap however tall they
+grow -- the panel's height depends on what was clicked and the stats panel's on
+which section is open, and the open section gives up height rather than running
+into the legend. **The legend is pinned by `margin-top: auto`, never
+`justify-content: space-between`**: a rail whose other box is hidden has one
+item in flow, and space-between puts a lone item at the *top* -- which had the
+legend riding at the top of the window until something was clicked. **The
+ride-view bar is in the left rail so that the phone breakpoint can lay it down
+there**, above the sheet: centred at the top of the screen it landed on the
+stats panel, which keeps its 236px on a phone and leaves a 430px screen nothing
+to centre in. Rejoining the rail's flow is the same lever as everything else
+here -- a flex column cannot overlap itself whatever the label wraps to -- so
+on a desktop the bar is `position: fixed` rather than `absolute`, or it would
+centre on the rail's width instead of the map's. `map.panInside` moves the map
+only when the clicked feature would fall behind the panel (`showArea` frames
+the whole polygon itself instead, so `selectArea` is told not to pan on top of
+the flight). One panel serves all three layers: a source is `{ kind, latlng,
+render }`, and `render()` returns `{ title, body }`. Because it covers nothing
+it can also outlive the click: `applyFilter` re-renders it, gated on
+`renormalize` so playback frames do not rebuild a 141-row dock, and
 `selectedEdge` is re-painted by every bulk restyle that would otherwise wipe
 it. Escape unwinds one layer at a time -- the ride on screen, then the panel.
 

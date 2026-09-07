@@ -91,6 +91,36 @@ test.describe('single-ride view', () => {
     await expect(page.locator('#ride-view-bar')).toBeHidden();
   });
 
+  // The bar used to be centred at the top of the screen on every viewport,
+  // which on a phone is where the stats panel already is: the panel keeps its
+  // 236px and its 12px right margin, so on a 430px screen the two boxes
+  // shared 126px of the top row. Under the breakpoint the bar joins the left
+  // rail's flow instead, above the sheet.
+  test('on a phone the bar clears the stats panel', async ({ page }) => {
+    await page.setViewportSize({ width: 430, height: 932 });
+    await gotoMap(page);
+    await clickEdge(page, EDGES.center.lat);
+    await page.locator('#inspector .ride-row').first().click();
+    await expect(page.locator('#ride-view-bar')).toBeVisible();
+
+    const box = (sel) => page.locator(sel).evaluate((el) => el.getBoundingClientRect().toJSON());
+    const bar = await box('#ride-view-bar');
+    for (const sel of ['#stats', '#legend', '#inspector']) {
+      const other = await box(sel);
+      const overlaps = bar.left < other.right && other.left < bar.right
+        && bar.top < other.bottom && other.top < bar.bottom;
+      expect(overlaps, `${sel} overlaps the ride-view bar`).toBe(false);
+    }
+    // In the rail, not floating over the middle of the map.
+    expect(bar.bottom).toBeGreaterThan(932 * 0.6);
+
+    // A desktop viewport still gets the centred bar.
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const wide = await box('#ride-view-bar');
+    expect(Math.round(wide.left + wide.width / 2)).toBe(640);
+    expect(Math.round(wide.top)).toBe(12);
+  });
+
   test('the exit button leaves ride view', async ({ page }) => {
     await gotoMap(page);
     await clickEdge(page, EDGES.center.lat);
