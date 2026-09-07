@@ -44,7 +44,7 @@
   /* The page's one scroll bar: a thin dark thumb over no track, so a
      scrollable box reads as part of the panel it sits in rather than as a
      browser widget bolted onto it.  Every box on the page that scrolls wears
-     this class -- the stats panel, its sections, and both popups. */
+     this class -- the stats panel, its sections, and the inspector's body. */
   .scrollbox::-webkit-scrollbar { width: 6px; }
   .scrollbox::-webkit-scrollbar-track { background: transparent; }
   .scrollbox::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
@@ -235,8 +235,7 @@
   #nb-toggle.hidden { display: none; }
   #nb-toggle:hover { color: #ccc; }
   #nb-check { vertical-align: -1px; margin-right: 3px; accent-color: #cfc3a8; }
-  .nb-popup { min-width: 150px; }
-  .nb-head { color: #e8dcc0; font-weight: 600; }
+  .nb-detail { min-width: 150px; }
   .nb-sub { color: #666; font-size: 10px; margin-bottom: 4px; }
   .nb-row { display: flex; justify-content: space-between; gap: 14px; font-size: 12px; }
   .nb-row .v { color: #fff; font-variant-numeric: tabular-nums; }
@@ -245,18 +244,14 @@
      the slider's range has no docks in it at all. Saying so here is the
      difference between "nothing to show" and "this is broken". */
   #cb-range { color: #555; font-size: 9px; }
-  /* Two lines a row means half as many partners in view, so the scroll box
-     grows to roughly hold what it held before. */
-  .dock-popup { max-height: 260px; overflow-y: auto; padding-right: 4px; }
-  .dock-head { color: #a8d8e8; font-weight: 600; }
   .dock-sub { color: #666; font-size: 10px; line-height: 1.5; margin-bottom: 4px; }
   .dock-count { color: #666; }
   /* Second line of a dock row: the counts, and the route link when there is
      one. Indented under the name it belongs to, and set back from it. */
   .dock-meta { margin-left: 10px; font-size: 11px; line-height: 1.4; }
   /* Rows are two lines each now, so they need air between them to stay
-     readable as rows. Scoped: the street popup's own .ride-row is one line. */
-  .dock-popup .ride-row, .dock-popup .dock-row-flat { margin-bottom: 3px; }
+     readable as rows. Scoped: a street's own .ride-row is one line. */
+  .dock-detail .ride-row, .dock-detail .dock-row-flat { margin-bottom: 3px; }
   /* A dock with no coordinates cannot be jumped to, so it gets none of the
      link affordance -- looking clickable and doing nothing is worse than
      plainly not being a link. */
@@ -312,7 +307,7 @@
   .cb-lead { color: #777; font-size: 9px; line-height: 1.4; margin-top: 1px; }
   /* The bikes met again, one row each: id, how many times it turned up, and
      the gaps between those times. Capped and scrollable so 88 rows cannot
-     push the rest of the panel off screen; .scrollbox is the dock popup's own
+     push the rest of the panel off screen; .scrollbox is the page's shared
      thin bar. The margin is what separates the list from its heading. */
   /* scrollbar-gutter so the bar's width is reserved whether or not the list
      overflows -- the header sits outside the scroll box, and without a stable
@@ -404,15 +399,27 @@
   .cb-stack-key span { white-space: nowrap; }
   .cb-stack-key i { display: inline-block; width: 8px; height: 8px; margin-right: 3px; }
 
-  @media (max-width: 640px) {
-    #stats-sections.open { max-height: min(240px, calc(100vh - 300px)); }
+  /* -- Left rail ---------------------------------------------------------
+     The inspector and the legend share one column, as a flex stack rather
+     than two absolutely-positioned boxes: the inspector's height depends on
+     what was clicked, so any fixed cap that kept it off the legend would be
+     either a magic number or wrong. Here the legend holds the bottom and the
+     inspector takes what is left.
+
+     `top` clears the Leaflet zoom control in the same corner. The rail itself
+     is transparent to the pointer -- it spans most of the map's height and
+     would otherwise swallow drags in the empty space above the legend. */
+  #left-rail {
+    position: absolute; left: 12px; top: 86px; bottom: 28px; z-index: 1000;
+    display: flex; flex-direction: column; justify-content: space-between;
+    align-items: flex-start; gap: 12px; pointer-events: none;
   }
+  #left-rail > * { pointer-events: auto; }
 
   #legend {
-    position: absolute; bottom: 28px; left: 12px; z-index: 1000;
     background: rgba(13, 13, 13, 0.88); color: #ccc; padding: 12px 16px;
     border-radius: 8px; font-size: 12px; border: 1px solid #333;
-    backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px); flex: none;
   }
   #legend .title { font-weight: 600; color: #fff; margin-bottom: 8px; }
   #legend .bar {
@@ -455,9 +462,11 @@
     display: none; justify-content: space-between; margin-top: 4px;
     font-size: 10px; color: #888; font-variant-numeric: tabular-nums;
   }
-  .ride-list { max-height: 200px; overflow-y: auto; padding-right: 4px; }
   .ride-row { color: #9fd8ff; font-size: 12px; cursor: pointer; }
   .ride-row:hover { color: #fff; text-decoration: underline; }
+  /* The row whose ride is on the map, in ride view's own cyan -- the same
+     contract .yd-link already carries. */
+  .ride-row.on, .ride-row.on:hover { color: #00e5ff; font-weight: 600; }
   #ride-view-bar {
     display: none; position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
     z-index: 1000; background: rgba(13, 13, 13, 0.88); color: #ccc; padding: 8px 14px;
@@ -474,38 +483,81 @@
   }
   #ride-view-exit:hover { color: #fff; }
 
-  .ride-popup .leaflet-popup-content-wrapper {
-    background: rgba(13, 13, 13, 0.92); color: #fff; border-radius: 8px;
-    border: 1px solid #444; backdrop-filter: blur(6px);
+  /* Hover says what a thing is; the inspector says everything else. That makes
+     the tooltip load-bearing, so it takes the page's own dark chrome instead
+     of Leaflet's default white card on a black map. */
+  .leaflet-tooltip {
+    background: rgba(13, 13, 13, 0.92); color: #fff; border: 1px solid #444;
+    border-radius: 6px; box-shadow: none; font-size: 11px; padding: 4px 7px;
   }
-  .ride-popup .leaflet-popup-tip { background: rgba(13, 13, 13, 0.92); }
-  /* The close button sits directly over the list's scroll bar, so the two
-     read as one band down the right edge instead of two marks in the corner.
-     That is what the narrow right gutter below is for: 9px of content margin
-     puts the 6px bar's centre 12px from the edge, where the button's centre
-     already is. Move one and the other has to follow. */
-  .ride-popup a.leaflet-popup-close-button {
-    color: #888; width: 18px; height: 18px;
-    font-size: 15px; line-height: 18px; right: 3px; top: 3px;
-  }
-  .ride-popup a.leaflet-popup-close-button:hover { color: #fff; }
+  .leaflet-tooltip-left::before { border-left-color: #444; }
+  .leaflet-tooltip-right::before { border-right-color: #444; }
+  .leaflet-tooltip-top::before { border-top-color: #444; }
+  .leaflet-tooltip-bottom::before { border-bottom-color: #444; }
 
-  /* A popup opens on top of the very stretch of map it describes, so it gets
-     a grab bar to move it aside. Only the bar drags: the rows under it are
-     links and the list scrolls. The tip goes once the box has been moved,
-     because it would be pointing at nothing. */
-  .ride-popup .leaflet-popup-content { margin-top: 6px; margin-right: 7px; }
-  .popup-drag {
-    height: 14px; display: flex; align-items: center; justify-content: center;
-    cursor: grab; touch-action: none;
+  /* -- Inspector ---------------------------------------------------------
+     What a click answers with. It used to be a Leaflet popup, which opened on
+     top of the street, dock or neighborhood it was describing -- so the page
+     grew a grab bar to shove it aside, which is a workaround for the box being
+     over the map at all. Docked in the rail it covers nothing, it is not
+     capped at a couple of hundred px of scroll, and it can stay open while the
+     map keeps being used: the dock rows in particular are a way of walking the
+     network, not a caption. */
+  #inspector {
+    flex: 0 1 auto; min-height: 0; display: flex; flex-direction: column;
+    /* Wider than #stats' 236px: dock names are long, and every row carries a
+       second line under it. */
+    width: min(272px, calc(100vw - 24px));
+    background: rgba(13, 13, 13, 0.88); color: #ccc; padding: 10px 14px 12px;
+    border-radius: 8px; font-size: 12px; line-height: 1.6;
+    border: 1px solid #333; backdrop-filter: blur(6px);
+    transition: opacity 140ms ease, transform 140ms ease;
   }
-  .popup-drag::before {
-    content: ''; width: 26px; height: 3px; border-radius: 2px; background: #444;
+  #inspector[hidden] { display: none; }
+  #inspector.entering { opacity: 0; transform: translateX(-8px); }
+  #inspector-head {
+    display: flex; align-items: baseline; gap: 8px; flex: none;
+    margin-bottom: 6px;
   }
-  .popup-drag:hover::before { background: #777; }
-  .popup-drag.dragging { cursor: grabbing; }
-  .popup-drag.dragging::before { background: #888; }
-  .leaflet-popup.popup-moved .leaflet-popup-tip-container { display: none; }
+  /* The heading takes the colour of the layer it is about -- plain white for
+     a street, the dock layer's tone, the neighborhood layer's -- so it says
+     which of the three is being described before it is read. It is where
+     .dock-head and .nb-head used to say the same thing inside the box. */
+  #inspector-title {
+    flex: 1; color: #fff; font-weight: 600; font-size: 13px; line-height: 1.3;
+    overflow-wrap: anywhere;
+  }
+  #inspector.kind-dock #inspector-title { color: #a8d8e8; }
+  #inspector.kind-area #inspector-title { color: #e8dcc0; }
+  #inspector-close {
+    flex: none; background: none; border: none; color: #888; font-size: 15px;
+    line-height: 1; cursor: pointer; padding: 0 2px;
+  }
+  #inspector-close:hover { color: #fff; }
+  #inspector-body {
+    flex: 1 1 auto; min-height: 0; overflow-y: auto; scrollbar-gutter: stable;
+  }
+  /* Nothing left to say about the clicked feature in the current range. The
+     panel stays up saying so rather than emptying or closing itself: the
+     filter that emptied it is one drag away from filling it again. */
+  .inspector-empty { color: #777; font-size: 11px; line-height: 1.5; }
+
+  @media (max-width: 640px) {
+    #stats-sections.open { max-height: min(240px, calc(100vh - 300px)); }
+    /* A 272px column is most of a phone's width, so the rail lies down: full
+       width along the bottom, legend above the sheet. `order` does it, so the
+       markup stays in reading order. */
+    #left-rail {
+      left: 0; right: 0; top: auto; bottom: 0; gap: 8px;
+      align-items: stretch; padding: 0 8px 8px;
+    }
+    #legend { align-self: flex-start; }
+    #inspector {
+      order: 2; width: auto; max-height: 45vh;
+      border-radius: 10px 10px 0 0; margin: 0 -8px -8px;
+    }
+    #inspector.entering { transform: translateY(8px); }
+  }
 </style>
 </head>
 <body>
@@ -554,38 +606,48 @@
   </div>
 </div>
 
-<div id="legend">
-  <div class="title">Pass frequency</div>
-  <div class="bar" id="legend-bar"></div>
-  <div class="labels"><span>1</span><span id="legend-max">—</span></div>
-  <div id="filter-row">
-    <button id="play-btn" title="Play time-lapse">&#9654;</button>
-    <div id="slider">
-      <div id="slider-track"></div>
-      <div id="slider-range"></div>
-      <input type="range" id="range-lo" min="0" value="0" step="1">
-      <input type="range" id="range-hi" min="0" value="0" step="1">
+<div id="left-rail">
+  <div id="inspector" hidden>
+    <div id="inspector-head">
+      <span id="inspector-title"></span>
+      <button id="inspector-close" title="Close (Esc)">&times;</button>
     </div>
+    <div id="inspector-body" class="scrollbox"></div>
   </div>
-  <div id="filter-dates"><span id="date-lo"></span><span id="date-hi"></span></div>
-  <!-- Most rides in the covered window turn out to be Citibike, so the
-       interesting question is which ones were not. Revealed only when the
-       payload knows the source of at least one ride. -->
-  <div id="src-row" class="hidden">
-    <button class="seg-btn on" data-src="all">All</button>
-    <button class="seg-btn" data-src="citibike">Citibike</button>
-    <button class="seg-btn" data-src="own">Own bike</button>
+
+  <div id="legend">
+    <div class="title">Pass frequency</div>
+    <div class="bar" id="legend-bar"></div>
+    <div class="labels"><span>1</span><span id="legend-max">—</span></div>
+    <div id="filter-row">
+      <button id="play-btn" title="Play time-lapse">&#9654;</button>
+      <div id="slider">
+        <div id="slider-track"></div>
+        <div id="slider-range"></div>
+        <input type="range" id="range-lo" min="0" value="0" step="1">
+        <input type="range" id="range-hi" min="0" value="0" step="1">
+      </div>
+    </div>
+    <div id="filter-dates"><span id="date-lo"></span><span id="date-hi"></span></div>
+    <!-- Most rides in the covered window turn out to be Citibike, so the
+         interesting question is which ones were not. Revealed only when the
+         payload knows the source of at least one ride. -->
+    <div id="src-row" class="hidden">
+      <button class="seg-btn on" data-src="all">All</button>
+      <button class="seg-btn" data-src="citibike">Citibike</button>
+      <button class="seg-btn" data-src="own">Own bike</button>
+    </div>
+    <div id="src-note"></div>
+    <!-- Revealed only when the payload carries a citibike block. Off by
+         default: the map opens as the map of rides it has always been. -->
+    <label id="cb-toggle" class="hidden">
+      <input type="checkbox" id="cb-check"> Citibike docks
+      <span id="cb-range"></span>
+    </label>
+    <label id="nb-toggle" class="hidden">
+      <input type="checkbox" id="nb-check"> Neighborhoods
+    </label>
   </div>
-  <div id="src-note"></div>
-  <!-- Revealed only when the payload carries a citibike block. Off by
-       default: the map opens as the map of rides it has always been. -->
-  <label id="cb-toggle" class="hidden">
-    <input type="checkbox" id="cb-check"> Citibike docks
-    <span id="cb-range"></span>
-  </label>
-  <label id="nb-toggle" class="hidden">
-    <input type="checkbox" id="nb-check"> Neighborhoods
-  </label>
 </div>
 
 <script>
@@ -748,7 +810,7 @@ function sourceMatches(ri) {
   return sourceFilter === 'citibike' ? s > 0 : s === 0;
 }
 
-// Spelt out rather than "Citibike ×2": a popup row already carries a "×2"
+// Spelt out rather than "Citibike ×2": a ride row already carries a "×2"
 // for its pass count, and two different multipliers side by side read as one.
 function sourceTag(ri) {
   const s = rideSrc[ri];
@@ -949,14 +1011,14 @@ let dockLinks = null;      // the selected dock's trips, drawn on demand
 let dockMarkers = [];      // index-aligned with cbData.docks
 let dockTrips = [];        // dock index -> indices into cbData.trips
 let dockSelected = null;   // dock index whose trips are drawn, if any
-let dockTraceLabels = [];  // relabel callbacks for the open popup's route links
+let dockTraceLabels = [];  // relabel callbacks for the open panel's route links
 // The recordings being stepped through, if any:
 // { key: what started it, to: partner dock index or null, rides: [ride id, ...]
 //   newest first, at: which one is drawn }.
 // It lives out here rather than in the control that started it so the keyboard
 // and the ride-view bar can address the same cycle. `key` is what a control
 // compares itself against, because two of them can now open a cycle -- a dock
-// popup's row ("d:<dock>") and the stats panel's bike chips ("b:<bike id>") --
+// panel's dock row ("d:<dock>") and the stats panel's bike chips ("b:<bike id>") --
 // and only the dock case narrows the drawn links, which is what `to` is for.
 let dockTrace = null;
 let dockSqrtMax = 1;
@@ -1042,20 +1104,12 @@ function showDockLinks(di) {
   if (m) { m.setStyle({ fillColor: DOCK_SELECTED }); m.bringToFront(); }
 }
 
-// Hop from one dock to the next through the trips that connect them: a
-// popup's rows are the map's own links, so a reader can follow a route
-// through their own history rather than hunting for the next marker.
-function focusDock(di) {
-  const m = dockMarkers[di];
-  if (m && dockLayer.hasLayer(m)) m.openPopup();  // auto-pans if off screen
-}
-
 // Show one of a set of recordings and make it the cycle. `at` wraps, so the
 // arrow keys can run off either end without falling out of the set.
 function startDockTrace(key, to, rides, at) {
   const i = ((at % rides.length) + rides.length) % rides.length;
   dockTrace = { key, to, rides, at: i };
-  viewRide(rides[i], true);       // keep the popup: its rows are the point
+  viewRide(rides[i], true);       // from the cycle, so it survives
   // ... and narrow the links to this pair, so the route is not lost in the
   // starburst of a dock that reaches a hundred others. Only a dock cycle has
   // a pair to narrow to; a bike's recordings are not one dock's trips.
@@ -1146,8 +1200,8 @@ function addTraceControl(meta, p) {
 // them contain an ampersand, which has no business being interpolated into
 // markup. It also lets the rows carry real listeners instead of inline
 // handlers.
-function dockPopup(di) {
-  // Rebuilt on every open, so the previous popup's route links go with it.
+function dockDetail(di) {
+  // Rebuilt on every render, so the previous set of route links goes with it.
   dockTraceLabels = [];
   const [lo, hi] = dockDateBounds();
   const d = cbData.docks[di];
@@ -1155,15 +1209,11 @@ function dockPopup(di) {
   const partners = dockPartners(di, lo, hi);
 
   const box = document.createElement('div');
-  box.className = 'dock-popup scrollbox';
+  box.className = 'dock-detail';
 
-  const head = document.createElement('div');
-  head.className = 'dock-head';
-  head.textContent = d.name;
-  // Two facts, two lines: the dock's own traffic, then how far it reaches.
-  // On one line this was the widest thing in the popup and set the width for
-  // everything under it. "out / in" stays spelled out here because it is what
-  // teaches the arrows in the rows below.
+  // The dock's name is the panel's heading, so what is left here is two facts
+  // on two lines: its own traffic, then how far it reaches. "out / in" stays
+  // spelled out because it is what teaches the arrows in the rows below.
   const sub = document.createElement('div');
   sub.className = 'dock-sub';
   const traffic = document.createElement('div');
@@ -1176,7 +1226,17 @@ function dockPopup(di) {
       `${partners.length} dock${partners.length !== 1 ? 's' : ''} reached`;
     sub.appendChild(reach);
   }
-  box.append(head, sub);
+  box.append(sub);
+
+  // The panel outlives the click, so the slider can empty a dock under it.
+  // Say so and stay up: the filter that emptied it is one drag from filling
+  // it again.
+  if (!partners.length && out + into === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'inspector-empty';
+    empty.textContent = 'No trips from this dock in the current date range.';
+    box.appendChild(empty);
+  }
 
   for (const p of partners) {
     const other = cbData.docks[p.idx];
@@ -1197,8 +1257,8 @@ function dockPopup(di) {
       `${p.out} trip${p.out !== 1 ? 's' : ''} out to here, ` +
       `${p.into} back`;
     // The counts and the route link go under the name rather than beside it:
-    // a dock name is long, and three things on one line made the popup as
-    // wide as the panel it sits next to.
+    // a dock name is long, and three things on one line made the box as
+    // wide as the stats panel across the map.
     const meta = document.createElement('div');
     meta.className = 'dock-meta';
     meta.appendChild(counts);
@@ -1208,7 +1268,7 @@ function dockPopup(di) {
     if (other.at) {
       row.className = 'ride-row';
       row.title = `Show ${other.name}`;
-      row.addEventListener('click', () => focusDock(p.idx));
+      row.addEventListener('click', () => selectDock(p.idx));
     } else {
       row.className = 'dock-row-flat';
       row.title = 'No coordinates for this dock';
@@ -1219,7 +1279,7 @@ function dockPopup(di) {
     box.appendChild(row);
     if (note) box.appendChild(note);
   }
-  return box;
+  return { title: d.name, body: box };
 }
 
 // Mirrors applyFilter's own renormalise/freeze: the slider rescales to what
@@ -1267,9 +1327,9 @@ function buildDockLayer() {
       const [out, into] = dockUseInRange(i, lo, hi);
       return `${d.name}<br>${out + into} trips (${out} out / ${into} in)`;
     }, { sticky: true });
-    m.bindPopup(() => dockPopup(i), { className: 'ride-popup' });
-    m.on('popupopen', () => { showDockLinks(i); ghostEdges(); });
-    m.on('popupclose', () => { clearDockLinks(); unghostEdges(); });
+    // Stopped, or the map's own click handler would close the panel this
+    // click just opened.
+    m.on('click', e => { L.DomEvent.stopPropagation(e); selectDock(i); });
     return m;
   });
 }
@@ -1300,15 +1360,17 @@ function initDockLayer(cb) {
       dockLayer.addTo(map);
       applyDockFilter();
     } else {
+      // Only a dock's own panel goes with the layer; a street's or a
+      // neighborhood's has nothing to do with it.
+      if (inspector?.kind === 'dock') closeInspector();
       clearDockLinks();
-      map.closePopup();
       map.removeLayer(dockLayer);
     }
   });
 }
 
 // Relabel callbacks for the bike chips, one per chip. They outlive any dock
-// popup, so they are kept apart from dockTraceLabels, which dockPopup clears.
+// panel, so they are kept apart from dockTraceLabels, which dockDetail clears.
 let metChipLabels = [];
 
 // One stacked bar: a label, two ordered segments whose widths carry the
@@ -1441,7 +1503,7 @@ function genChart(gen) {
 
 // The bikes met again, one chip each, and each chip is a way into the map:
 // click it and the GPS recordings made on that bike play through single-ride
-// view, the same cycle a dock popup's route link opens.
+// view, the same cycle a dock row's route link opens.
 //
 // A re-encounter is a bike unlocked again after it moved on -- not one picked
 // back up off the dock it was parked at, which is a round trip and is 200 of
@@ -1539,9 +1601,9 @@ function metList(met, reencounters) {
         // Clicking walks the cycle and then off the end of it, so the row
         // that started a detour can end it. The arrow keys wrap instead.
         if (i < 0) {
-          // A bike's recordings are not one dock's trips, so any open dock
-          // popup and its links belong to a different question -- close it.
-          map.closePopup();
+          // A bike's recordings are not one dock's trips, so an open dock
+          // panel and its links belong to a different question -- close it.
+          if (inspector?.kind === 'dock') closeInspector();
           clearDockLinks();
           startDockTrace(`b:${bike}`, null, rides, 0);
         } else if (i + 1 < n) {
@@ -1586,7 +1648,7 @@ function renderCitibike(cb) {
     `</div>`;
   // Appended as DOM rather than markup: a chip is a control with a listener,
   // and the bike ids come from Lyft, which has no business being interpolated
-  // into HTML -- the same reason dockPopup builds its rows this way.
+  // into HTML -- the same reason dockDetail builds its rows this way.
   const section = document.getElementById('stat-citibike');
   // Bikes actually met again, not bikes ridden twice: the heading's count
   // reads "unlocks were on a bike ridden before" for that reason.
@@ -1666,7 +1728,7 @@ function nbStyle(ai) {
 
 // Restyled on every filter change, like the edges and the dock markers. The
 // fill answers "how much of this had been ridden by then", a running
-// total, so it follows filterHi and ignores filterLo -- the popup says so
+// total, so it follows filterHi and ignores filterLo -- the panel says so
 // rather than leaving the reader to infer it.
 function applyNbFilter() {
   if (!nbLayer || !map.hasLayer(nbLayer)) return;
@@ -1675,11 +1737,11 @@ function applyNbFilter() {
 
 // Distinct rides that touched one area, in the visible range. Counted on the
 // click that asks rather than kept as an array applyFilter has to maintain:
-// one walk of the features costs nothing next to the redraw a popup already
+// one walk of the features costs nothing next to the redraw a click already
 // triggers, and there is no cached total to go stale.
 //
 // Rides, NOT passes. Passes are a property of one stretch of street -- "4
-// passes" on a street popup means that stretch was ridden four times -- and
+// passes" on a street's panel means that stretch was ridden four times -- and
 // summing them over an area counts segment-crossings instead. Forest Hills
 // held 104 drawn segments each ridden once by the same two rides, and the
 // row read "104", which any reader takes as having been there 104 times. A
@@ -1699,15 +1761,13 @@ function nbRidesIn(ai) {
   return seen.size;
 }
 
-function nbPopup(ai) {
+function nbDetail(ai) {
   const a = nbData.areas[ai];
   const ridden = nbRiddenBy(ai, filterHi);
   const share = a.net_m ? Math.round((100 * ridden) / a.net_m) : 0;
   const box = document.createElement('div');
-  box.className = 'nb-popup';
-  const head = document.createElement('div');
-  head.className = 'nb-head';
-  head.textContent = a.name;  // textContent: this is city open data
+  box.className = 'nb-detail';
+  // The name is the panel's heading now; the borough stays here under it.
   const sub = document.createElement('div');
   sub.className = 'nb-sub';
   sub.textContent = BOROUGHS[a.boro] || a.boro;
@@ -1732,7 +1792,7 @@ function nbPopup(ai) {
       'carry no per-ride split, so neither this nor the distance follows ' +
       'the slider'],
   ];
-  box.append(head, sub);
+  box.append(sub);
   for (const [k, v, title] of rows) {
     const row = document.createElement('div');
     row.className = 'nb-row';
@@ -1740,7 +1800,8 @@ function nbPopup(ai) {
     row.innerHTML = `<span class="label">${k}</span><span class="v">${v}</span>`;
     box.appendChild(row);
   }
-  return box;
+  // textContent, not markup: the name is city open data.
+  return { title: a.name, body: box };
 }
 
 // The list's three rankings. It used to sort by ridden metres while printing
@@ -1889,7 +1950,7 @@ function renderPlaceList() {
 }
 
 // A row in the panel puts its neighborhood on the map: turn the layer on if
-// it is off, fly to the polygon, and open its popup -- the same "the list is
+// it is off, fly to the polygon, and open its detail -- the same "the list is
 // a way into the map" move the speed corridors and the dock rows make.
 function showArea(ai) {
   const check = document.getElementById('nb-check');
@@ -1899,8 +1960,11 @@ function showArea(ai) {
   }
   const poly = nbShapes[ai];
   if (!poly) return;
-  map.flyToBounds(poly.getBounds(), { maxZoom: 14, duration: 0.6 });
-  poly.openPopup();
+  // The flight frames the whole polygon clear of the rail, which is a
+  // stronger claim than panInside's "bring this point into view" -- so it
+  // does the moving and selectArea is told not to pan on top of it.
+  map.flyToBounds(poly.getBounds(), { maxZoom: 14, duration: 0.6, ...railPadding() });
+  selectArea(ai, false);
 }
 
 function initNeighborhoods(nb) {
@@ -1928,9 +1992,9 @@ function initNeighborhoods(nb) {
       const share = a.net_m ? Math.round((100 * nbRiddenBy(i, filterHi)) / a.net_m) : 0;
       return `${a.name}<br>${share}% of its streets ridden`;
     }, { sticky: true });
-    poly.bindPopup(() => nbPopup(i), { className: 'ride-popup' });
-    poly.on('popupopen', () => { nbSelected = i; applyNbFilter(); });
-    poly.on('popupclose', () => { nbSelected = null; applyNbFilter(); });
+    // Stopped, or the map's own click handler would close the panel this
+    // click just opened.
+    poly.on('click', e => { L.DomEvent.stopPropagation(e); selectArea(i); });
     nbLayer.addLayer(poly);
     return poly;
   });
@@ -1952,7 +2016,8 @@ function initNeighborhoods(nb) {
       // restackLayers, which lifts the edges back over anything below.
       nbLayer.eachLayer(l => l.bringToBack());
     } else {
-      map.closePopup();
+      // Only a neighborhood's own panel goes with the layer.
+      if (inspector?.kind === 'area') closeInspector();
       map.removeLayer(nbLayer);
       nbSelected = null;
     }
@@ -1963,6 +2028,9 @@ function initNeighborhoods(nb) {
 // unselected streets, and the whole network while a dock is in focus. One
 // style, because they mean the same thing -- the network is context now.
 const EDGE_GHOST = { color: '#555', weight: 1, opacity: 0.12 };
+const EDGE_RIDE = {
+  color: '#00e5ff', weight: 4, opacity: 0.95, lineJoin: 'round', lineCap: 'round',
+};
 
 // Ride view owns the drawn edges whenever it is up, so dock focus only
 // paints when there is no ride on screen to be the subject instead.
@@ -1981,9 +2049,10 @@ function ghostEdges() {
     if (map.hasLayer(layer)) layer.setStyle(EDGE_GHOST);
   });
   restackLayers();
+  paintSelectedEdge();
 }
 
-// Only the popup that ghosted the network puts it back: closing a dock while
+// Only the panel that ghosted the network puts it back: closing a dock while
 // a route from its own row is being shown must leave ride view alone.
 function unghostEdges() {
   if (rideView === null) applyFilter();
@@ -2001,9 +2070,13 @@ function styleFor(count) {
 }
 
 // The ids repeat once per traversal, so a ride that came back this way gets
-// one row marked x2 rather than two identical rows. The header carries both
+// one row marked x2 rather than two identical rows. The title carries both
 // numbers: the count on the map is passes, but the rows below are rides.
-function popupContent(rideIds) {
+//
+// The features ship no street name (per-feature names were measured at ~250 KB
+// and dropped in export.py), so the count is the heading -- there is nothing
+// else true to call a segment.
+function edgeDetail(rideIds) {
   const rows = [];
   let passes = 0;
   for (let i = 0; i < rideIds.length; i++) {
@@ -2015,99 +2088,188 @@ function popupContent(rideIds) {
     passes += n;
     const d = dateList[di] ?? '';
     const t = clockLabel(rideList[ri]?.[1]);
+    // The panel outlives the click now, so the row that put a ride on the map
+    // says so, and clicking it again takes it back off -- the same contract
+    // the year table's and the calendar's links already have.
+    const on = rideView === ri ? ' on' : '';
     rows.push(
-      `<div class="ride-row" onclick="viewRide(${ri})" title="Show this ride's route">` +
+      `<div class="ride-row${on}" onclick="toggleRide(${ri})" ` +
+      `title="${on ? 'Hide this ride' : "Show this ride's route"}">` +
       `${d}${t ? ` &middot; ${t}` : ''}${n > 1 ? ` &times;${n}` : ''}` +
       `${sourceTag(ri) ? ` &middot; ${sourceTag(ri)}` : ''}</div>`
     );
   }
-  const header = `<strong>${passes} pass${passes !== 1 ? 'es' : ''}</strong>` +
-    (passes !== rows.length ? ` across ${rows.length} ride${rows.length !== 1 ? 's' : ''}` : '');
-  return `<div class="ride-list scrollbox">${header}${rows.join('')}</div>`;
-}
-
-// -- Draggable popups --------------------------------------------------------
-// A popup covers the feature it describes, which is often exactly what the
-// reader wants to look at while reading it. The grab bar moves the box
-// without letting go of that feature: the drag is a margin applied on top of
-// Leaflet's own positioning, which Leaflet never writes, so a moved popup
-// still pans and zooms with its street or dock.
-
-const POPUP_EDGE = 8;  // px of the popup that has to stay on the map
-
-// The offset now applied to a popup, in px right and down of where Leaflet
-// put it.
-function popupOffset(container) {
-  return [
-    parseFloat(container.style.marginLeft) || 0,
-    -(parseFloat(container.style.marginBottom) || 0),
-  ];
-}
-
-function setPopupOffset(container, dx, dy) {
-  container.style.marginLeft = `${dx}px`;
-  container.style.marginBottom = `${-dy}px`;
-  container.classList.toggle('popup-moved', dx !== 0 || dy !== 0);
-}
-
-function dragPopupFrom(e, container, bar) {
-  if (e.button !== 0) return;
-  e.preventDefault();  // no text selection, and no map drag underneath
-  const [dx0, dy0] = popupOffset(container);
-  const box = container.getBoundingClientRect();
-  const view = map.getContainer().getBoundingClientRect();
-  // Clamped as bounds on the offset, measured from where Leaflet would put
-  // the box (its current rect less the offset already on it), so a popup can
-  // never be dragged out of reach: a corner of it stays on the map, and the
-  // bar that moves it stays with it.
-  const minX = view.left + POPUP_EDGE - (box.right - dx0);
-  const maxX = view.right - POPUP_EDGE - (box.left - dx0);
-  const minY = view.top + POPUP_EDGE - (box.top - dy0);
-  const maxY = view.bottom - POPUP_EDGE - bar.offsetHeight - (box.top - dy0);
-  const x0 = e.clientX, y0 = e.clientY;
-
-  const move = ev => setPopupOffset(
-    container,
-    Math.min(maxX, Math.max(minX, dx0 + ev.clientX - x0)),
-    Math.min(maxY, Math.max(minY, dy0 + ev.clientY - y0)),
-  );
-  const stop = () => {
-    bar.classList.remove('dragging');
-    bar.removeEventListener('pointermove', move);
-    bar.removeEventListener('pointerup', stop);
-    bar.removeEventListener('pointercancel', stop);
+  if (!rows.length) {
+    return {
+      title: 'No passes in range',
+      body: '<div class="inspector-empty">Nothing crossed this street under ' +
+        'the current date range and source filter.</div>',
+    };
+  }
+  return {
+    title: `${passes} pass${passes !== 1 ? 'es' : ''}` +
+      (passes !== rows.length
+        ? ` across ${rows.length} ride${rows.length !== 1 ? 's' : ''}` : ''),
+    body: rows.join(''),
   };
-  bar.setPointerCapture(e.pointerId);
-  bar.classList.add('dragging');
-  bar.addEventListener('pointermove', move);
-  bar.addEventListener('pointerup', stop);
-  bar.addEventListener('pointercancel', stop);
 }
 
-// Leaflet rebuilds a popup's content on every open but keeps its container,
-// so the bar is added once and the offset is cleared every time: where one
-// dock's popup was dragged to is off screen for the next one.
-map.on('popupopen', e => {
-  const container = e.popup.getElement();
-  const wrapper = container?.querySelector('.leaflet-popup-content-wrapper');
-  if (!wrapper) return;
-  setPopupOffset(container, 0, 0);
-  if (wrapper.querySelector('.popup-drag')) return;
-  const bar = document.createElement('div');
-  bar.className = 'popup-drag';
-  bar.title = 'Drag to move';
-  bar.addEventListener('pointerdown', ev => dragPopupFrom(ev, container, bar));
-  wrapper.insertBefore(bar, wrapper.firstChild);
-});
+// -- Inspector ---------------------------------------------------------------
+// What a click answers with. This was a Leaflet popup, which opened on top of
+// the very street, dock or neighborhood it described; the page grew a drag bar
+// so the box could be shoved aside, which treats the symptom. Docked in the
+// left rail it covers nothing, so it can also do two things a popup could not:
+// stay open while the map keeps being used, and follow the filters instead of
+// freezing at whatever was true when it was opened.
+//
+// A source is { kind, latlng, render }. render() is re-run on every filter
+// change and returns { title, body }, body being an HTML string or a node --
+// dock rows carry listeners and Lyft dock names are full of ampersands, and
+// neighborhood names are city open data, so those two stay DOM.
+
+let inspector = null;     // the open source, or null
+let selectedEdge = null;  // the geoLayer layer drawn as selected, if any
+
+const railEl = document.getElementById('left-rail');
+const inspectorEl = document.getElementById('inspector');
+const inspectorTitleEl = document.getElementById('inspector-title');
+const inspectorBodyEl = document.getElementById('inspector-body');
+
+// The clicked feature has to stay clear of everything in the rail, not just of
+// the panel: the legend is in there too, and on a phone it is the piece that
+// ends up over the map. Measured off the rail's own rect rather than restating
+// the stylesheet's breakpoint here -- a rail as wide as the map is the phone's
+// bottom sheet, and anything narrower is the desktop column.
+function railPadding() {
+  const box = railEl.getBoundingClientRect();
+  const view = map.getContainer().getBoundingClientRect();
+  return box.width > view.width * 0.6
+    ? { paddingTopLeft: [24, 96], paddingBottomRight: [24, view.bottom - box.top + 16] }
+    : { paddingTopLeft: [box.right - view.left + 16, 96], paddingBottomRight: [24, 24] };
+}
+
+function renderInspector() {
+  if (!inspector) return;
+  const { title, body } = inspector.render();
+  inspectorTitleEl.textContent = title;
+  inspectorBodyEl.textContent = '';
+  if (typeof body === 'string') inspectorBodyEl.innerHTML = body;
+  else inspectorBodyEl.appendChild(body);
+}
+
+function openInspector(source, pan = true) {
+  inspector = source;
+  inspectorEl.className = `kind-${source.kind}`;
+  inspectorEl.hidden = false;
+  renderInspector();
+  // Forced reflow between the two, so the transition always has a start state
+  // to run from -- rAF would only work by accident, when something else
+  // happened to flush styles first.
+  inspectorEl.classList.add('entering');
+  void inspectorEl.offsetHeight;
+  inspectorEl.classList.remove('entering');
+  // panInside only moves the map when it has to, so a feature already in the
+  // clear stays exactly where the reader left it.
+  if (pan && source.latlng) map.panInside(source.latlng, railPadding());
+}
+
+function closeInspector() {
+  if (!inspector) return;
+  const { kind } = inspector;
+  inspector = null;  // before the teardown below: applyFilter re-renders me
+  inspectorEl.hidden = true;
+  inspectorBodyEl.textContent = '';
+  clearSelectedEdge();
+  if (kind === 'dock') { clearDockLinks(); unghostEdges(); }
+  if (kind === 'area') { nbSelected = null; applyNbFilter(); }
+}
+
+// -- Selection ---------------------------------------------------------------
+// Without a popup tip there is nothing tying the panel to a place, so the
+// clicked feature says it is the subject. Docks and neighborhoods already did
+// this -- DOCK_SELECTED, and nbStyle reading nbSelected -- so only streets
+// needed one. White is outside both the plasma ramp (frequency) and the cyan
+// of ride view, so it can only mean "you clicked this".
+
+const EDGE_SELECTED = {
+  color: '#fff', weight: 5, opacity: 1, lineJoin: 'round', lineCap: 'round',
+};
+
+// Every bulk restyle walks all 21k layers and would paint over the selection,
+// so they re-apply it on the way out -- the same shape as applyDockFilter
+// re-calling showDockLinks.
+function paintSelectedEdge() {
+  if (!selectedEdge || !map.hasLayer(selectedEdge)) return;
+  selectedEdge.setStyle(EDGE_SELECTED);
+  selectedEdge.bringToFront();
+}
+
+// Put one layer back to what the current mode says it should be. A whole-
+// network repaint would also do it, and costs 21k setStyle calls to undo one.
+function clearSelectedEdge() {
+  const layer = selectedEdge;
+  selectedEdge = null;
+  if (!layer || !map.hasLayer(layer)) return;
+  if (rideView !== null) {
+    layer.setStyle(hasRide(layer.feature.properties.rides || [], rideView)
+      ? EDGE_RIDE : EDGE_GHOST);
+  } else {
+    layer.setStyle(dockFocus() ? EDGE_GHOST : styleFor(layer._filteredCount || 1));
+  }
+}
+
+function selectEdge(layer, rideIds, latlng) {
+  closeInspector();  // tears down a dock's links or a neighborhood's fill
+  selectedEdge = layer;
+  openInspector({ kind: 'edge', latlng, render: () => edgeDetail(rideIds) });
+  paintSelectedEdge();
+}
+
+// Hop from one dock to the next through the trips that connect them: the
+// panel's rows are the map's own links, so a reader can follow a route through
+// their own history rather than hunting for the next marker.
+function selectDock(di) {
+  // Dock to dock keeps the network ghosted and only swaps the links, which
+  // showDockLinks does for itself. Coming from anything else, tear it down.
+  if (inspector?.kind !== 'dock') closeInspector();
+  const d = cbData.docks[di];
+  openInspector({
+    kind: 'dock',
+    latlng: d.at ? L.latLng(d.at[1], d.at[0]) : null,
+    render: () => dockDetail(di),
+  });
+  showDockLinks(di);
+  ghostEdges();
+}
+
+// `pan` is false when the caller has already framed the polygon: showArea
+// flies to the whole shape, which says more than bringing one point into view.
+function selectArea(ai, pan = true) {
+  if (inspector?.kind !== 'area') closeInspector();
+  const poly = nbShapes[ai];
+  openInspector({
+    kind: 'area',
+    latlng: pan && poly ? poly.getBounds().getCenter() : null,
+    render: () => nbDetail(ai),
+  }, pan);
+  nbSelected = ai;
+  applyNbFilter();
+}
+
+document.getElementById('inspector-close').addEventListener('click', closeInspector);
+// A click on the map that hit no feature. The layer handlers stop propagation
+// so opening one does not immediately close it again.
+map.on('click', closeInspector);
 
 // -- Single-ride view --------------------------------------------------------
 
-// keepPopup is for the dock rows: the popup they live in is how a reader
-// walks the network, so tracing one pair must not close it the way a street
-// popup's own row does.
-function viewRide(ri, keepPopup = false) {
+// fromTrace is for the rows stepping a set of recordings: every other way
+// into ride view ends whatever cycle was running. The inspector itself stays
+// open either way -- it covers nothing, and its rows are the list a reader is
+// working through.
+function viewRide(ri, fromTrace = false) {
   rideView = ri;
-  if (!keepPopup) { map.closePopup(); dockTrace = null; }
+  if (!fromTrace) dockTrace = null;
   const d = dateList[rideDateIdx[ri]] ?? '';
   const t = clockLabel(rideList[ri]?.[1]);
   const label = document.getElementById('ride-view-label');
@@ -2129,13 +2291,14 @@ function viewRide(ri, keepPopup = false) {
       layer.addTo(map);  // show the full ride even outside the date filter
     }
     if (isOn) {
-      layer.setStyle({ color: '#00e5ff', weight: 4, opacity: 0.95, lineJoin: 'round', lineCap: 'round' });
+      layer.setStyle(EDGE_RIDE);
       on.push(layer);
     } else {
       layer.setStyle(EDGE_GHOST);
     }
   });
   for (const l of on) l.bringToFront();
+  paintSelectedEdge();
   syncYearLinks();
 }
 
@@ -2159,15 +2322,19 @@ function toggleRide(ri) {
 
 // Ride view is also left by Escape, the exit button and the date filter, so
 // a link's selected state is synced from rideView rather than set on click.
-// The dock popup's route links are the same case: one row can show a ride
+// The dock panel's route links are the same case: one row can show a ride
 // another row put on the map, so they read their state from here too, and so
 // does the calendar -- three owners of one highlight, none of them holding it.
 function syncYearLinks() {
   for (const relabel of dockTraceLabels) relabel();
   // The stats panel's bike chips are the same case as a dock row, but they
-  // outlive any one popup, so they keep their own list rather than the one
-  // dockPopup clears on every open.
+  // outlive any one panel, so they keep their own list rather than the one
+  // dockDetail clears on every render.
   for (const relabel of metChipLabels) relabel();
+  // A street's rows are a short list and mark the ride on screen, so they are
+  // simply rebuilt. A dock's are not: relabelling above is exactly what saves
+  // a 141-row rebuild on every step of a trace.
+  if (inspector?.kind === 'edge') renderInspector();
   // Every .yd-link in the panel, wherever it was written: the year recap's
   // longest ride and the calendar's rows are the same link doing the same job.
   for (const link of document.querySelectorAll('.yd-link')) {
@@ -2176,7 +2343,7 @@ function syncYearLinks() {
     link.title = on ? 'Hide this ride' : "Show this ride's route";
   }
   // The calendar marks the month the shown ride is in, so a ride reached from
-  // a street popup still lands somewhere on the date axis.
+  // a street's rows still lands somewhere on the date axis.
   const shown = rideView !== null ? (dateList[rideDateIdx[rideView]] || '').slice(0, 7) : '';
   for (const cell of document.querySelectorAll('#stat-calendar .cal-cell')) {
     cell.classList.toggle('on', shown !== '' && cell.dataset.month === shown);
@@ -2187,7 +2354,14 @@ function syncYearLinks() {
 // listener on the map container, which would otherwise run first and slide
 // the city sideways under every step of the cycle.
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') { exitRideView(); return; }
+  // Escape unwinds one layer at a time: the ride on screen first, then the
+  // panel that put it there. Closing both at once would throw away the list a
+  // reader was working through to undo one click in it.
+  if (e.key === 'Escape') {
+    if (rideView !== null) exitRideView();
+    else closeInspector();
+    return;
+  }
   if (!dockTrace || (e.key !== 'ArrowDown' && e.key !== 'ArrowUp')) return;
   e.preventDefault();
   e.stopPropagation();
@@ -2469,6 +2643,12 @@ function applyFilter(renormalize = true) {
   }
   applyDockFilter(renormalize);
   applyNbFilter();
+  // The panel now outlives the click that opened it, so it follows the filter
+  // instead of freezing at whatever was true then. Gated on renormalize for
+  // the same reason applyDockFilter is: playback passes false, so a dock
+  // reaching 141 others does not rebuild its rows every animation frame, and
+  // stopPlay's own applyFilter() puts it right the moment playback ends.
+  if (renormalize) renderInspector();
   geoLayer.eachLayer(layer => {
     const c = layer._newCount;
     if (!renormalize && c === layer._filteredCount) return;
@@ -2483,6 +2663,7 @@ function applyFilter(renormalize = true) {
     }
   });
   restackLayers();
+  paintSelectedEdge();  // after restack, so bringToFront sticks
 }
 
 // Restack visible lines so frequent (bright) edges draw above rare (dark)
@@ -2788,7 +2969,12 @@ fetch('rides.geojson.gz')
           className: 'ride-tooltip',
         });
         if (idxs.length) {
-          layer.bindPopup(() => popupContent(idxs), { className: 'ride-popup' });
+          // Stopped, or the map's own click handler would close the panel
+          // this click just opened.
+          layer.on('click', e => {
+            L.DomEvent.stopPropagation(e);
+            selectEdge(layer, idxs, e.latlng);
+          });
         }
       },
     }).addTo(map);

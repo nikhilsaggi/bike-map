@@ -22,8 +22,12 @@ The pipeline exports a compressed GeoJSON that powers an interactive
 - Biggest direction splits: the corridors where riding one way is much
   faster than the other ([how it works](findings/direction-split-speed.md))
 - Hover for the pass count, click for the full list of ride dates
-- Popups (street or dock) drag by the bar at their top, so the box can be
-  moved off the part of the map it is describing
+- Detail (street, dock or neighborhood) opens in a panel docked to the left
+  edge rather than a popup over the feature it describes: it covers no map,
+  the clicked feature is highlighted instead of being pointed at, the map pans
+  only when the feature would fall behind the panel, and the panel follows the
+  date and source filters while it is open. On a narrow screen it becomes a
+  bottom sheet.
 - Date-range slider with time-lapse playback (watch the network grow)
 - Collapsible stats panel with total rides, edges covered, and street
   miles

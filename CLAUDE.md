@@ -88,6 +88,20 @@ owned what; don't reintroduce that.
 `docs/index.html` is a single self-contained Leaflet page (no build step); it
 reads everything from `rides.geojson.gz` top-level `properties`.
 
+**A click answers in the docked inspector, never a popup.** A popup opens over
+the feature it describes, which is the one thing a reader clicked it to look
+at; the page carried ~70 lines of drag machinery to work around that. The panel
+lives in `#left-rail` -- a flex column it shares with `#legend`, so neither
+needs a magic height to stay off the other -- and `map.panInside` moves the map
+only when the clicked feature would fall behind it (`showArea` frames the whole
+polygon itself instead, so `selectArea` is told not to pan on top of the
+flight). One panel serves all three layers: a source is
+`{ kind, latlng, render }`, and `render()` returns `{ title, body }`. Because
+it covers nothing it can also outlive the click: `applyFilter` re-renders it,
+gated on `renormalize` so playback frames do not rebuild a 141-row dock, and
+`selectedEdge` is re-painted by every bulk restyle that would otherwise wipe
+it. Escape unwinds one layer at a time -- the ride on screen, then the panel.
+
 ## Invariants
 
 - **Changing any parameter in `cache._processing_config()` triggers a full
@@ -154,7 +168,7 @@ reads everything from `rides.geojson.gz` top-level `properties`.
   `applyFilter`'s restyle).
 - **The one route a dock row can draw is a recorded one.** `trip_rides` names
   the GPS ride running over each trip and ships it as the 4th element of each
-  `properties.citibike.trips` row (`-1` where none), so a popup row can put
+  `properties.citibike.trips` row (`-1` where none), so a dock row can put
   that ride on the map in the page's own single-ride view. It is not the
   rejected routed layer: the dock-to-dock line stays straight, and what is
   drawn over it was measured. While a pair's route is up, that pair's straight
@@ -168,8 +182,10 @@ reads everything from `rides.geojson.gz` top-level `properties`.
   several, so the row says
   when it covers others -- clipping the trace to a trip's clock window would
   need a per-(edge, ride) timestamp nothing in `state` carries. Tracing a
-  pair deliberately leaves the popup open (`viewRide(ri, keepPopup)`): the
-  rows are how a reader walks the network.
+  pair leaves the panel exactly where it was: it covers no map, so there is
+  nothing to gain by closing it, and the rows are how a reader walks the
+  network. `viewRide(ri, fromTrace)` only says whether the cycle in
+  `dockTrace` survives; every other way into ride view ends it.
 - **A GPS ride is matched to Citibike trips by clock overlap**
   (`citibike.ride_sources`), shipped as the 4th element of each row in the
   export's `rides` array: `-1` unknown, `0` own bike, `n>=1` the number of
@@ -196,8 +212,8 @@ reads everything from `rides.geojson.gz` top-level `properties`.
   which misplaces 4.7% of ridden metres, nearly all of it on ten named
   bridges and waterfront paths -- fine for a fill colour, not for anything
   stronger.
-- **An area popup counts rides, never passes.** A pass belongs to one stretch
-  of street: "4 passes" on a street popup means that stretch was ridden four
+- **An area's panel counts rides, never passes.** A pass belongs to one
+  stretch of street: "4 passes" on a street means that stretch was ridden four
   times. Summed over an area it counts segment-crossings instead, and Forest
   Hills -- 104 drawn segments each ridden once, by the same two rides -- read
   "104", which is what being there 104 times would read like. `nbRidesIn`
@@ -219,7 +235,7 @@ reads everything from `rides.geojson.gz` top-level `properties`.
   `dist_m` counts a street again on every pass over it; `ridden_m` counts it
   once however often it was ridden, and is the Explored numerator and the
   layer's fill. On these rides `dist_m` is several times `ridden_m`, so the
-  two are never interchangeable: the popup prints them one above the other
+  two are never interchangeable: the panel prints them one above the other
   precisely because a reader who has just seen "of its network" needs to know
   the larger figure is the same streets again, not more of them. Deriving
   `dist_m` from `edge_traversals` instead -- edge length times pass count --
@@ -333,7 +349,7 @@ reads everything from `rides.geojson.gz` top-level `properties`.
   `rideView` rather than setting one of its own: its rows carry `.yd-link`
   (so `syncYearLinks` selects on the class, not on `#stat-years`), and the
   cell of the month holding the shown ride is marked from the same place --
-  which is what puts a ride reached from a street popup back on the date axis.
+  which is what puts a ride reached from a street's rows back on the date axis.
 - **The fleet-generation chart is two buckets and may never be more.**
   `_generations` splits trips per year on the id shape alone -- five digits is
   the older fleet, hyphenated sevens the newer -- and that reading is the

@@ -159,7 +159,7 @@ test.describe('ride calendar', () => {
     await gotoMap(page);
     // The south street is ride 3 twice, so its one row is 2024-07-04.
     await clickEdge(page, EDGES.south.lat);
-    await page.locator('.ride-popup .ride-row').first().click();
+    await page.locator('#inspector .ride-row').first().click();
     await expect(page.locator('#ride-view-bar')).toBeVisible();
 
     await openSection(page, 'stat-calendar');

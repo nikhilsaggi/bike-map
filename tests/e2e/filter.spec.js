@@ -28,11 +28,11 @@ test.describe('date-range filter', () => {
     await hoverEdge(page, EDGES.south.lat);
     await expect(page.locator('.leaflet-tooltip')).toHaveCount(0);
 
-    // Popups list only in-range rides.
+    // The inspector lists only in-range rides.
     await clickEdge(page, EDGES.center.lat);
-    const popup = page.locator('.ride-popup');
-    await expect(popup).toContainText('2 passes');
-    await expect(popup.locator('.ride-row')).toHaveCount(2);
+    const panel = page.locator('#inspector');
+    await expect(panel).toContainText('2 passes');
+    await expect(panel.locator('.ride-row')).toHaveCount(2);
   });
 
   test('raising the lower bound filters from the other end', async ({ page }) => {

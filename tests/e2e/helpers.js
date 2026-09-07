@@ -97,7 +97,7 @@ export async function hoverEdge(page, lat) {
   return page.locator('.leaflet-tooltip');
 }
 
-/** Click a street to open its ride popup. */
+/** Click a street to open its detail in the inspector. */
 export async function clickEdge(page, lat) {
   const pt = await edgePoint(page, lat);
   await page.mouse.click(pt.x, pt.y);
