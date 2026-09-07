@@ -3,6 +3,18 @@ import { buildFixture, SPEED_BLOCK } from './fixture.js';
 
 const STREETS = 'stat-streets';
 
+// The fixture ships three corridors, which is short enough to fit. A ranking
+// long enough to overflow is built from it rather than hand-written, so the
+// row shape stays the one every other test in this file reads.
+function longSpeedBlock(n) {
+  const corridors = Array.from({ length: n }, (_, i) => ({
+    ...SPEED_BLOCK.corridors[i % SPEED_BLOCK.corridors.length],
+    name: `Street ${i + 1}`,
+    at: [-73.99 + i * 0.002, 40.7405],
+  }));
+  return { ...SPEED_BLOCK, corridors };
+}
+
 // Facts about the network rather than about the rides: the totals that used
 // to live only in hero tooltips, and the direction-split ranking.
 test.describe('streets', () => {
@@ -159,6 +171,52 @@ test.describe('streets', () => {
     // speed.measured was exported and rendered nowhere before.
     await expect(page.locator('#speed-lead')).toContainText('Of 42 stretches measured');
     await expect(page.locator('#speed-lead')).toContainText('820 ft+, ridden 3+ times each way');
+  });
+
+  // Ten stretches at two lines each outgrow the stats section, so the ranking
+  // is capped and scrolls inside itself -- the same treatment the Citibike
+  // tab's re-encounter list gets. Without it the Network rows above scrolled
+  // away with it and the tab became one long column.
+  test('a long ranking scrolls inside its own box', async ({ page }) => {
+    await gotoMap(page, buildFixture({ speed: longSpeedBlock(10) }));
+    await openSection(page, STREETS);
+    await expect(page.locator('.sp-row')).toHaveCount(10);
+
+    const box = await page.locator('#speed-list').evaluate(el => ({
+      client: el.clientHeight,
+      scroll: el.scrollHeight,
+      overflow: getComputedStyle(el).overflowY,
+    }));
+    expect(box.client).toBeLessThanOrEqual(150);
+    expect(box.scroll).toBeGreaterThan(box.client);
+    expect(box.overflow).toBe('auto');
+  });
+
+  // The caption states the rule the rows are ranked by, so it sits outside the
+  // box: scrolling to the tenth stretch must not scroll away what the numbers
+  // on it mean.
+  test('the ranking caption stays put while the rows scroll', async ({ page }) => {
+    await gotoMap(page, buildFixture({ speed: longSpeedBlock(10) }));
+    await openSection(page, STREETS);
+    const outside = await page.evaluate(() =>
+      !document.getElementById('speed-list').contains(document.getElementById('speed-lead')));
+    expect(outside).toBe(true);
+
+    const before = await page.locator('#speed-lead').boundingBox();
+    await page.locator('#speed-list').evaluate(el => { el.scrollTop = el.scrollHeight; });
+    await expect(page.locator('#speed-lead')).toContainText('Of 42 stretches measured');
+    const after = await page.locator('#speed-lead').boundingBox();
+    expect(after.y).toBeCloseTo(before.y, 0);
+  });
+
+  // A row below the fold is still a control: it scrolls into reach and marks
+  // itself like any other.
+  test('a row below the fold still opens its corridor', async ({ page }) => {
+    await gotoMap(page, buildFixture({ speed: longSpeedBlock(10) }));
+    await openSection(page, STREETS);
+    await page.locator('.sp-row').nth(9).click();
+    await expect(page.locator('.sp-row.on')).toHaveCount(1);
+    await expect(page.locator('.sp-row').nth(9)).toHaveClass(/on/);
   });
 
   test('the same bridge appears once per direction, never as one row', async ({ page }) => {
