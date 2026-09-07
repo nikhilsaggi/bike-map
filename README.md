@@ -35,6 +35,9 @@ The pipeline exports a compressed GeoJSON that powers an interactive
 - Riding stats: distance/time totals, average speed, longest ride,
   miles and new-street miles per year, rides-by-hour and weekday
   histograms (data is stored metric; the UI displays miles)
+- Weather: share of days with a ride by temperature band and by rain, against
+  each band's share of all days, filtered live to the date range on screen
+  ([what the numbers show](findings/weather-correlation.md))
 - A calendar of the riding: one row of twelve month cells per year, shaded by
   the rides in each, so the dense summers and the thin Februaries are visible
   before anything is clicked. A month opens into its own rides — day, clock,
@@ -44,8 +47,8 @@ The pipeline exports a compressed GeoJSON that powers an interactive
   share of its own streets ridden by the date on screen, so the slider and the
   time-lapse fill the city in. Click one for its coverage, the rides that went
   through it, and the measured distance and time ridden inside it
-- A Neighborhoods stats section rolling those up per borough — a third of
-  Manhattan's streets ridden against 4% of Queens', both hidden inside one
+- A Neighborhoods stats section rolling those up per borough — 44.0% of
+  Manhattan's streets ridden against 5.2% of Queens', both hidden inside one
   citywide 11.8% ([why](findings/neighborhoods.md))
 - Optional Citibike dock layer: markers sized by how much a dock was used in
   the date range on screen, so the slider and the time-lapse move them the way
