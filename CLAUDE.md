@@ -313,6 +313,27 @@ reads everything from `rides.geojson.gz` top-level `properties`.
   narrows the drawn links. **A bike with no recording keeps its row**, dimmed,
   and keeps its place in the sort -- it was met, and ranking on what happens
   to be clickable would shrink the list to suit the renderer.
+- **The calendar is the date index, and it is a grid rather than a search
+  box.** `renderCalendar` draws one row of twelve month cells per year out of
+  `properties.rides` and `properties.dates` alone -- no export field of its
+  own -- shaded on the map's own square-root plasma ramp, lifted off its dark
+  end so one ride in a month still reads as a ride. A cell opens that month's
+  rides, one row each, and a row opens the ride. The shape is half the answer:
+  the dense summers and the empty Februaries are there before a question has
+  been formed, which is what a text box cannot do. Years with no riding keep
+  an empty row -- the gap is the thing the grid is for. Cells count rides,
+  never passes.
+- **The calendar is all-time, like every other section of that panel**, and
+  the reason is sharper here than elsewhere: ride view draws its ride whole
+  whatever the slider and the source buttons say, so an index that hid what
+  they hide would offer a way in that the way out contradicts.
+- **Ride view's highlight now has three owners and still no holder.** The
+  calendar joins `dockTrace` and `syncYearLinks`'s year links in addressing
+  "which ride is shown", and like them it reads that state back from
+  `rideView` rather than setting one of its own: its rows carry `.yd-link`
+  (so `syncYearLinks` selects on the class, not on `#stat-years`), and the
+  cell of the month holding the shown ride is marked from the same place --
+  which is what puts a ride reached from a street popup back on the date axis.
 - **The fleet-generation chart is two buckets and may never be more.**
   `_generations` splits trips per year on the id shape alone -- five digits is
   the older fleet, hyphenated sevens the newer -- and that reading is the
