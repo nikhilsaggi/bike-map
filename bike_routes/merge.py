@@ -537,6 +537,17 @@ def _merge_parallel_features(
             # the cluster's sampled extent lies within config.MERGE_TOL_M of a kept
             # one.  Tight clusters keep a single line; staggered fragment
             # chains at junctions keep 2-3 instead of losing extent.
+            #
+            # A candidate is skipped when it is itself already covered like a
+            # cluster sibling (config.MERGE_MUTUAL_COV of its own samples lie on
+            # a kept geometry), whatever extent it would add.  Chasing the last
+            # 3% of a long cluster's extent otherwise buys a few dozen metres at
+            # the end of a bridge deck by drawing the whole 2 km deck a second
+            # time, and _average_parallel_geometry then pulls the two onto the
+            # same centreline, so they land within a few metres of each other and
+            # each claims the cluster's full pass count.  Testing against the
+            # accumulated kept set rather than the previous member leaves chains
+            # intact: a member the kept ones only half cover is still kept.
             all_pts = [(x, y) for i in members for (x, y, _h) in samples[i]]
             cov_flags = [False] * len(all_pts)
             keep = []
@@ -563,10 +574,18 @@ def _merge_parallel_features(
                             break
                 return gained
 
+            def duplicates_kept(m: int, kept: list[int]) -> bool:
+                """Report whether the kept geometries already draw m's own line."""
+                on_kept = set(kept)
+                n = sum(1 for hit in hits[m] if hit & on_kept)
+                return n / len(samples[m]) >= config.MERGE_MUTUAL_COV
+
             while remaining and (
                 not keep or sum(cov_flags) / len(cov_flags) < config.MERGE_KEEP_COV
             ):
                 m = remaining.pop(0)
+                if keep and duplicates_kept(m, keep):
+                    continue
                 if mark(m, all_pts, cov_flags) == 0 and keep:
                     continue
                 keep.append(m)
@@ -750,9 +769,14 @@ def _audit_merge(features: list[dict[str, Any]]) -> None:
     which keeping them out of the matcher's map index removed without
     touching this module ([why](../findings/sidewalk-matching.md)).
 
-    Duplicate km is not a second reading of the share: a handful of
-    multi-kilometre bridge and greenway pairs carry most of it, so the two
-    move independently.
+    Duplicate km is not a second reading of the share, and reading both is
+    what caught the last fault: 22 pairs sat below the alarm while three of
+    them, on two bridge crossings, carried 6.1 of the 7.3 km -- one physical
+    corridor drawn twice or three times.  Those came out of Phase 1 keeping
+    several members of one cluster, which the duplicate-skip in the greedy
+    set-cover now refuses ([why](../findings/sidewalk-matching.md)).  A
+    residual that is a few long pairs is that failure; a residual that is
+    many short ones is not.
     """
     samples = [_sample_line(f["geometry"]["coordinates"]) for f in features]
     hits = _sample_hits(samples)

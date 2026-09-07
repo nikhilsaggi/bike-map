@@ -178,6 +178,38 @@ def test_adjacent_segments_stay_separate():
     assert counts == [1, 1]
 
 
+def test_long_staggered_parallel_ways_draw_one_line():
+    """A bridge deck's two ways must not both be kept for the ends they add.
+
+    Each covers ~85% of the other and neither alone reaches MERGE_KEEP_COV of
+    the cluster extent, so the greedy set-cover used to keep both: 2 km drawn
+    twice, a few metres apart after centreline averaging, each line claiming
+    every pass the corridor recorded.
+    """
+    deck = _feature(_line(0, 2100, 0.0, step=25.0), {R1, R2})
+    path = _feature(_line(220, 2320, 15.0, step=25.0), {R1, R2})
+    out = merge._merge_parallel_features([deck, path])
+    assert len(out) == 1
+    assert out[0]["properties"]["ride_count"] == 2
+
+
+def test_staggered_chain_keeps_the_members_that_extend_it():
+    """Skipping duplicates must not collapse a chain onto one member.
+
+    Each link covers 80% of its neighbour but only 60% of the far one, so the
+    two ends are each kept and the cluster keeps its full extent; the middle
+    link, which the kept pair already draws, is not.
+    """
+    west = _feature(_line(0, 1000, 0.0), {R1})
+    mid = _feature(_line(200, 1200, 12.0), {R1})
+    east = _feature(_line(400, 1400, 0.0), {R1})
+    out = merge._merge_parallel_features([west, mid, east])
+    assert len(out) == 2
+    lons = [lon for f in out for lon, _lat in f["geometry"]["coordinates"]]
+    assert min(lons) <= lonlat(10.0, 0.0)[0]  # the west end survives
+    assert max(lons) >= lonlat(1390.0, 0.0)[0]  # so does the east one
+
+
 def test_distant_lines_stay_separate():
     f1 = _feature(_line(0, 300, 0.0), {R1})
     f2 = _feature(_line(0, 300, 500.0), {R2})

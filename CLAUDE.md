@@ -284,6 +284,18 @@ viewport would stretch those to ~1.7x on a phone.
   move `coverage` makes with its two. Don't answer it with a minimum-network
   floor instead -- that silently drops the edge of the box, which is a real
   place the bike went.
+- **A cluster member the kept ones already draw is never kept for the extent
+  it adds.** Phase 1's greedy set-cover runs to `MERGE_KEEP_COV`, but a
+  candidate covered at `MERGE_MUTUAL_COV` by the geometries kept so far is
+  skipped first: two long parallel ways stagger at their ends, so neither
+  alone reaches 97% of the cluster extent, and buying the difference draws a
+  2 km bridge deck twice -- a few metres apart, once
+  `_average_parallel_geometry` has pulled both onto the centreline, each line
+  printing the cluster's whole pass count. The bar is against the
+  *accumulated* kept set, never the previous member, which is what leaves a
+  staggered junction chain its extent
+  ([why](findings/sidewalk-matching.md)). No pass rides on this: a cluster
+  sums its rides over every member before any is kept.
 - **What is drawn and what is counted are two different sets.**
   `_export_geojson` draws every matched edge with no highway filter, so ridden
   footways, service roads and motorways are all on screen in the same cyan as

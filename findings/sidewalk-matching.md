@@ -307,5 +307,48 @@ a threshold between, and stable as the map grows. `MERGE_AUDIT_DUP_SHARE` is
 0.003.
 
 Duplicate km did not follow the pairs down, and it is not meant to: three
-multi-kilometre bridge and greenway pairs carry 6.1 of the remaining 7.3 km,
-so one long corridor drawn twice outweighs eighty short ones.
+multi-kilometre bridge and greenway pairs carried 6.1 of the remaining 7.3 km,
+so one long corridor drawn twice outweighs eighty short ones. Those three were
+a separate fault, and the section below is what they turned out to be.
+
+## Three long corridors the merge kept twice
+
+The three sat on two bridge crossings: the Manhattan Bridge approach (2154 m
+beside 2191 m), and the Queensboro / Roosevelt Island crossing, where 1808 m,
+2133 m and 2163 m were three drawings of one corridor. They were nothing like the rest of the
+residual: equal pass counts on every member, and 3 to 13 m of separation, so a
+reader saw one corridor as two or three near-coincident cyan lines rather than
+a road and the path beside it.
+
+The separation is the tell. These were **cluster siblings** — Phase 1 formed
+one cluster and then kept two or three of its members, after which
+`_average_parallel_geometry` pulled all of them onto the same centreline. The
+merge's own output made the duplicate harder to see, not easier.
+
+Phase 1 kept them because its greedy set-cover ran to `MERGE_KEEP_COV` = 0.97
+of the cluster's sampled extent, and dropped a candidate only when it added
+nothing at all. Two long parallel ways stagger at their ends: each covers about
+85% of the other, so neither alone reaches 97% of the union. The greedy then
+bought the missing few per cent — a couple of hundred metres at the end of a
+bridge deck — by drawing the whole 2 km deck a second time. Every kept member
+carries the cluster's full merged pass count, so the deck's 40 passes were
+printed on both lines.
+
+The fix is a bar on the candidate rather than on the extent: a member already
+covered at `MERGE_MUTUAL_COV` (0.75) by the geometries kept so far is skipped
+whatever extent it would add. That reuses the constant that decided the two
+were one corridor in the first place — if 75% mutual coverage means "the same
+corridor", it also means "already drawn".
+
+Testing against the *accumulated* kept set, not against the previous member, is
+what keeps this from collapsing the case the multi-keep exists for. A staggered
+fragment chain at a junction reaches the same cluster through union-find, link
+by link; its far members are only half covered by the near ones, so they clear
+the bar and are still kept, and the chain keeps its extent.
+
+Replaying the three real corridors through the merge collapses them to one line
+each. The trade is 584 m of parallel-way extent no longer drawn against 6.1 km
+of duplicate line removed — and that 584 m is an upper bound, measured with the
+corridors in isolation: on the real map their staggered ends run into the
+neighbouring clusters' features. No pass is lost either way, because a cluster
+accumulates its rides over every member before any of them is kept.
