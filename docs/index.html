@@ -189,9 +189,10 @@
   /* Capped and scrollable, the same treatment the Citibike tab's re-encounter
      list gets: ten stretches at two lines each is taller than the whole stats
      section, so an uncapped list pushed the Network rows above it out of the
-     panel's own scroll and made the tab a single long column. The lead sits
-     outside the box -- it describes the list rather than being a row of it,
-     and scrolling the definition away is what a caption must not do.
+     panel's own scroll and made the tab a single long column. The rule the
+     rows are ranked by is on the heading's (?), outside the box: it describes
+     the list rather than being a row of it, and scrolling the definition away
+     is what a caption must not do.
      scrollbar-gutter so the right-justified mph gap never sits under the bar. */
   #speed-list {
     max-height: 150px; overflow-y: auto; scrollbar-gutter: stable;
@@ -210,7 +211,6 @@
   }
   .sp-gap { flex: none; color: #fff; font-weight: 600; font-variant-numeric: tabular-nums; }
   .sp-detail { color: #666; font-size: 10px; padding: 0 0 4px 0; font-variant-numeric: tabular-nums; }
-  #speed-lead { color: #777; font-size: 9px; line-height: 1.4; margin-bottom: 5px; }
 
   /* -- Citibike ----------------------------------------------------------
      A stats section with no map layer: the only things a dock trip could draw
@@ -370,7 +370,9 @@
   .cb-met-row.on .cb-met-gap { color: #8fbecb; }
 
   /* A question mark that carries the definition, because "re-encounter" is a
-     rule (48h, same dock) and not a word a reader can be expected to guess. */
+     rule (48h, same dock) and not a word a reader can be expected to guess.
+     Named for where it started; the streets tab's ranking hangs its rule off
+     the same mark, so both tabs offer a reader the same affordance. */
   .cb-help {
     display: inline-block; width: 11px; height: 11px; line-height: 11px;
     text-align: center; border-radius: 50%; border: 1px solid #444;
@@ -635,8 +637,7 @@
         <div id="stat-streets">
           <div id="streets-totals"></div>
           <div id="speed-block">
-            <div class="sub-title">Faster one way</div>
-            <div id="speed-lead"></div>
+            <div class="sub-title" id="speed-title">Faster one way</div>
             <div id="speed-list" class="scrollbox"></div>
           </div>
         </div>
@@ -787,6 +788,18 @@ function openSection(name) {
 for (const chip of chips) {
   chip.addEventListener('click', () =>
     openSection(chip.classList.contains('active') ? null : chip.dataset.section));
+}
+
+// The (?) that hangs a rule off a heading, shared by every section that has
+// one: the rule a count follows, or where a label with no published source
+// came from.  It is a `title`, so it costs no layout -- which is the point of
+// putting a definition on it rather than in a line under the heading.
+function helpMark(help) {
+  const mark = document.createElement('span');
+  mark.className = 'cb-help';
+  mark.textContent = '?';
+  mark.title = help;
+  return mark;
 }
 
 // Chips start hidden and are revealed only once their data lands, so a partial
@@ -1016,13 +1029,17 @@ function renderSpeedSplits(speed) {
     list.appendChild(row);
     list.appendChild(detail);
   }
-  // Outside the scroll box, so the rule the rows are ranked by stays on screen
-  // however far down the list a reader is.
-  document.getElementById('speed-lead').textContent =
+  // On the heading's (?), the same affordance the Citibike tab's charts use.
+  // The rule the rows are ranked by has to stay reachable however far down the
+  // list a reader is, and a heading outside the scroll box does that without
+  // spending three lines of the panel on it every time the tab is open.
+  const title = document.getElementById('speed-title');
+  title.textContent = 'Faster one way';   // drops a mark left by an earlier render
+  title.appendChild(helpMark(
     `The mph gap between the two directions of travel, from ride timestamps. ` +
     `Of ${speed.measured.toLocaleString()} stretches measured ` +
     `(${Math.round(mi(speed.min_m / 1000) * 5280)} ft+, ridden ${speed.split_n}+ ` +
-    `times each way), these have the widest gaps.`;
+    `times each way), these have the widest gaps.`));
   document.getElementById('speed-block').style.display = 'block';
   showChip('stat-streets');
 }
@@ -1460,17 +1477,12 @@ function stackKey(series) {
   return key;
 }
 
-// A chart heading and the (?) that carries what the title cannot: the rule a
-// count follows, or where a label with no published source came from.
+// A chart heading and the (?) that carries what the title cannot.
 function chartTitle(text, help) {
   const title = document.createElement('div');
   title.className = 'histo-title';
   title.textContent = text;
-  const mark = document.createElement('span');
-  mark.className = 'cb-help';
-  mark.textContent = '?';
-  mark.title = help;
-  title.appendChild(mark);
+  title.appendChild(helpMark(help));
   return title;
 }
 

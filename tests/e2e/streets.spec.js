@@ -165,12 +165,18 @@ test.describe('streets', () => {
       .toHaveText('15.0 vs 5.0 mph over 0.50 mi, 12+ passes each way');
   });
 
+  // The rule the rows are ranked by is on the heading's (?), the same
+  // affordance the Citibike tab's charts use -- not three lines of caption
+  // spent every time the tab is open.
   test('the ranking says how many stretches it was drawn from', async ({ page }) => {
     await gotoMap(page);
     await openSection(page, STREETS);
     // speed.measured was exported and rendered nowhere before.
-    await expect(page.locator('#speed-lead')).toContainText('Of 42 stretches measured');
-    await expect(page.locator('#speed-lead')).toContainText('820 ft+, ridden 3+ times each way');
+    const help = page.locator('#speed-title .cb-help');
+    await expect(help).toHaveAttribute('title', /Of 42 stretches measured/);
+    await expect(help).toHaveAttribute('title', /820 ft\+, ridden 3\+ times each way/);
+    // On the (?) and nowhere else: the section itself no longer carries it.
+    await expect(page.locator('#stat-streets')).not.toContainText('stretches measured');
   });
 
   // Ten stretches at two lines each outgrow the stats section, so the ranking
@@ -192,20 +198,20 @@ test.describe('streets', () => {
     expect(box.overflow).toBe('auto');
   });
 
-  // The caption states the rule the rows are ranked by, so it sits outside the
-  // box: scrolling to the tenth stretch must not scroll away what the numbers
-  // on it mean.
-  test('the ranking caption stays put while the rows scroll', async ({ page }) => {
+  // The heading carries the rule, so it sits outside the box: scrolling to the
+  // tenth stretch must not scroll away what the numbers on it mean.
+  test('the ranking heading stays put while the rows scroll', async ({ page }) => {
     await gotoMap(page, buildFixture({ speed: longSpeedBlock(10) }));
     await openSection(page, STREETS);
     const outside = await page.evaluate(() =>
-      !document.getElementById('speed-list').contains(document.getElementById('speed-lead')));
+      !document.getElementById('speed-list').contains(document.getElementById('speed-title')));
     expect(outside).toBe(true);
 
-    const before = await page.locator('#speed-lead').boundingBox();
+    const before = await page.locator('#speed-title').boundingBox();
     await page.locator('#speed-list').evaluate(el => { el.scrollTop = el.scrollHeight; });
-    await expect(page.locator('#speed-lead')).toContainText('Of 42 stretches measured');
-    const after = await page.locator('#speed-lead').boundingBox();
+    await expect(page.locator('#speed-title .cb-help'))
+      .toHaveAttribute('title', /Of 42 stretches measured/);
+    const after = await page.locator('#speed-title').boundingBox();
     expect(after.y).toBeCloseTo(before.y, 0);
   });
 
