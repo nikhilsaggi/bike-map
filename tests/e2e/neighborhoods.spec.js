@@ -21,6 +21,27 @@ function expectFill(page, i, ramp) {
     .toBeCloseTo(0.02 + 0.45 * ramp, 5);
 }
 
+/**
+ * Where things sit in the shared canvas's draw order -- a larger index is
+ * painted later, so on top. The map hands every vector layer one renderer,
+ * so the neighborhood polygons and the 21k street lines are in a single list.
+ */
+function drawOrder(page) {
+  return page.evaluate(() => {
+    const at = new Map();
+    let i = 0;
+    for (let o = nbOutline._renderer._drawFirst; o; o = o.next) at.set(o.layer, i++);
+    const edges = [];
+    geoLayer.eachLayer((l) => { if (at.has(l)) edges.push(at.get(l)); });
+    return {
+      outline: at.get(nbOutline),
+      fill: at.get(nbShapes[nbSelected]),
+      topEdge: Math.max(...edges),
+      bottomEdge: Math.min(...edges),
+    };
+  });
+}
+
 /** Move the upper date handle, the way the filter tests do. */
 async function setHi(page, value) {
   await page.evaluate((v) => {
@@ -91,6 +112,45 @@ test.describe('Neighborhood layer', () => {
     // 1,800 measured seconds on those streets, all-time.
     await expect(panel.locator('.nb-row').nth(4)).toContainText('Time here');
     await expect(panel.locator('.nb-row').nth(4)).toContainText('30 min');
+  });
+
+  test("the selection border draws above the streets, its fill below", async ({ page }) => {
+    await gotoMap(page);
+    await showAreas(page);
+    await page.evaluate(() => selectArea(0));
+    const order = await drawOrder(page);
+    // The fill is ground for the streets and stays under them; the white
+    // border is the answer to "which polygon is the panel about" and would be
+    // broken up into dashes by the frequency lines if it stayed down there.
+    expect(order.outline).toBeGreaterThan(order.topEdge);
+    expect(order.fill).toBeLessThan(order.bottomEdge);
+  });
+
+  test('a filter change leaves the selection border on top', async ({ page }) => {
+    await gotoMap(page);
+    await showAreas(page);
+    await page.evaluate(() => selectArea(0));
+    // Every filter change restacks the network by pass count, which is what
+    // used to paint back over the border a click had just drawn. The restack
+    // runs with the restyle, so wait for the fill the date moved before
+    // reading the order -- Downtown's first 1,250 m of 20,000, 0.25 of the ramp.
+    await setHi(page, 0);
+    await expectFill(page, 0, 0.25);
+    const order = await drawOrder(page);
+    expect(order.outline).toBeGreaterThan(order.topEdge);
+  });
+
+  test('the border goes with the selection', async ({ page }) => {
+    await gotoMap(page);
+    await showAreas(page);
+    await page.evaluate(() => selectArea(0));
+    expect(await page.evaluate(() => map.hasLayer(nbOutline))).toBe(true);
+    // Closing the panel takes it off, and so does turning the layer off.
+    await page.locator('#inspector-close').click();
+    expect(await page.evaluate(() => nbOutline)).toBe(null);
+    await page.evaluate(() => selectArea(1));
+    await page.locator('#nb-check').uncheck();
+    expect(await page.evaluate(() => nbOutline)).toBe(null);
   });
 
   test('the stats section rolls the areas up by borough', async ({ page }) => {

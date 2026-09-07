@@ -228,6 +228,15 @@ viewport would stretch those to ~1.7x on a phone.
   which misplaces 4.7% of ridden metres, nearly all of it on ten named
   bridges and waterfront paths -- fine for a fill colour, not for anything
   stronger.
+- **The selected area's border is a layer of its own** (`nbOutline`), and its
+  fill is not. Every vector layer shares one canvas, so a polygon is a single
+  object in the draw order: the fill has to stay under the edges -- the
+  streets are the subject and a neighborhood is ground for them -- while the
+  white border has to sit over them, or 21k frequency lines paint across it
+  until the outline reads as dashes. `syncNbOutline` rebuilds a stroke-only
+  copy of the selected rings above the network, and `restackLayers` lifts it
+  last, the same way it lifts the dock markers back over a filter change.
+  `nbStyle` therefore no longer varies with `nbSelected`.
 - **An area's panel counts rides, never passes.** A pass belongs to one
   stretch of street: "4 passes" on a street means that stretch was ridden four
   times. Summed over an area it counts segment-crossings instead, and Forest

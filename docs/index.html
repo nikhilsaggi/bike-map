@@ -1760,10 +1760,34 @@ function nbStyle(ai) {
   return {
     fillColor: NB_COLOR,
     fillOpacity: NB_MIN_FILL + NB_MAX_FILL * Math.sqrt(Math.min(1, share)),
-    color: ai === nbSelected ? NB_COLOR : '#7d776a',
-    weight: ai === nbSelected ? 1.8 : 0.7,
-    opacity: ai === nbSelected ? 0.95 : 0.6,
+    color: '#7d776a',
+    weight: 0.7,
+    opacity: 0.6,
   };
+}
+
+// The selected area's border is a layer of its own, and that is what lets it
+// sit above the streets while its fill stays below them. Everything shares
+// one canvas, so a polygon is one object in the draw order: lifting it to
+// mark the selection would drag its wash up over the frequency lines, and
+// leaving it down let 21k lines paint across the border until the outline
+// read as dashes. A stroke-only copy of the same rings splits the two --
+// the fill stays ground for the streets, the outline goes on top of them.
+const NB_SELECTED_LINE = {
+  color: NB_COLOR, weight: 1.8, opacity: 0.95, fill: false, interactive: false,
+};
+let nbOutline = null;
+
+// Rebuilt rather than restyled: it is one area's rings, the selection changes
+// on a click, and there is no state to keep in sync this way.
+function syncNbOutline() {
+  if (nbOutline) { map.removeLayer(nbOutline); nbOutline = null; }
+  if (nbSelected === null) return;
+  const poly = nbShapes[nbSelected];
+  if (!poly || !nbLayer || !map.hasLayer(nbLayer)) return;
+  // A polygon, not a polyline: Leaflet drops a ring's repeated last point, so
+  // a polyline of the same latlngs would leave every ring open at the seam.
+  nbOutline = L.polygon(poly.getLatLngs(), NB_SELECTED_LINE).addTo(map);
 }
 
 // Restyled on every filter change, like the edges and the dock markers. The
@@ -2060,6 +2084,7 @@ function initNeighborhoods(nb) {
       if (inspector?.kind === 'area') closeInspector();
       map.removeLayer(nbLayer);
       nbSelected = null;
+      syncNbOutline();
     }
   });
 }
@@ -2221,7 +2246,7 @@ function closeInspector() {
   inspectorBodyEl.textContent = '';
   clearSelectedEdge();
   if (kind === 'dock') { clearDockLinks(); unghostEdges(); }
-  if (kind === 'area') { nbSelected = null; applyNbFilter(); }
+  if (kind === 'area') { nbSelected = null; syncNbOutline(); }
 }
 
 // -- Selection ---------------------------------------------------------------
@@ -2293,7 +2318,7 @@ function selectArea(ai, pan = true) {
     render: () => nbDetail(ai),
   }, pan);
   nbSelected = ai;
-  applyNbFilter();
+  syncNbOutline();
 }
 
 document.getElementById('inspector-close').addEventListener('click', closeInspector);
@@ -2338,6 +2363,7 @@ function viewRide(ri, fromTrace = false) {
     }
   });
   for (const l of on) l.bringToFront();
+  if (nbOutline) nbOutline.bringToFront();  // the ride draws over it otherwise
   paintSelectedEdge();
   syncYearLinks();
 }
@@ -2723,6 +2749,10 @@ function restackLayers() {
     dockLayer.eachLayer(l => l.bringToFront());
     if (dockLinks) dockLinks.eachLayer(l => l.bringToFront());
   }
+  // Last, for the same reason: the selected area's outline says which polygon
+  // the panel is describing, and a slider move would otherwise draw the
+  // network back over it.
+  if (nbOutline) nbOutline.bringToFront();
 }
 
 // -- Date-range slider + time-lapse playback --------------------------------
