@@ -497,6 +497,15 @@ times one ride crossed one edge, in the stored vertex order of
   vertex order is arbitrary, so every merge site resolves a flip with
   `_opposed` first -- without it one physical pass on two oppositely-stored
   members reads as an out-and-back.
+- **`_drop_redundant_rings` reads directions too, for the same reason.** A
+  ring is dropped only where its neighbours already carry each of its passes
+  *in the direction it recorded them*; comparing the floored totals let a
+  corridor that only ever went one way account for the ring's return leg,
+  and the leg went off the map with the ring. `_opposed` cannot help here --
+  a ring's chord is ~zero, so neither side is ever flipped onto the other
+  and each is read in its own stored order. That can only make coverage
+  harder to satisfy, so the error it leaves is a boxy notch drawn, never a
+  pass lost.
 - The export ships `properties.rides` with one entry per traversal, so the
   page's count is array length. Equal filenames map to equal indices, so the
   array stays sorted for `hasRide`'s binary search.

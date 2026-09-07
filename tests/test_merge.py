@@ -240,6 +240,64 @@ def test_ring_with_extra_traversals_kept():
     assert len(out) == 2
 
 
+def test_ring_with_opposite_direction_kept():
+    """The ring holds the return leg; the corridor only ever saw the way out.
+
+    Passes merge per direction, so a corridor carrying one pass east does
+    not account for the ring's one pass west -- comparing the two totals
+    said it did, and the return leg went off the map with the ring.
+    """
+    corridor = _feature(_line(0, 400, 0.0), {R1: (1, 0)})
+    box = _feature(
+        [(200.0, 0.0), (230.0, 0.0), (230.0, 15.0), (200.0, 15.0), (200.0, 0.5)],
+        {R1: (0, 1)},
+    )
+    out = merge._drop_redundant_rings([corridor, box])
+    assert len(out) == 2
+
+
+def test_ring_of_out_and_back_corridor_dropped():
+    """The corridor recorded the ride both ways, so the ring adds nothing."""
+    corridor = _feature(_line(0, 400, 0.0), {R1: (1, 1)})
+    box = _feature(
+        [(200.0, 0.0), (230.0, 0.0), (230.0, 15.0), (200.0, 15.0), (200.0, 0.5)],
+        {R1: (0, 1)},
+    )
+    out = merge._drop_redundant_rings([corridor, box])
+    assert out == [corridor]
+
+
+def test_ring_direction_covered_by_two_neighbours():
+    """Neighbours combine per direction, the way a merge would combine them.
+
+    One carries the pass out and the other the pass back; between them that
+    is the whole of what the ring records.
+    """
+    street = _feature(_line(0, 400, 0.0), {R1: (1, 0)})
+    lane = _feature(_line(0, 400, 10.0), {R1: (0, 1)})
+    box = _feature(
+        [(200.0, 0.0), (230.0, 0.0), (230.0, 15.0), (200.0, 15.0), (200.0, 0.5)],
+        {R1: (1, 1)},
+    )
+    out = merge._drop_redundant_rings([street, lane, box])
+    assert out == [street, lane]
+
+
+def test_ring_with_unmeasured_neighbour_pass_dropped():
+    """An unmeasured pass has no direction, so only its floored total reads.
+
+    edge_speed leaves a pass it could not attribute at (0, 0); comparing
+    that to a direction would keep every ring beside one.
+    """
+    corridor = _feature(_line(0, 400, 0.0), {R1})
+    box = _feature(
+        [(200.0, 0.0), (230.0, 0.0), (230.0, 15.0), (200.0, 15.0), (200.0, 0.5)],
+        {R1: (0, 1)},
+    )
+    out = merge._drop_redundant_rings([corridor, box])
+    assert out == [corridor]
+
+
 def test_isolated_ring_kept():
     # A ring with no nearby feature (e.g. a loop around a park) stays
     box = _feature(

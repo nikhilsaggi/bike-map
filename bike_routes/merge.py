@@ -77,6 +77,24 @@ def _ride_total(counts: dict[str, Pair]) -> int:
     return sum(_ride_passes(p) for p in counts.values())
 
 
+def _pair_covers(sup: Pair, dem: Pair) -> bool:
+    """Report whether one ride's passes on sup account for its passes on dem.
+
+    Per direction, because passes combine per direction (_merge_ride_counts):
+    one pass north does not account for one pass south, and comparing the
+    totals said it did.  Both pairs must already be expressed against the
+    same vertex order.
+
+    An unmeasured pass is (0, 0) -- edge_speed could not attribute it to a
+    direction -- so there is nothing to compare on either side of it, and the
+    floored total is the only honest reading left.  That keeps the
+    pre-direction answer for the rides that carry no direction at all.
+    """
+    if sup == (0, 0) or dem == (0, 0):
+        return _ride_passes(sup) >= _ride_passes(dem)
+    return sup[0] >= dem[0] and sup[1] >= dem[1]
+
+
 def _covers(counts: dict[str, Pair], other: dict[str, Pair]) -> bool:
     """Report whether other already accounts for every traversal in counts.
 
@@ -84,9 +102,7 @@ def _covers(counts: dict[str, Pair], other: dict[str, Pair]) -> bool:
     applies to a ride that is present, so it must not be reached through a
     default, or an empty other would appear to cover everything.
     """
-    return all(
-        (_ride_passes(other[r]) if r in other else 0) >= _ride_passes(p) for r, p in counts.items()
-    )
+    return all(r in other and _pair_covers(other[r], p) for r, p in counts.items())
 
 
 def _oriented(counts: dict[str, Pair], src_geom: list, dst_geom: list) -> dict[str, Pair]:
@@ -202,11 +218,13 @@ def _drop_redundant_rings(features: list[dict[str, Any]]) -> list[dict[str, Any]
 
     Map-matching a ride onto both ways of a parallel pair (roadway + bike
     lane) plus two crossing links yields a small closed box hanging off the
-    corridor.  Rings add nothing -- merged ride sets already count their
-    rides on the adjacent corridor -- but draw as boxy notches along
-    avenues and greenways.  A ring is dropped only when every one of its
-    rides appears on a non-ring feature within config.RING_NEAR_M, so no ride
-    disappears from the map.
+    corridor.  Such a ring adds nothing -- the adjacent corridor already
+    counts the same rides going the same way -- but draws as a boxy notch
+    along an avenue or greenway.  A ring is dropped only when every pass it
+    records, in the direction it records it, is already on a non-ring
+    feature within config.RING_NEAR_M, so neither a ride nor a leg of one
+    disappears from the map: a ring carrying the return of an out-and-back
+    its neighbours only saw one way is kept and drawn.
     """
 
     def is_ring(f: dict[str, Any]) -> bool:
@@ -236,19 +254,27 @@ def _drop_redundant_rings(features: list[dict[str, Any]]) -> list[dict[str, Any]
             out.append(f)
             continue
         rides = f["properties"]["_rides"]
-        # Totals only: _covers compares floored per-ride passes, so which way
-        # round a neighbour stores its geometry cannot matter here.
+        ring_geom = f["geometry"]["coordinates"]
+        # Accumulated max per direction, the way a merge would fold them
+        # (_merge_ride_counts), because _covers reads directions.  A ring's
+        # chord is ~zero, so _opposed never flips a neighbour onto it and
+        # each side is read in its own stored order; that can only make
+        # coverage harder to satisfy, which errs towards keeping the ring.
         covered: dict[str, Pair] = {}
-        for x, y, _h in _sample_line(f["geometry"]["coordinates"]):
+        seen: set[int] = set()
+        for x, y, _h in _sample_line(ring_geom):
             gx, gy = int(x // config.RING_NEAR_M), int(y // config.RING_NEAR_M)
             for dx in (-1, 0, 1):
                 for dy in (-1, 0, 1):
                     for j, jx, jy, _lon, _lat in grid.get((gx + dx, gy + dy), ()):
-                        if (jx - x) ** 2 + (jy - y) ** 2 <= near_sq:
-                            for r, pair in others[j]["properties"]["_rides"].items():
-                                n = _ride_passes(pair)
-                                if n > (_ride_passes(covered[r]) if r in covered else 0):
-                                    covered[r] = (n, 0)
+                        if j in seen or (jx - x) ** 2 + (jy - y) ** 2 > near_sq:
+                            continue
+                        seen.add(j)
+                        _merge_ride_counts(
+                            covered,
+                            others[j]["properties"]["_rides"],
+                            flip=_opposed(others[j]["geometry"]["coordinates"], ring_geom),
+                        )
             if _covers(rides, covered):
                 break
         if _covers(rides, covered):
