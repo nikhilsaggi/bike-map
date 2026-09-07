@@ -12,8 +12,9 @@ a marker per dock. A name the feed no longer lists (a renamed or removed dock)
 keeps its trips and its counts and simply gets no coordinate: it drops out of
 the drawn layer, not out of the numbers.
 
-The export is a manual browser download from account.lyft.com/privacy/data,
-so this runs by hand rather than from update.py. Once the cache exists every
+The export comes from a JavaScript payload pasted into the browser console on
+account.citibikenyc.com (see fhoffa/code_snippets' baywheels readme), so this
+runs by hand rather than from update.py. Once the cache exists every
 ``python -m bike_routes`` picks it up without a flag.
 
 **The trips cache is merged, not replaced.** The console script that produces
