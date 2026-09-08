@@ -49,7 +49,7 @@ deviation over crossings, and combines by addition like everything else in
 the record.
 
 The panel puts all three rankings of stretches under one tab strip — Fastest,
-Slowest, One way — because they differ in the question, not in the thing
+Slowest, Faster one way — because they differ in the question, not in the thing
 ranked. Each row prints the number its list is ordered by. A column that
 sorts by one number and prints another reads as a ranking of the number on
 screen and is not one — the same mistake the neighborhood list made with

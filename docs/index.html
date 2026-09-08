@@ -211,8 +211,14 @@
   /* The three rankings share one list because they rank the same thing --
      stretches of street -- and differ only in the question. Stacked as
      separate blocks they outran the section between them, and a reader had
-     to scroll past one ranking to learn the next one existed. */
+     to scroll past one ranking to learn the next one existed.
+     These tabs are sized to their labels, unlike the other two users of
+     .seg-btn: an equal third is about six characters at this size, and the
+     ranking that compares a stretch with its own opposite direction cannot
+     be named in six -- "One way" fitted and meant the opposite, since that
+     tab is the one that needs a street ridden both ways. */
   #speed-tabs { display: flex; gap: 3px; margin: 3px 0 5px; }
+  #speed-tabs .seg-btn { flex: 0 1 auto; padding: 3px 7px; }
   /* The unit belongs to the number, not to the header: three tabs print
      three different mph -- a pace, a pace, and a gap between two of them --
      so a column header would have to say "mph" and mean something new each
@@ -1116,7 +1122,7 @@ const SPEED_TABS = [
     help: s => paceHelp(s, 'slowest'),
   },
   {
-    id: 'oneway', label: 'One way',
+    id: 'oneway', label: 'Faster one way',
     rows: s => s.corridors,
     value: r => mi(r.gap),
     detail: r =>

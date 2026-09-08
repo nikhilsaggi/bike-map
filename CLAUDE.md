@@ -487,7 +487,7 @@ about half of what ranks there was never ridden the other way
 a street needs `edge_name`, which never reaches the browser.
 
 **All three rank stretches of street, so they share one list and one tab
-strip** (`#speed-tabs`, Fastest / Slowest / One way), not a block each: two
+strip** (`#speed-tabs`, Fastest / Slowest / Faster one way), not a block each: two
 stacked lists outgrew the section between them, and a reader had to scroll
 past one ranking to learn the next existed. A tab reads its own array and
 never re-ranks; a tab with an empty array is not offered; and the (?) on the
