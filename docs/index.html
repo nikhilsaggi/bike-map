@@ -3256,9 +3256,15 @@ fetch('rides.geojson.gz')
       onEachFeature: (feature, layer) => {
         const idxs = feature.properties.rides || [];
         layer._filteredCount = idxs.length;
+        const name = streetNames[feature.properties.sn];
         layer.bindTooltip(() => {
           const c = countInRange(idxs);
-          return `${c} pass${c !== 1 ? 'es' : ''}`;
+          // An element rather than a string: Leaflet sets tooltip markup as
+          // HTML, and the name is OSM data.
+          const el = document.createElement('span');
+          el.textContent = (name ? `${name} \u00b7 ` : '') +
+            `${c} pass${c !== 1 ? 'es' : ''}`;
+          return el;
         }, {
           sticky: true,
           className: 'ride-tooltip',

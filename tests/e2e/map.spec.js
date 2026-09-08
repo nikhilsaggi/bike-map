@@ -2,12 +2,13 @@ import { test, expect, gotoMap, hoverEdge, clickEdge, edgePoint } from './helper
 import { buildFixture, EDGES } from './fixture.js';
 
 test.describe('street tooltips and detail', () => {
-  test('hovering a street shows its pass count', async ({ page }) => {
+  test('hovering a street shows its name and pass count', async ({ page }) => {
     await gotoMap(page);
     const tooltip = await hoverEdge(page, EDGES.center.lat);
-    await expect(tooltip).toHaveText('4 passes');
+    await expect(tooltip).toHaveText('Center Street \u00b7 4 passes');
 
-    // One ride, ridden both ways: two passes, not one.
+    // Unnamed, so the count stands alone -- and one ride ridden both ways is
+    // two passes, not one.
     const single = await hoverEdge(page, EDGES.south.lat);
     await expect(single).toHaveText('2 passes');
   });

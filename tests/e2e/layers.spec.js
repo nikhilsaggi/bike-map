@@ -55,7 +55,7 @@ test.describe('layer switcher', () => {
       await page.locator('#rf-check').check();
       await expectDrawn(page, 3);
       const tooltip = await hoverEdge(page, EDGES.center.lat);
-      await expect(tooltip).toHaveText('4 passes');
+      await expect(tooltip).toHaveText('Center Street \u00b7 4 passes');
     });
 
   test('coming back on obeys the date filter rather than redrawing everything',

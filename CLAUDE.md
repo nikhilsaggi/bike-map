@@ -139,12 +139,14 @@ export ships `properties.street_names` with an `sn` index per feature -- a
 table, because the same few hundred names repeat over ~15k features. Roughly
 an eighth of drawn features are unnamed, nearly all of them footway, service
 road and ramp, and they carry no `sn` at all; the pass count is still the
-heading there, so the panel has to read both ways. Where there is a name the count moves under it (`.edge-sub`),
-because the count is what the filters move and the name is not: an emptied
-street keeps its heading and says "No passes in range" below it. The name is a
-*drawn feature's*, after the merge, so a corridor carries one of its cluster's
-names -- fine for a heading, and not the same unit as the speed rankings'
-chained stretches.
+heading there, so the panel has to read both ways. Where there is a name the
+count moves under it (`.edge-sub`), because the count is what the filters move
+and the name is not: an emptied street keeps its heading and says "No passes
+in range" below it. The hover tooltip carries the name ahead of the count on
+one line, and returns a node rather than a string: Leaflet sets tooltip
+content as HTML, and the name is OSM data. The name is a *drawn feature's*,
+after the merge, so a corridor carries one of its cluster's names -- fine for
+a heading, and not the same unit as the speed rankings' chained stretches.
 
 **The panel is sized to its content (`width: fit-content`), the stats panel
 deliberately is not.** A street's rows measure ~248px, a dock's ~227 and a

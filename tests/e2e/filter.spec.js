@@ -22,7 +22,7 @@ test.describe('date-range filter', () => {
 
     // Center street now reports only the in-range rides.
     const tooltip = await hoverEdge(page, EDGES.center.lat);
-    await expect(tooltip).toHaveText('2 passes');
+    await expect(tooltip).toHaveText('Center Street \u00b7 2 passes');
 
     // The 2024-only street is removed from the map entirely: no tooltip.
     await hoverEdge(page, EDGES.south.lat);
@@ -44,7 +44,7 @@ test.describe('date-range filter', () => {
 
     // North street (rides 0,1) keeps only ride 1.
     const tooltip = await hoverEdge(page, EDGES.north.lat);
-    await expect(tooltip).toHaveText('1 pass');
+    await expect(tooltip).toHaveText('North Street \u00b7 1 pass');
   });
 });
 
