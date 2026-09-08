@@ -26,8 +26,8 @@ test.describe('stats panel', () => {
     // also carries the wider figure, so both denominators are on the page.
     await expect(page.locator('#tile-coverage')).toHaveAttribute('title',
       'Share of the rideable street network inside a NYC neighborhood, as far as ' +
-      'the map reaches (12.3% of every street in the graph, which runs past the ' +
-      'city); sidewalks, service roads and motorways excluded');
+      'the map reaches (12.3% of every street in the box it is measured over, ' +
+      'which runs past the city); sidewalks, service roads and motorways excluded');
   });
 
   test('shows the riding summary with hour and weekday histograms', async ({ page }) => {

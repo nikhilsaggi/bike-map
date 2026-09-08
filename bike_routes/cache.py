@@ -67,6 +67,10 @@ def _empty_state() -> dict[str, Any]:
         "edge_counts": {},
         "edge_rides": {},
         "graph_bbox": None,
+        # The polygon the OSM fetch covered: the city box plus a corridor
+        # around whatever was ridden outside it (graph._fetch_region).
+        # graph_bbox is its bounding box, kept for states written before it.
+        "graph_region": None,
         # Backfilled by edge_speed.py, deliberately outside _processing_config():
         # both are derived from timestamps the matcher never saw, so changing
         # them must never invalidate matches.  speed_version is their lever.

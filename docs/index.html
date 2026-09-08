@@ -1055,13 +1055,15 @@ function renderStreets(props) {
     // what "rideable" means here, so those stay; the mileage does not.
     //
     // Both denominators, one under the other, because the gap between them
-    // is itself a finding: the graph is the rides' own bounding box, so it
-    // holds thousands of km of Long Island and New Jersey that no
-    // neighborhood does. Ride further out and the wider figure falls.
+    // is itself a finding: coverage is measured over the whole city box,
+    // which runs from Newark to Nassau and so holds thousands of km that no
+    // neighborhood does. Ride further out inside it and the wider figure
+    // falls. What is ridden beyond the box -- the graph follows those rides
+    // out -- is drawn but counted on neither side.
     if (nb && nb.net_m) {
       rows.push(['Of rideable NYC', `${(100 * nb.ridden_m / nb.net_m).toFixed(1)}%`,
         excludedLabel(cov) || null]);
-      rows.push(['Of the whole graph', `${cov.pct}%`, 'which reaches past the city']);
+      rows.push(['Of the whole box', `${cov.pct}%`, 'which reaches past the city']);
     } else {
       rows.push(['Of rideable NYC', `${cov.pct}%`, excludedLabel(cov) || null]);
     }
@@ -1891,11 +1893,11 @@ function renderCitibike(cb) {
 
 // -- Neighborhoods ---------------------------------------------------------
 // The map's other geographic number is one percentage of "the network", and
-// half of that network is not in New York City -- the graph is built from the
-// rides' own bounding box, so a single ride out to Long Island enlarges the
-// denominator. Cut into neighborhoods the question does not arise, and the
-// answer is a different sentence: a third of Manhattan's streets against 5%
-// of the graph.
+// half of that network is not in New York City -- it is measured over the
+// city box, which runs from Newark to Nassau, so a ride further out inside
+// it enlarges the denominator. Cut into neighborhoods the question does not
+// arise, and the answer is a different sentence: a third of Manhattan's
+// streets against 5% of the box.
 //
 // Fill is the share of a neighborhood's rideable streets ridden by the end
 // of the visible date range, so the slider and the time-lapse fill the city
@@ -3151,19 +3153,18 @@ fetch('rides.geojson.gz')
       const tile = document.getElementById('tile-coverage');
       const excl = excludedLabel(coverage);
       // A tile labelled "of NYC" has to be of NYC. coverage.pct is measured
-      // against every edge in the graph, and the graph is the rides' own
-      // bounding box -- half of it is Long Island and New Jersey, which drags
-      // the percentage down for riding further out rather than less. When the
-      // neighborhood block is there it gives the same measurement over the
-      // part of the graph inside a NYC neighborhood, which is the number the
-      // label has always claimed.
+      // against every edge in the city box -- half of that box is Long Island
+      // and New Jersey, which drags the percentage down for riding further
+      // out rather than less. When the neighborhood block is there it gives
+      // the same measurement over the part inside a NYC neighborhood, which
+      // is the number the label has always claimed.
       const nb = data.properties?.neighborhoods;
       document.getElementById('stat-coverage').textContent =
         nb && nb.net_m ? `${(100 * nb.ridden_m / nb.net_m).toFixed(1)}%` : `${coverage.pct}%`;
       tile.title = (nb && nb.net_m
         ? 'Share of the rideable street network inside a NYC neighborhood, ' +
-          `as far as the map reaches (${coverage.pct}% of every street in the graph, ` +
-          'which runs past the city)'
+          `as far as the map reaches (${coverage.pct}% of every street in the ` +
+          'box it is measured over, which runs past the city)'
         : 'Share of the rideable NYC street network') + (excl ? `; ${excl}` : '');
       tile.classList.remove('hidden');
     }

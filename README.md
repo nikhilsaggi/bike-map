@@ -208,6 +208,19 @@ Steps 4 and 5 are deliberately separate: the matcher returns a path, not a
 count, and the pass counts the map colours by are measured from the raw
 timestamped fixes.
 
+The street network is fetched for one polygon, not a rectangle: the city box
+(`NYC_BBOX`) as far as the rides reach it, plus a `CORRIDOR_BUFFER_M`-wide
+corridor along whatever they ride outside it. A ride counts as a NYC ride if
+any of it is in the box and is then kept whole, and some of them run well
+past it — 9W, the Empire State Trail, Jones Beach — so without the corridor
+their far end would be matched against no edges at all. Fetching that reach
+as a box instead would buy several times the area, nearly all of it Hudson
+Valley nobody has ridden.
+
+What lies outside the box is drawn but not counted: the coverage figure is
+measured over the box alone, so riding to Poughkeepsie neither raises nor
+lowers it.
+
 All intermediate results are cached. First run takes longer
 (OSM download + full processing). Subsequent runs process only new rides.
 
@@ -257,6 +270,8 @@ worth knowing about:
 | `RESAMPLE_SPACING_M` | 20 | Resample GPS points to this spacing (meters) |
 | `MAX_GPS_GAP_M` | 300 | Split ride into segments at gaps larger than this |
 | `NETWORK_TYPES` | bike, drive, walk | OSM network types to fetch |
+| `NYC_BBOX` | 40.49, -74.30, 41.0, -73.60 | The city box: which rides count, and what coverage is measured over |
+| `CORRIDOR_BUFFER_M` | 500 | Width of the graph corridor around riding outside the box |
 | `SAMPLE_SIZE` | None | Limit number of rides processed (for testing) |
 | `SPEED_VERSION` | 7 | Bump to recompute passes and speeds (no rematch) |
 | `SPEED_SNAP_M` | 25 | Max GPS-to-edge distance for a fix to count as on-edge |

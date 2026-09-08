@@ -43,7 +43,10 @@ interactive Leaflet map (`docs/`, served via GitHub Pages) plus static PNGs.
 `bike_routes/` package, one stage per module:
 
 1. `gps.py` -- load CSVs, filter to NYC, resample to 20m spacing
-2. `graph.py` -- fetch/merge OSM networks (bike+drive+walk), cache to pickle
+2. `graph.py` -- fetch/merge OSM networks (bike+drive+walk), cache to pickle.
+   The fetch is a **polygon**, not a box: `_fetch_region` is the city box as
+   far as the rides reach it, unioned with a `CORRIDOR_BUFFER_M` corridor
+   around whatever they ride outside it (see below)
 3. `hmm.py` / `matching.py` -- map-match rides to edges. `MATCHER = "hmm"`
    (leuvenmapmatching Viterbi) is the default; the "heuristic" snap+route
    matcher is kept for comparison. Parallel matching via worker processes
@@ -257,14 +260,35 @@ side one.
   than counting them as own-bike. The 60s minimum overlap is not a tuned
   threshold: anything from 1s to 120s gives the same answer on the real
   rides.
+- **The graph reaches past `NYC_BBOX` and the coverage number does not.**
+  A ride counts as a NYC ride if any of it is in the box and is then kept
+  whole, so the graph has to cover the whole of a ride up 9W or out to Jones
+  Beach or its far end matches against no edges at all. It follows those
+  rides as *corridors* rather than as a bigger box: `graph._fetch_region`
+  unions the city box with a `CORRIDOR_BUFFER_M`-wide buffer around the
+  out-of-box track, which is why the fetch is `graph_from_polygon`. The
+  region is stored in `state["graph_region"]` as WKT and only ever grows;
+  `graph_bbox` is its bounding box, kept so a state written before it still
+  reads back. Build the corridor per track and union **last** -- unioning
+  the tracks first nodes every self-crossing of an out-and-back and turns a
+  tenth of a second into minutes.
+- **What the graph draws outside the box is counted on neither side of
+  coverage.** `export._in_city_box` drops an edge whose midpoint is outside
+  `NYC_BBOX` before the `COVERAGE_EXCLUDE` test, so Route 9W is drawn and
+  ridden and lands in `riding.total_km`, but neither raises the numerator
+  nor dilutes the denominator. `excluded_km` is that denominator's own
+  footnote, so it is filtered the same way. `edge_speed`, the stretch
+  rankings and the drawn features are all unfiltered -- a stretch of the
+  Empire State Trail can rank, and should.
 - **The map's coverage number has two denominators and both ship.**
-  `coverage.pct` is measured over every rideable edge in the graph, and the
-  graph is the rides' own bounding box -- half of it is not in New York City,
-  so riding further out *lowers* it. `properties.neighborhoods` carries the
-  same measurement over the part inside a NYC neighborhood (11.8% against
-  6.5%), and that is what the "of NYC" tile shows, because that is what the
-  label claims. Neither is a share of the whole city: the box has never
-  reached Staten Island ([details](findings/neighborhoods.md)).
+  `coverage.pct` is measured over every rideable edge inside `NYC_BBOX`, and
+  half of that box is not in New York City -- it runs from Newark to Nassau
+  -- so riding further out *inside the box* lowers it.
+  `properties.neighborhoods` carries the same measurement over the part
+  inside a NYC neighborhood (11.8% against 6.6%), and that is what the "of
+  NYC" tile shows, because that is what the label claims. Neither is a share
+  of the whole city: the box has never reached Staten Island
+  ([details](findings/neighborhoods.md)).
 - **A neighborhood is filled by coverage as of the date on screen**, not
   all-time, so the slider and the time-lapse move it the way they move the
   edges and the dock markers. The export ships `new` -- [date index, metres

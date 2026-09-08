@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+import shapely.geometry
 from conftest import LAT0, LON0, lonlat
 
 from bike_routes import config, gps, graph
@@ -94,3 +95,57 @@ def test_compute_bbox_inside_points():
     assert abs(lat_max - (40.75 + 0.005)) < 1e-9
     assert abs(lon_min - (-74.00 - 0.005)) < 1e-9
     assert abs(lon_max - (-73.95 + 0.005)) < 1e-9
+
+
+def _northbound(lat_end):
+    """A ride from midtown straight north to lat_end, one fix every ~200 m."""
+    lats = np.arange(40.75, lat_end, 200 / 110_540)
+    return np.column_stack([lats, np.full(len(lats), -73.95)])
+
+
+def test_outside_runs_keeps_the_fix_either_side_of_the_boundary():
+    coords = _northbound(41.05)  # crosses the top of the box at 41.0
+    (run,) = graph._outside_runs(coords)
+    # The run starts on the last in-box fix, so the corridor meets the box.
+    assert run[0][0] < config.NYC_BBOX[2] <= run[1][0]
+    assert run[-1][0] == coords[-1][0]
+
+
+def test_outside_runs_empty_for_a_ride_that_stays_in():
+    assert graph._outside_runs(_northbound(40.90)) == []
+
+
+def test_fetch_region_is_a_box_when_no_ride_leaves():
+    rides = [("a.csv", _northbound(40.90))]
+    region = graph._fetch_region(rides)
+    assert region.equals(shapely.geometry.box(*graph._compute_bbox(rides[0][1])))
+
+
+def test_fetch_region_follows_a_ride_out_of_the_box():
+    rides = [("a.csv", _northbound(41.05))]
+    region = graph._fetch_region(rides)
+    # The corridor covers the track and a few hundred metres either side of
+    # it, and stops there: the rest of that latitude is not fetched.
+    assert region.contains(shapely.geometry.Point(-73.95, 41.04))
+    assert region.contains(shapely.geometry.Point(-73.9455, 41.04))  # ~380 m east
+    assert not region.contains(shapely.geometry.Point(-73.90, 41.04))  # ~4 km east
+    assert not region.contains(shapely.geometry.Point(-73.95, 41.20))  # past the end
+
+
+def test_fetch_region_costs_far_less_than_the_extent_as_a_box():
+    # A ride across the city, and one that leaves it for 80 km -- which is
+    # the case the corridor exists for: as a box that reach would buy the
+    # whole Hudson Valley.
+    across = np.column_stack([np.full(40, 40.72), np.linspace(-74.10, -73.70, 40)])
+    rides = [("across.csv", across), ("north.csv", _northbound(41.70))]
+    region = graph._fetch_region(rides)
+    as_a_box = shapely.geometry.box(*region.bounds)
+    assert graph._region_km2(region) < graph._region_km2(as_a_box) / 3
+
+
+def test_fetch_region_corridor_is_wide_enough_for_the_matcher():
+    region = graph._fetch_region([("a.csv", _northbound(41.05))])
+    # Simplification runs after the buffer and can only cut inwards, so the
+    # corridor has to be checked at its full width, not its nominal one.
+    east = -73.95 + (config.CORRIDOR_BUFFER_M * 0.9) / config.M_PER_LON
+    assert region.contains(shapely.geometry.Point(east, 41.02))

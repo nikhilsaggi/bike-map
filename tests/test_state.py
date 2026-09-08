@@ -6,6 +6,8 @@ import os
 import pickle
 
 import networkx as nx
+import numpy as np
+import shapely.geometry
 
 from bike_routes import cache, config, graph, render
 
@@ -168,11 +170,57 @@ def test_unreadable_graph_cache_refetches(tmp_path, monkeypatch):
     cache._write_cache_versions()
 
     sentinel = object()
-    monkeypatch.setattr(graph, "_fetch_graph", lambda _bbox: sentinel)
+    monkeypatch.setattr(graph, "_fetch_graph", lambda _region: sentinel)
     state = {"graph_bbox": (-74.0, 40.7, -73.9, 40.8)}
 
     assert graph._load_graph([], state) is sentinel
     assert not (tmp_path / config.GRAPH_CACHE_PATH).exists()
+
+
+def test_stored_bbox_is_read_back_as_the_region(tmp_path, monkeypatch):
+    # A state written before the region existed names the box that was
+    # fetched, so it must not be re-fetched as anything smaller.
+    monkeypatch.chdir(tmp_path)
+    cache._write_cache_versions()
+    fetched = []
+    monkeypatch.setattr(graph, "_fetch_graph", fetched.append)
+    state = {"graph_bbox": (-74.0, 40.7, -73.9, 40.8)}
+
+    graph._load_graph([], state)
+
+    assert fetched[0].equals(shapely.geometry.box(-74.0, 40.7, -73.9, 40.8))
+    assert state["graph_region"] == fetched[0].wkt
+
+
+def test_region_grows_with_a_ride_and_never_shrinks(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    cache._write_cache_versions()
+    fetched = []
+    monkeypatch.setattr(graph, "_fetch_graph", fetched.append)
+    state = {"graph_bbox": (-74.0, 40.7, -73.9, 40.8)}
+    # One new ride, all of it well inside the old box.
+    coords = np.array([[40.75, -73.95], [40.76, -73.95]])
+
+    graph._load_graph([("a.csv", coords)], state)
+
+    assert fetched[0].contains(shapely.geometry.box(-74.0, 40.7, -73.9, 40.8))
+
+
+def test_region_is_refetched_for_a_ride_that_leaves_the_box(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    cache._write_cache_versions()
+    fetched = []
+    monkeypatch.setattr(graph, "_fetch_graph", fetched.append)
+    state = cache._empty_state()
+    lats = np.arange(40.99, 41.05, 200 / 110_540)
+    coords = np.column_stack([lats, np.full(len(lats), -73.95)])
+
+    graph._load_graph([("north.csv", coords)], state)
+
+    # The corridor reaches the far end of the ride, and the region's own
+    # bounds are what a later run reads back.
+    assert fetched[0].contains(shapely.geometry.Point(-73.95, 41.04))
+    assert state["graph_bbox"] == fetched[0].bounds
 
 
 def test_legacy_caches_migrate_into_cache_dir(tmp_path, monkeypatch):

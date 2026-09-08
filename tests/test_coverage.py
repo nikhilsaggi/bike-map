@@ -63,6 +63,30 @@ def test_coverage_excluded_km_is_ordered_longest_first():
     assert cov["excluded_km"]["service"] > cov["excluded_km"]["footway"]
 
 
+def test_coverage_ignores_edges_outside_the_city_box():
+    # The graph follows a ride up the Hudson; those roads are drawn, but a
+    # city percentage is not measured over them -- neither side of it.
+    upstate = [(-73.94, 41.500), (-73.94, 41.509)]
+    edge_geom = {(1, 2): KM_SEG, (3, 4): upstate, (5, 6): upstate}
+    edge_hw = {(1, 2): "residential", (3, 4): "residential", (5, 6): "residential"}
+    state = {"edge_counts": {(1, 2): 1, (3, 4): 1}, "edge_rides": {}}
+    cov = export._coverage_summary(edge_geom, edge_hw, state)
+    # 1 ridden km of 1 in-box km: the ridden upstate edge does not raise it,
+    # and the unridden one does not lower it.
+    assert cov["pct"] == 100.0
+    assert cov["network_km"] == 1
+
+
+def test_coverage_excluded_km_is_city_only_too():
+    # excluded_km is the denominator's own footnote, so it counts the same
+    # edges: upstate footway is not what the page's caption is naming.
+    upstate = [(-73.94, 41.500), (-73.94, 41.509)]
+    edge_geom = {(1, 2): KM_SEG, (3, 4): KM_SEG, (5, 6): upstate}
+    edge_hw = {(1, 2): "residential", (3, 4): "footway", (5, 6): "footway"}
+    cov = export._coverage_summary(edge_geom, edge_hw, {"edge_counts": {}, "edge_rides": {}})
+    assert 0.9 < cov["excluded_km"]["footway"] < 1.1  # the one in the box, not both
+
+
 def test_coverage_summary_empty():
     assert export._coverage_summary({}, {}, {"edge_counts": {}}) is None
     assert export._coverage_summary({(1, 2): KM_SEG}, {}, {"edge_counts": {}}) is None
