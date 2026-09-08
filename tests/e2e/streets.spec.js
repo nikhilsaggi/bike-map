@@ -3,6 +3,11 @@ import { buildFixture, SPEED_BLOCK } from './fixture.js';
 
 const STREETS = 'stat-streets';
 
+// One list, three rankings: Fastest and Slowest rank a stretch against the
+// network, One way ranks it against its own opposite direction. Fastest is
+// what a reader lands on, so every corridor assertion asks for its tab first.
+const tab = (page, label) => page.locator('#speed-tabs .seg-btn', { hasText: label }).click();
+
 // The fixture ships three corridors, which is short enough to fit. A ranking
 // long enough to overflow is built from it rather than hand-written, so the
 // row shape stays the one every other test in this file reads.
@@ -73,12 +78,13 @@ test.describe('streets', () => {
     // Both place the same circle, so selecting one must release the other.
     await gotoMap(page);
     await openSection(page, STREETS);
+    await tab(page, 'One way');
     await page.locator('#streets-totals .r-link').click();
     await page.waitForTimeout(900);
-    await page.locator('.sp-row').first().click();
+    await page.locator('#speed-list .sp-row').first().click();
     await page.waitForTimeout(900);
     await expect(page.locator('#streets-totals .r-link')).not.toHaveClass(/\bon\b/);
-    await expect(page.locator('.sp-row.on')).toHaveCount(1);
+    await expect(page.locator('#speed-list .sp-row.on')).toHaveCount(1);
   });
 
   test('an unnamed top segment leaves the count on its own', async ({ page }) => {
@@ -145,23 +151,25 @@ test.describe('streets', () => {
   test('lists corridors in rank order with mph converted from km/h', async ({ page }) => {
     await gotoMap(page);
     await openSection(page, STREETS);
+    await tab(page, 'One way');
 
-    const names = await page.locator('.sp-name').allTextContents();
+    const names = await page.locator('#speed-list .sp-name').allTextContents();
     expect(names).toEqual(['Crest Bridge', 'Crest Bridge', 'Flat Street']);
 
-    // 16.09 km/h -> 10.0 mph, 8.05 -> 5.0, 3.22 -> 2.0.
-    const gaps = await page.locator('.sp-gap').allTextContents();
-    expect(gaps).toEqual(['10.0', '5.0', '2.0']);
+    // 16.09 km/h -> 10.0 mph, 8.05 -> 5.0, 3.22 -> 2.0, each with its unit.
+    const gaps = await page.locator('#speed-list .sp-gap').allTextContents();
+    expect(gaps).toEqual(['10.0mph', '5.0mph', '2.0mph']);
 
-    const dirs = await page.locator('.sp-dir').allTextContents();
+    const dirs = await page.locator('#speed-list .sp-dir').allTextContents();
     expect(dirs).toEqual(['E', 'W', 'N']);
   });
 
   test('each row shows both directions, length, and pass count', async ({ page }) => {
     await gotoMap(page);
     await openSection(page, STREETS);
+    await tab(page, 'One way');
     // 24.14 km/h -> 15.0 mph, 8.05 -> 5.0; 800 m -> 0.50 mi.
-    await expect(page.locator('.sp-detail').first())
+    await expect(page.locator('#speed-list .sp-detail').first())
       .toHaveText('15.0 vs 5.0 mph over 0.50 mi, 12+ passes each way');
   });
 
@@ -171,6 +179,7 @@ test.describe('streets', () => {
   test('the ranking says how many stretches it was drawn from', async ({ page }) => {
     await gotoMap(page);
     await openSection(page, STREETS);
+    await tab(page, 'One way');
     // speed.measured was exported and rendered nowhere before.
     const help = page.locator('#speed-title .cb-help');
     await expect(help).toHaveAttribute('title', /Of 42 stretches measured/);
@@ -186,7 +195,8 @@ test.describe('streets', () => {
   test('a long ranking scrolls inside its own box', async ({ page }) => {
     await gotoMap(page, buildFixture({ speed: longSpeedBlock(10) }));
     await openSection(page, STREETS);
-    await expect(page.locator('.sp-row')).toHaveCount(10);
+    await tab(page, 'One way');
+    await expect(page.locator('#speed-list .sp-row')).toHaveCount(10);
 
     const box = await page.locator('#speed-list').evaluate(el => ({
       client: el.clientHeight,
@@ -203,6 +213,7 @@ test.describe('streets', () => {
   test('the ranking heading stays put while the rows scroll', async ({ page }) => {
     await gotoMap(page, buildFixture({ speed: longSpeedBlock(10) }));
     await openSection(page, STREETS);
+    await tab(page, 'One way');
     const outside = await page.evaluate(() =>
       !document.getElementById('speed-list').contains(document.getElementById('speed-title')));
     expect(outside).toBe(true);
@@ -220,15 +231,17 @@ test.describe('streets', () => {
   test('a row below the fold still opens its corridor', async ({ page }) => {
     await gotoMap(page, buildFixture({ speed: longSpeedBlock(10) }));
     await openSection(page, STREETS);
-    await page.locator('.sp-row').nth(9).click();
-    await expect(page.locator('.sp-row.on')).toHaveCount(1);
-    await expect(page.locator('.sp-row').nth(9)).toHaveClass(/on/);
+    await tab(page, 'One way');
+    await page.locator('#speed-list .sp-row').nth(9).click();
+    await expect(page.locator('#speed-list .sp-row.on')).toHaveCount(1);
+    await expect(page.locator('#speed-list .sp-row').nth(9)).toHaveClass(/on/);
   });
 
   test('the same bridge appears once per direction, never as one row', async ({ page }) => {
     await gotoMap(page);
     await openSection(page, STREETS);
-    const rows = page.locator('.sp-row').filter({ hasText: 'Crest Bridge' });
+    await tab(page, 'One way');
+    const rows = page.locator('#speed-list .sp-row').filter({ hasText: 'Crest Bridge' });
     await expect(rows).toHaveCount(2);
     // Opposite directions: the crest flip, not a duplicate of one stretch.
     await expect(rows.nth(0).locator('.sp-dir')).toHaveText('E');
@@ -238,8 +251,9 @@ test.describe('streets', () => {
   test('clicking a row flies to the corridor and marks it', async ({ page }) => {
     await gotoMap(page);
     await openSection(page, STREETS);
+    await tab(page, 'One way');
     const before = await page.evaluate(() => map.getZoom());
-    await page.locator('.sp-row').first().click();
+    await page.locator('#speed-list .sp-row').first().click();
     await page.waitForTimeout(900);
     const after = await page.evaluate(() => ({
       zoom: map.getZoom(),
@@ -255,7 +269,7 @@ test.describe('streets', () => {
   test('clicking the marked row again takes the circle back off', async ({ page }) => {
     await gotoMap(page);
     await openSection(page, STREETS);
-    const row = page.locator('.sp-row').first();
+    const row = page.locator('#speed-list .sp-row').first();
 
     await row.click();
     await page.waitForTimeout(700);
@@ -270,7 +284,8 @@ test.describe('streets', () => {
   test('clicking a different row moves the circle rather than toggling', async ({ page }) => {
     await gotoMap(page);
     await openSection(page, STREETS);
-    const rows = page.locator('.sp-row');
+    await tab(page, 'One way');
+    const rows = page.locator('#speed-list .sp-row');
 
     await rows.nth(0).click();
     await page.waitForTimeout(700);
@@ -278,7 +293,7 @@ test.describe('streets', () => {
     await page.waitForTimeout(700);
     expect(await page.evaluate(() => speedMarker !== null)).toBe(true);
     // Exactly one row is ever marked.
-    await expect(page.locator('.sp-row.on')).toHaveCount(1);
+    await expect(page.locator('#speed-list .sp-row.on')).toHaveCount(1);
     await expect(rows.nth(1)).toHaveClass(/\bon\b/);
     expect(await page.evaluate(() => map.getCenter().lat))
       .toBeCloseTo(SPEED_BLOCK.corridors[1].at[1], 2);
@@ -287,12 +302,12 @@ test.describe('streets', () => {
   test('closing the section clears the corridor marker', async ({ page }) => {
     await gotoMap(page);
     await openSection(page, STREETS);
-    await page.locator('.sp-row').first().click();
+    await page.locator('#speed-list .sp-row').first().click();
     await page.waitForTimeout(700);
     expect(await page.evaluate(() => speedMarker !== null)).toBe(true);
     await chip(page, STREETS).click();
     expect(await page.evaluate(() => speedMarker !== null)).toBe(false);
-    await expect(page.locator('.sp-row.on')).toHaveCount(0);
+    await expect(page.locator('#speed-list .sp-row.on')).toHaveCount(0);
   });
 
   test('switching to another section clears the corridor marker', async ({ page }) => {
@@ -300,12 +315,12 @@ test.describe('streets', () => {
     // cyan circle on the map with nothing on screen explaining it.
     await gotoMap(page);
     await openSection(page, STREETS);
-    await page.locator('.sp-row').first().click();
+    await page.locator('#speed-list .sp-row').first().click();
     await page.waitForTimeout(700);
     expect(await page.evaluate(() => speedMarker !== null)).toBe(true);
     await openSection(page, 'stat-weather');
     expect(await page.evaluate(() => speedMarker !== null)).toBe(false);
-    await expect(page.locator('.sp-row.on')).toHaveCount(0);
+    await expect(page.locator('#speed-list .sp-row.on')).toHaveCount(0);
   });
 
   test('every section fits a short viewport', async ({ page }) => {
@@ -344,12 +359,25 @@ test.describe('streets', () => {
     await expect(page.locator('#streets-totals .r-row')).toHaveCount(5);
   });
 
-  test('an empty corridor list drops the ranking too', async ({ page }) => {
+  test('an empty block drops the ranking, tabs and all', async ({ page }) => {
     await gotoMap(page, buildFixture({
-      speed: { corridors: [], measured: 0, split_n: 3, min_m: 250.0 },
+      speed: {
+        corridors: [], fastest: [], slowest: [],
+        measured: 0, split_n: 3, min_m: 250.0, stretch_n: 5,
+      },
     }));
     await openSection(page, STREETS);
     await expect(page.locator('#speed-block')).toBeHidden();
+  });
+
+  test('a tab with nothing in it is not offered', async ({ page }) => {
+    // The corridor ranking needs passes both ways and can come back empty on
+    // rides that never doubled back; the pace ranking still has something to
+    // say, so the block stays with two tabs rather than three.
+    await gotoMap(page, buildFixture({ speed: { ...SPEED_BLOCK, corridors: [] } }));
+    await openSection(page, STREETS);
+    expect(await page.locator('#speed-tabs .seg-btn').allTextContents())
+      .toEqual(['Fastest', 'Slowest']);
   });
 
   test('chip stays hidden when there is nothing about streets to show', async ({ page }) => {
@@ -359,5 +387,106 @@ test.describe('streets', () => {
     }));
     await expect(chip(page, STREETS)).toBeHidden();
     await expect(page.locator('#stat-streets')).toBeHidden();
+  });
+});
+
+// The two rankings that ask about a stretch on its own: absolute speed, one
+// direction, which is the only question a one-way street can answer. They are
+// what a reader lands on, so the corridor ranking is a tab away rather than
+// the other way round.
+test.describe('stretch pace', () => {
+  test('lands on the fastest ranking, with the corridor list a tab away',
+    async ({ page }) => {
+      await gotoMap(page);
+      await openSection(page, STREETS);
+      expect(await page.locator('#speed-tabs .seg-btn').allTextContents())
+        .toEqual(['Fastest', 'Slowest', 'One way']);
+      await expect(page.locator('#speed-tabs .seg-btn').first()).toHaveClass(/\bon\b/);
+      expect(await page.locator('#speed-list .sp-name').allTextContents())
+        .toEqual(['Steady Street', 'Gusty Street']);
+    });
+
+  test('lists the fastest stretches, mph and swing converted from km/h', async ({ page }) => {
+    await gotoMap(page);
+    await openSection(page, STREETS);
+    expect(await page.locator('#speed-list .sp-dir').allTextContents()).toEqual(['E', 'N']);
+    // 24.14 km/h -> 15.0 mph, 1.61 -> 1.0, 400 m -> 0.25 mi.
+    await expect(page.locator('#speed-list .sp-detail').first())
+      .toHaveText('15.0 \u00b11.0 mph over 0.25 mi, 9+ passes');
+  });
+
+  test('the number on the row carries its unit and is the one ranked by',
+    async ({ page }) => {
+      // 15.0 less a 1.0 swing, then 15.0 less 5.0: descending, as printed.
+      // A column that sorted by one number and printed another would read as
+      // a ranking of the number on screen and would not be one.
+      await gotoMap(page);
+      await openSection(page, STREETS);
+      expect(await page.locator('#speed-list .sp-gap').allTextContents())
+        .toEqual(['14.0mph', '10.0mph']);
+
+      await tab(page, 'Slowest');
+      // 5.0 plus 1.0, then 15.0 plus 5.0: ascending, as printed.
+      expect(await page.locator('#speed-list .sp-gap').allTextContents())
+        .toEqual(['6.0mph', '20.0mph']);
+    });
+
+  test('the slowest tab reads the other array, not a re-sort of this one',
+    async ({ page }) => {
+      await gotoMap(page);
+      await openSection(page, STREETS);
+      await tab(page, 'Slowest');
+      expect(await page.locator('#speed-list .sp-name').allTextContents())
+        .toEqual(['Slow Lane', 'Gusty Street']);
+      // 8.05 km/h -> 5.0 mph: a stretch the fastest tab never showed.
+      await expect(page.locator('#speed-list .sp-detail').first())
+        .toHaveText('5.0 \u00b11.0 mph over 0.16 mi, 5+ passes');
+      await expect(page.locator('#speed-tabs .seg-btn').first()).not.toHaveClass(/\bon\b/);
+    });
+
+  test('a stretch row places the one marker the corridor rows use', async ({ page }) => {
+    await gotoMap(page);
+    await openSection(page, STREETS);
+    await page.locator('#speed-list .sp-row').first().click();
+    await page.waitForTimeout(900);
+    expect(await page.evaluate(() => speedMarker !== null)).toBe(true);
+    expect(await page.evaluate(() => map.getCenter().lat)).toBeCloseTo(40.7305, 2);
+
+    await tab(page, 'One way');
+    await page.locator('#speed-list .sp-row').first().click();
+    await page.waitForTimeout(900);
+    await expect(page.locator('.sp-row.on')).toHaveCount(1);
+  });
+
+  test('switching tabs takes the circle off with the row that placed it',
+    async ({ page }) => {
+      await gotoMap(page);
+      await openSection(page, STREETS);
+      await page.locator('#speed-list .sp-row').first().click();
+      await page.waitForTimeout(900);
+      expect(await page.evaluate(() => speedMarker !== null)).toBe(true);
+
+      await tab(page, 'Slowest');
+      expect(await page.evaluate(() => speedMarker !== null)).toBe(false);
+      await expect(page.locator('.sp-row.on')).toHaveCount(0);
+    });
+
+  test('the rule on the (?) changes with the tab', async ({ page }) => {
+    // Three tabs, three questions: one help text would have to describe the
+    // ranking a reader is not looking at.
+    await gotoMap(page);
+    await openSection(page, STREETS);
+    const help = page.locator('#speed-title .cb-help');
+    await expect(help).toHaveAttribute('title', /average less its pass-to-pass swing/);
+    await expect(help).toHaveAttribute('title', /820 ft\+, ridden 5\+ times/);
+    await expect(help).toHaveAttribute('title', /waiting at lights included/);
+
+    await tab(page, 'Slowest');
+    await expect(help).toHaveAttribute('title', /average plus its pass-to-pass swing/);
+
+    await tab(page, 'One way');
+    await expect(help).toHaveAttribute('title', /Of 42 stretches measured/);
+    // One mark, not one per render.
+    await expect(page.locator('#speed-title .cb-help')).toHaveCount(1);
   });
 });

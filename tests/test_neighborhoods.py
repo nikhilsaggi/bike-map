@@ -6,7 +6,7 @@ import gzip
 import json
 
 import pytest
-from conftest import lonlat
+from conftest import chunk, lonlat
 
 from bike_routes import config, export, neighborhoods
 
@@ -97,11 +97,11 @@ def test_measure_sums_the_distance_and_time_measured_on_each_area(areas):
     state = {
         "edge_rides": {},
         "edge_speed": {
-            (1, 2): {"b": 90.0, "c": [[100.0, 60.0, 55.0, 1.0, 0.0, 0.0, 0.0, 0.0]]},
-            (4, 5): {"b": 90.0, "c": [[100.0, 20.0, 20.0, 1.0, 100.0, 25.0, 25.0, 1.0]]},
+            (1, 2): {"b": 90.0, "c": [chunk((100.0, 60.0, 55.0, 1.0))]},
+            (4, 5): {"b": 90.0, "c": [chunk((100.0, 20.0, 20.0, 1.0), (100.0, 25.0, 25.0, 1.0))]},
             # A sidewalk is out of the coverage denominator, but the time on
             # it was still spent in the neighborhood.
-            (6, 7): {"b": 90.0, "c": [[100.0, 30.0, 30.0, 1.0, 0.0, 0.0, 0.0, 0.0]]},
+            (6, 7): {"b": 90.0, "c": [chunk((100.0, 30.0, 30.0, 1.0))]},
         },
     }
     west, east = neighborhoods.measure(areas, edge_geom, edge_hw, state)
@@ -118,7 +118,7 @@ def test_measure_distance_is_every_pass_where_ridden_m_is_the_street_once(areas)
         "edge_rides": {(1, 2): [R1, R2]},
         # Two passes out and one back, all on the one 100 m edge.
         "edge_speed": {
-            (1, 2): {"b": 90.0, "c": [[200.0, 120.0, 110.0, 2.0, 100.0, 50.0, 45.0, 1.0]]},
+            (1, 2): {"b": 90.0, "c": [chunk((200.0, 120.0, 110.0, 2.0), (100.0, 50.0, 45.0, 1.0))]},
         },
     }
     west = neighborhoods.measure(areas, edge_geom, {(1, 2): "residential"}, state)[0]
@@ -149,8 +149,8 @@ def test_summary_ships_areas_and_tags_the_features(areas):
         # Two passes over the west edge and one over the east: 500 m ridden
         # on 300 m of street, which is the pair the Ridden ranking needs.
         "edge_speed": {
-            (1, 2): {"b": 90.0, "c": [[400.0, 200.0, 190.0, 2.0, 0.0, 0.0, 0.0, 0.0]]},
-            (4, 5): {"b": 90.0, "c": [[100.0, 40.0, 40.0, 1.0, 0.0, 0.0, 0.0, 0.0]]},
+            (1, 2): {"b": 90.0, "c": [chunk((400.0, 200.0, 190.0, 2.0))]},
+            (4, 5): {"b": 90.0, "c": [chunk((100.0, 40.0, 40.0, 1.0))]},
         },
     }
     features = [

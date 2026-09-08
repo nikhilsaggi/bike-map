@@ -476,6 +476,44 @@ enough passes in both directions to compare them, so a speed layer was
 instead. Features carry no speed key and `merge.py` never sees it
 ([why](findings/direction-split-speed.md)).
 
+**There are two speed rankings in `properties.speed` and they ask different
+questions.** `corridors` compares a stretch with its own opposite direction,
+which takes passes both ways -- so it can only speak about two-way streets,
+and on these rides it answers in bridges. `fastest`/`slowest`
+(`_top_stretches`) compare a stretch with the rest of the network on the
+passes it has, which is the only way a one-way street can be ranked at all:
+about half of what ranks there was never ridden the other way
+([details](findings/stretch-pace.md)). Both are pipeline-side, because naming
+a street needs `edge_name`, which never reaches the browser.
+
+**All three rank stretches of street, so they share one list and one tab
+strip** (`#speed-tabs`, Fastest / Slowest / One way), not a block each: two
+stacked lists outgrew the section between them, and a reader had to scroll
+past one ranking to learn the next existed. A tab reads its own array and
+never re-ranks; a tab with an empty array is not offered; and the (?) on the
+heading carries the *active* tab's rule, because one text describing three
+questions would describe the two a reader is not looking at.
+
+- **A stretch is chained across edges, a corridor is not.** The median edge
+  is 63 m and the floor is 250 m, so without chaining the second ranking
+  would be the first one's bridges again. `_chain_units` joins chunk-
+  directions that share a node and a street name, taking the straightest
+  continuation at a fork so a stretch never depends on dict order, and using
+  each chunk once so no metre is ranked twice. `tools/speed_consistency.py`
+  chains through the same function.
+- **Ranked by the average less its pass-to-pass deviation** (plus it, at the
+  slow end), so a stretch ridden fast once loses to one that is the same
+  every time -- which is what the record's `speed_sum`/`speed_sq_sum` slots
+  are for. **The page prints the bound it sorts by**, not the average: a
+  column that sorts by one number while printing another reads as a ranking
+  of the number on screen and is not one, the same trap the neighborhood
+  list fell into.
+- **The fast end is a podium and the slow end is a pack.** 18 stretches sit
+  within 1 mph of the slowest, so the order there is not a finding and the
+  panel's approximation reproduces almost none of it (the exact ranking is
+  the tool's, which re-measures every ride). Don't tune anything to make the
+  two slow lists agree.
+
 - `state["edge_speed"]` / `state["edge_traversals"]` / `state["speed_rides"]`
   are deliberately **outside** `_processing_config()`, so changing them never
   triggers a rematch. Their invalidation lever is `config.SPEED_VERSION` --
@@ -491,8 +529,12 @@ instead. Features carry no speed key and `merge.py` never sees it
   geometry, so a rebuilt render cache cannot silently flip it.
 - Records are per-chunk (~`SPEED_CHUNK_M`), not per-edge: the Manhattan
   Bridge bike path is a single 2163 m edge whose climb cancels its descent.
-  Each direction bucket is `[dist, time, moving, n]`, so it combines by
-  addition and survives chunked folding like `edge_counts`.
+  Each direction bucket is `[dist, time, moving, n, speed_sum,
+  speed_sq_sum]`, so it combines by addition and survives chunked folding
+  like `edge_counts`. The last two are over passes, not metres -- they are a
+  mean and a deviation across crossings, which totals cannot give. Slot
+  offsets are `_FWD`/`_REV`; `neighborhoods.py` imports them rather than
+  writing 0 and 4 again, because the record has grown once already.
 - **`_top_corridors` splits a corridor wherever the faster direction flips**,
   and that is the point, not an implementation detail: a bridge's entire
   signal is the crest reversal, so it must be reported as its two descents.

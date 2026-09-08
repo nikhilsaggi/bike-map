@@ -21,6 +21,9 @@ The pipeline exports a compressed GeoJSON that powers an interactive
   out-and-back counts twice
 - Biggest direction splits: the corridors where riding one way is much
   faster than the other ([how it works](findings/direction-split-speed.md))
+- Stretches that ride the same way every time: the fastest and the slowest,
+  ranked on one direction so a one-way street can be ranked at all
+  ([how it works](findings/stretch-pace.md))
 - Hover for the pass count, click for the full list of ride dates
 - Detail (street, dock or neighborhood) opens in a panel docked to the left
   edge rather than a popup over the feature it describes: it covers no map,
@@ -35,7 +38,8 @@ The pipeline exports a compressed GeoJSON that powers an interactive
   Switching it off leaves the other layers against the basemap alone; a ride
   put on screen still draws, the way it already draws outside the date filter
 - Collapsible stats panel with total rides, edges covered, and street
-  miles
+  miles. The legend collapses the same way, to its title -- the slider,
+  the source buttons and the layer switcher go with it
 - Riding stats: distance/time totals, average speed, longest ride,
   miles and new-street miles per year, rides-by-hour and weekday
   histograms (data is stored metric; the UI displays miles)
@@ -254,9 +258,11 @@ worth knowing about:
 | `MAX_GPS_GAP_M` | 300 | Split ride into segments at gaps larger than this |
 | `NETWORK_TYPES` | bike, drive, walk | OSM network types to fetch |
 | `SAMPLE_SIZE` | None | Limit number of rides processed (for testing) |
-| `SPEED_VERSION` | 6 | Bump to recompute passes and speeds (no rematch) |
+| `SPEED_VERSION` | 7 | Bump to recompute passes and speeds (no rematch) |
 | `SPEED_SNAP_M` | 25 | Max GPS-to-edge distance for a fix to count as on-edge |
 | `SPEED_CHUNK_M` | 150 | Long ways are measured in chunks this size |
+| `SPEED_STRETCH_PASSES` | 5 | Passes one way before a stretch can be ranked on its speed |
+| `SPEED_STRETCH_N` | 8 | Stretches listed per tab, fastest and slowest |
 | `TRAVERSAL_MIN_COVER` | 0.5 | Fraction of an edge a counted pass must sweep |
 | `TRAVERSAL_RESUME_M` | 30 | Slack for rejoining one pass split across fragments |
 | `MERGE_TOL_M` | 20 | Parallel features within this may merge into one corridor |
@@ -266,6 +272,8 @@ the pass/speed parameters are backfilled from timestamps instead, so they
 recompute on a `SPEED_VERSION` bump without rematching. Before changing a
 `TRAVERSAL_*` or `SPEED_*` threshold, run `python tools/traversal_audit.py`
 against real rides — a synthetic grid cannot tell you whether it over-fires.
+`python tools/speed_consistency.py --sweep` does the same for the stretch
+ranking, and re-measures every pass rather than reading the stored totals.
 
 ## Updating the Map
 
@@ -310,6 +318,10 @@ part of it; `findings/` holds what they found:
 - [Direction-split speed](findings/direction-split-speed.md) — reconstructing
   the Manhattan Bridge's elevation profile from timestamps, and why the
   result is a ranked list rather than a map layer
+- [Stretches that ride the same way every time](findings/stretch-pace.md) —
+  ranking a street on its own speed rather than against its opposite
+  direction, why that is the only ranking a one-way street can enter, and why
+  the slow end is a pack rather than a podium
 - [Weather correlation](findings/weather-correlation.md) —
   `tools/weather_correlation.py`, joining rides against Open-Meteo history
 - [Garmin access](findings/garmin-access.md) — how ride ingest authenticates

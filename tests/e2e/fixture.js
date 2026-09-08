@@ -36,9 +36,23 @@ export const SPEED_BLOCK = {
       dir: 'N', m: 250, n: 3, at: [-73.97, 40.7305],
     },
   ],
+  // The other ranking on the same block: absolute speed over a stretch, one
+  // direction, with the pass-to-pass swing beside it. 24.14 km/h = 15.0 mph,
+  // 16.09 = 10.0, 8.05 = 5.0, and 1.61 = 1.0, so every row's mph and swing
+  // are exact. Ranked by mean less the swing (fastest) and mean plus it
+  // (slowest), which puts Steady Street above Gusty Street at both ends.
+  fastest: [
+    { name: 'Steady Street', kmh: 24.14, sd: 1.61, dir: 'E', m: 400, n: 9, at: [-73.99, 40.7305] },
+    { name: 'Gusty Street', kmh: 24.14, sd: 8.05, dir: 'N', m: 300, n: 6, at: [-73.98, 40.7305] },
+  ],
+  slowest: [
+    { name: 'Slow Lane', kmh: 8.05, sd: 1.61, dir: 'W', m: 250, n: 5, at: [-73.97, 40.7405] },
+    { name: 'Gusty Street', kmh: 24.14, sd: 8.05, dir: 'N', m: 300, n: 6, at: [-73.98, 40.7305] },
+  ],
   measured: 42,
   split_n: 3,
   min_m: 250.0,
+  stretch_n: 5,
 };
 
 // Citibike dock trips: dock-to-dock, no trace, so this block carries the

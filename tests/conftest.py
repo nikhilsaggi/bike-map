@@ -1,4 +1,4 @@
-"""Shared fixtures: synthetic street graphs and local-metre geometry helpers."""
+"""Shared fixtures: synthetic street graphs, geometry and speed-record helpers."""
 
 from __future__ import annotations
 
@@ -44,3 +44,25 @@ def grid_graph() -> nx.MultiDiGraph:
             if r < 4:
                 add_street(G, r * 10 + c, (r + 1) * 10 + c)
     return G
+
+
+def chunk(
+    fwd: tuple[float, float, float, float] = (0, 0, 0, 0),
+    rev: tuple[float, float, float, float] = (0, 0, 0, 0),
+    *,
+    fwd_speeds: list[float] | None = None,
+    rev_speeds: list[float] | None = None,
+) -> list[float]:
+    """Build one edge_speed chunk record from (dist, time, moving, n) per direction.
+
+    Written here rather than as a literal in each test because the record has
+    grown once and will again: a test that spells out its slots is testing the
+    layout it was written against.  Pass speeds default to n crossings all at
+    the bucket's own average -- a rider who was the same every time -- so a
+    test only says what it means to vary.
+    """
+    out: list[float] = []
+    for (dist, time_s, moving, n), given in ((fwd, fwd_speeds), (rev, rev_speeds)):
+        speeds = given if given is not None else [3.6 * dist / time_s] * int(n) if time_s else []
+        out += [dist, time_s, moving, n, sum(speeds), sum(s * s for s in speeds)]
+    return out

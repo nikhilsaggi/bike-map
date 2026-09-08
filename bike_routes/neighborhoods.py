@@ -40,6 +40,7 @@ import urllib.request
 from typing import TYPE_CHECKING, Any
 
 from . import config
+from .edge_speed import _FWD, _REV
 from .merge import _geom_len_m
 
 if TYPE_CHECKING:
@@ -68,11 +69,12 @@ BOUNDARY_TOLERANCE_M = 55.0
 SIMPLIFY_DEG = 0.0001
 COORD_PRECISION = 5  # ~1 m; matches the export's own rounding
 
-# Slots 0 and 4 of an edge_speed chunk record are the forward and reverse
-# metres, 1 and 5 the elapsed seconds; see edge_speed._new_chunk for the full
-# eight-slot layout.
-_DIST_FWD, _DIST_REV = 0, 4
-_TIME_FWD, _TIME_REV = 1, 5
+# The first two slots of each direction of an edge_speed chunk record are its
+# metres and its elapsed seconds.  Taken from edge_speed rather than written
+# out here: the record has grown once already, and a stale copy of the layout
+# would read one direction's distance as the other's.
+_DIST_FWD, _DIST_REV = _FWD, _REV
+_TIME_FWD, _TIME_REV = _FWD + 1, _REV + 1
 
 BOROUGH_ABBR = {
     "Manhattan": "Mn",

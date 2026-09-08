@@ -17,11 +17,13 @@ fast once and crawling twice loses to one that is the same every time.  That is
 what "consistently" has to mean here: the spread is across passes, not along
 the street.
 
-Everything is measured from the ride CSVs, not read from state["edge_speed"]:
-the stored record keeps only per-chunk totals, which cannot say how a stretch
-varied pass to pass.  The pass rules are shared with the pipeline
-(edge_speed._measure_ride, ._admitted_passes, ._pass_chunks), so what is ranked
-here is the same metres the map counts.
+The map ships this ranking too (edge_speed._top_stretches), but from the
+stored record, whose spread is per chunk rather than per stretch.  Here every
+ride is re-measured and each stretch's own pass-to-pass spread is exact, which
+is what that approximation is checked against -- it keeps nine of the top ten
+either way.  The pass rules and the chaining are shared with the pipeline
+(edge_speed._measure_ride, ._admitted_passes, ._pass_chunks, ._chain_units),
+so what is ranked here is the same metres the map counts.
 
 Reads cache/state.pkl, cache/render_cache.pkl and rides/; writes nothing.
 
@@ -40,8 +42,11 @@ from typing import Any
 from bike_routes import config, edge_speed
 
 TOP_N = 12
-MIN_PASSES = 5  # rides over the whole stretch before it is ranked
-MIN_M = 250.0  # config.SPEED_CORRIDOR_MIN_M: shorter is an anecdote
+# The two floors are the pipeline's own, so this ranks what the panel ranks;
+# only the coverage rule is the tool's, and it is the one thing the stored
+# record cannot express.
+MIN_PASSES = config.SPEED_STRETCH_PASSES
+MIN_M = config.SPEED_CORRIDOR_MIN_M
 MIN_COVER = 0.5  # fraction of the stretch a ride must cover to set its pace
 KMH_TO_MPH = 0.621371
 
@@ -152,66 +157,9 @@ def _usable(units: dict[Unit, dict[str, Any]], min_passes: int) -> dict[Unit, di
     }
 
 
-def _chain(units: dict[Unit, dict[str, Any]]) -> list[list[Unit]]:
-    """Chain units into stretches: one street, one way, end to end.
-
-    Within an edge the chunks are already in order; across edges a unit's
-    last point is the next one's first, which is the graph node they share.
-    Where a name continues into more than one edge (a fork, a street meeting
-    itself) the straightest continuation wins, so the chain does not depend
-    on dictionary order.  Each unit is used once, so stretches are disjoint
-    and no metre is ranked twice.
-    """
-    starts: dict[tuple[float, float], list[Unit]] = {}
-    for u, d in sorted(units.items()):
-        starts.setdefault(_at(d["piece"][0]), []).append(u)
-
-    def successors(u: Unit) -> list[Unit]:
-        key, ci, base = u
-        nxt = (key, ci + 1, base) if base == edge_speed._FWD else (key, ci - 1, base)  # noqa: SLF001
-        if nxt in units:
-            return [nxt]
-        end = _at(units[u]["piece"][-1])
-        return [
-            v for v in starts.get(end, []) if v[0] != key and units[v]["name"] == units[u]["name"]
-        ]
-
-    def straightest(u: Unit, options: list[Unit]) -> Unit:
-        heading = _bearing(units[u]["piece"])
-        return min(options, key=lambda v: (_turn(heading, _bearing(units[v]["piece"])), v))
-
-    has_predecessor = {v for u in units for v in successors(u)}
-    used: set[Unit] = set()
-    chains: list[list[Unit]] = []
-    seeds = [u for u in sorted(units) if u not in has_predecessor] + sorted(units)
-    for seed in seeds:
-        if seed in used:
-            continue
-        chain: list[Unit] = []
-        cur: Unit | None = seed
-        while cur is not None and cur not in used:
-            used.add(cur)
-            chain.append(cur)
-            options = [v for v in successors(cur) if v not in used]
-            cur = straightest(cur, options) if options else None
-        chains.append(chain)
-    return chains
-
-
-def _at(point: tuple[float, float]) -> tuple[float, float]:
-    """Round a coordinate to the precision two edges of one node agree on."""
-    return (round(point[0], 6), round(point[1], 6))
-
-
 def _bearing(piece: list[tuple[float, float]]) -> float:
     """Bearing of travel along an already-oriented chunk."""
     return edge_speed._chord(piece)[0]  # noqa: SLF001
-
-
-def _turn(a: float, b: float) -> float:
-    """Absolute angle between two bearings, in degrees."""
-    d = abs(a - b) % 360.0
-    return min(d, 360.0 - d)
 
 
 def _summarize(
@@ -280,7 +228,7 @@ def _stretches(
     """
     usable = _usable(units, min_passes)
     out = []
-    for chain in _chain(usable):
+    for chain in edge_speed._chain_units(usable):  # noqa: SLF001
         if sum(usable[u]["m"] for u in chain) < min_m:
             continue
         row = _summarize(chain, usable, units, min_passes, min_cover)
@@ -312,22 +260,27 @@ def _mph(kmh: float) -> float:
     return kmh * KMH_TO_MPH
 
 
-def _print_rows(title: str, rows: list[dict[str, Any]], top: int) -> None:
+def _print_rows(title: str, rows: list[dict[str, Any]], top: int, *, fastest: bool) -> None:
     """Print one ranking, with what each row is a claim about.
 
-    The midpoint is there to be pasted into a map: a ranking of streets is
-    only worth as much as the stretch it names can be found and checked.
+    The first column is the bound the list is ranked by, not the average, so
+    the order is the order of the number printed; the average and the swing
+    it came from follow it.  The midpoint is there to be pasted into a map: a
+    ranking of streets is only worth as much as the stretch it names can be
+    found and checked.
     """
     print(f"\n{title}")
     print(
-        f"  {'mph':>12}  {'rides':>5}  {'length':>7}  {'dir':>3}  {'way':>4}  {'lat,lon':<19}  street"
+        f"  {'mph':>5}  {'average':>13}  {'rides':>5}  {'length':>7}  "
+        f"{'dir':>3}  {'way':>4}  {'lat,lon':<19}  street"
     )
     for r in rows[:top]:
         lon, lat = r["at"]
+        bound = r["floor"] if fastest else r["ceiling"]
         print(
-            f"  {_mph(r['mean']):5.1f} +-{_mph(r['sd']):4.1f}  {r['n']:>5}  "
-            f"{r['m']:>6.0f}m  {r['dir']:>3}  {'one' if r['one_way'] else 'both':>4}  "
-            f"{lat:.5f},{lon:.5f}  {r['name']}"
+            f"  {_mph(bound):5.1f}  {_mph(r['mean']):5.1f} +-{_mph(r['sd']):4.1f}  "
+            f"{r['n']:>5}  {r['m']:>6.0f}m  {r['dir']:>3}  "
+            f"{'one' if r['one_way'] else 'both':>4}  {lat:.5f},{lon:.5f}  {r['name']}"
         )
 
 
@@ -398,6 +351,32 @@ def _print_sweep(units: dict[Unit, dict[str, Any]]) -> None:
         )
 
 
+def _print_shipped(
+    state: dict[str, Any],
+    edge_geom: dict[tuple[int, int], list[tuple[float, float]]],
+    edge_name: dict[tuple[int, int], str],
+    fast: list[dict[str, Any]],
+    slow: list[dict[str, Any]],
+) -> None:
+    """Compare the exact ranking above with the one the map ships.
+
+    The panel ranks from the stored record, whose spread is per chunk and
+    which has no way to ask that a ride covered the stretch it is timing.
+    Both differences are here.  What the comparison is for is the shape of
+    the disagreement, not a score: the fast end is spread over several mph
+    and survives the approximation, the slow end is a pack a few tenths wide
+    where nothing decides the order.
+    """
+    shipped_fast, shipped_slow = edge_speed._top_stretches(  # noqa: SLF001
+        state.get("edge_speed", {}), edge_geom, edge_name
+    )
+    print("\nAgainst the ranking the map ships, over the same rows:")
+    for label, mine, theirs in (("fastest", fast, shipped_fast), ("slowest", slow, shipped_slow)):
+        n = len(theirs)
+        shared = {(r["name"], r["dir"]) for r in mine[:n]} & {(r["name"], r["dir"]) for r in theirs}
+        print(f"  {label:>7}: {len(shared)} of {n} rows shared")
+
+
 def _names(rows: list[dict[str, Any]]) -> set[tuple[str, str]]:
     """Reduce a ranking to its top ten, as street-and-direction pairs."""
     return {(r["name"], r["dir"]) for r in rows[:10]}
@@ -429,16 +408,21 @@ def main() -> None:
     units = _measure(state, edge_geom, edge_name, rides)
     rows = _stretches(units, MIN_PASSES, MIN_M, MIN_COVER)
     _print_coverage(units, rows, rides)
+    fast = _ranked(rows, "floor", fastest=True)
+    slow = _ranked(rows, "ceiling", fastest=False)
     _print_rows(
-        f"Consistently fastest -- ranked by mean less one deviation, {MIN_PASSES}+ rides:",
-        _ranked(rows, "floor", fastest=True),
+        f"Consistently fastest -- mean less one deviation, {MIN_PASSES}+ rides:",
+        fast,
         args.top,
+        fastest=True,
     )
     _print_rows(
-        "Consistently slowest -- ranked by mean plus one deviation:",
-        _ranked(rows, "ceiling", fastest=False),
+        "Consistently slowest -- mean plus one deviation:",
+        slow,
         args.top,
+        fastest=False,
     )
+    _print_shipped(state, edge_geom, edge_name, fast, slow)
     if args.sweep:
         _print_sweep(units)
 

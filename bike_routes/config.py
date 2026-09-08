@@ -152,7 +152,7 @@ RING_NEAR_M = 40.0  # rings must hug covering features within this distance
 # SPEED_VERSION discards edge_speed/edge_traversals/speed_rides and recomputes
 # both; it is the invalidation lever for this data, deliberately separate from
 # the config hash so an algorithm change here never triggers a full rematch.
-SPEED_VERSION = 6  # 6: single passes stored too, for merge (5: direction split)
+SPEED_VERSION = 7  # 7: pass speeds summed and squared, for spread (6: single passes)
 SPEED_SAMPLE_M = 5.0  # edge polyline densification for the projection index
 SPEED_SNAP_M = 25.0  # max GPS-to-edge distance for a fix to count as on-edge
 SPEED_HYSTERESIS = 1.5  # stay on the previous edge within this factor of the best
@@ -171,6 +171,13 @@ SPEED_MIN_DIST_M = 50.0  # per-direction distance needed before a speed is usabl
 SPEED_SPLIT_PASSES = 3  # passes needed in EACH direction before a chunk is ranked
 SPEED_CORRIDOR_MIN_M = 250.0  # a shorter same-sign run is an anecdote, not a corridor
 SPEED_CORRIDOR_N = 10  # corridors listed in the stats panel
+# Ranking a stretch on its own speed asks one direction rather than two, which
+# is what lets a one-way street be ranked at all -- but the claim is that it
+# rides the same way every time, so it needs enough passes to have a spread.
+# Three admits a lucky run; eight leaves only the most-ridden streets in the
+# pool (tools/speed_consistency.py --sweep).
+SPEED_STRETCH_PASSES = 5  # passes needed in ONE direction before a chunk joins a stretch
+SPEED_STRETCH_N = 8  # stretches listed per tab, fastest and slowest
 # Traversal counting reuses the speed pass detector, but must not inherit its
 # split at recording gaps: a rider who stops mid-block for five minutes rode
 # that block once.  Two same-direction passes on one edge are the same

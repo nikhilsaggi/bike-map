@@ -32,6 +32,15 @@ edge.  OSM ways are not uniform: the Manhattan Bridge bike path is a single
 The median edge is 63 m and stays a single chunk, so this costs nothing for
 the street grid.
 
+SPREAD
+------
+Each direction of a chunk also sums its pass speeds and their squares, which
+is a mean and a standard deviation over crossings rather than over metres.
+Totals alone cannot say whether a stretch was fast every time or fast once,
+and that is the difference _top_stretches ranks on -- the panel's other
+ranking, of stretches against the network instead of against their own
+opposite direction, which is the only way a one-way street can be ranked.
+
 ORIENTATION INVARIANT
 ---------------------
 "Forward" means travel along the stored coordinate order of
@@ -61,11 +70,15 @@ from . import config
 from .cache import _save_state
 from .ride_stats import _parse_ride_timestamp
 
-# One chunk record: [f_dist, f_time, f_moving, f_n, r_dist, r_time, r_moving, r_n].
-# All eight combine by addition, so folding order cannot affect the result.
+# One chunk record, per direction: [dist, time, moving, n, speed_sum,
+# speed_sq_sum].  The last two are over passes rather than metres -- their
+# mean and standard deviation are how a stretch is known to ride the same way
+# every time rather than to have averaged out that way.  All twelve slots
+# combine by addition, so folding order cannot affect the result.
 _FWD = 0
-_REV = 4
-_CHUNK_W = 8
+_REV = 6
+_DIR_W = 6
+_CHUNK_W = 12
 
 # A stored edge record is {"b": chord bearing when measured, "c": [chunk, ...]}.
 
@@ -82,7 +95,7 @@ def _new_chunk() -> list[float]:
 
 def _swap_dirs(chunk: list[float]) -> list[float]:
     """Return a copy of a chunk with its forward and reverse buckets exchanged."""
-    return [*chunk[_REV : _REV + 4], *chunk[_FWD : _FWD + 4]]
+    return [*chunk[_REV : _REV + _DIR_W], *chunk[_FWD : _FWD + _DIR_W]]
 
 
 def _chord_bearing(coords: list[tuple[float, float]]) -> float:
@@ -568,6 +581,9 @@ def _fold_ride(
             c[base + 1] += dt
             c[base + 2] += moving
             c[base + 3] += 1
+            kmh = 3.6 * dist / dt
+            c[base + 4] += kmh
+            c[base + 5] += kmh * kmh
         folded += 1
 
     # Traversal counts come from the same passes, re-joined across recording
@@ -697,6 +713,23 @@ def _chunk_speed_kmh(chunk: list[float], base: int) -> float | None:
     if n < 1 or dist < config.SPEED_MIN_DIST_M or time_s <= 0:
         return None
     return 3.6 * dist / time_s
+
+
+def _chunk_spread_kmh(chunk: list[float], base: int) -> tuple[float, float] | None:
+    """Mean and standard deviation of one direction's pass speeds, or None.
+
+    Over passes, not over metres: the question this answers is whether the
+    stretch rides the same way every time, so each crossing counts once
+    however much of the chunk it covered.  A single pass has a mean and no
+    spread, which is a claim the caller has to be allowed to reject on its
+    own terms -- so the deviation is 0.0 rather than None.
+    """
+    n = chunk[base + 3]
+    if n < 1:
+        return None
+    mean = chunk[base + 4] / n
+    var = chunk[base + 5] / n - mean * mean
+    return mean, math.sqrt(max(var, 0.0))
 
 
 _OCTANTS = ("N", "NE", "E", "SE", "S", "SW", "W", "NW")
@@ -841,18 +874,206 @@ def _top_corridors(
     return ranked[: config.SPEED_CORRIDOR_N]
 
 
+def _stretch_units(
+    edge_speed: dict[tuple[int, int], dict[str, Any]],
+    edge_geom: dict[tuple[int, int], list[tuple[float, float]]],
+    edge_name: dict[tuple[int, int], str],
+) -> dict[tuple[tuple[int, int], int, int], dict[str, Any]]:
+    """One record per chunk-direction ridden often enough to rank on its own.
+
+    Keyed by (edge, chunk, direction) and carrying the chunk's geometry
+    pointing the way the rider went, which is what lets consecutive pieces be
+    chained end to end whichever way their edges are stored.  Speed and
+    spread are both over passes: the claim being ranked is that a stretch
+    rides the same way every time.
+    """
+    units: dict[tuple[tuple[int, int], int, int], dict[str, Any]] = {}
+    for key, rec in edge_speed.items():
+        name = edge_name.get(key)
+        coords = [tuple(c) for c in edge_geom.get(key, [])]
+        if not name or len(coords) < 2:
+            continue
+        chunks = _oriented_chunks(rec, coords)
+        if not chunks:
+            continue
+        slices = _chunk_slices(coords, len(chunks))
+        if len(slices) != len(chunks):
+            continue
+        for ci, (piece, chunk) in enumerate(zip(slices, chunks)):
+            for base in (_FWD, _REV):
+                spread = _chunk_spread_kmh(chunk, base)
+                # The distance floor is _chunk_speed_kmh's, and it is asked
+                # even though the ranked speed is the pass mean: a chunk with
+                # a handful of metres in it is not a measurement of anything.
+                if (
+                    spread is None
+                    or chunk[base + 3] < config.SPEED_STRETCH_PASSES
+                    or _chunk_speed_kmh(chunk, base) is None
+                ):
+                    continue
+                travelled = piece if base == _FWD else piece[::-1]
+                units[key, ci, base] = {
+                    "piece": travelled,
+                    "m": _line_len(travelled),
+                    "name": name,
+                    "kmh": spread[0],
+                    "sd": spread[1],
+                    "n": int(chunk[base + 3]),
+                }
+    return units
+
+
+def _chain_units(
+    units: dict[tuple[tuple[int, int], int, int], dict[str, Any]],
+) -> list[list[tuple[tuple[int, int], int, int]]]:
+    """Chain chunk-directions into stretches: one street, one way, end to end.
+
+    Within an edge the chunks are already in order; across edges a unit's
+    last point is the next one's first, which is the graph node they share.
+    A street the rides never left is one stretch however many ways OSM split
+    it into, which is the whole reason a city block can be ranked at all --
+    the median edge is 63 m and the floor is 250.
+
+    Where a name continues into more than one edge (a fork, a street meeting
+    itself) the straightest continuation wins, so a stretch never depends on
+    dictionary order.  Each unit is used once, so stretches are disjoint and
+    no metre is ranked twice.
+    """
+    starts: dict[tuple[float, float], list[tuple[tuple[int, int], int, int]]] = {}
+    for u, d in sorted(units.items()):
+        starts.setdefault(_rounded(d["piece"][0]), []).append(u)
+
+    def successors(u: tuple[tuple[int, int], int, int]) -> list[tuple[tuple[int, int], int, int]]:
+        key, ci, base = u
+        nxt = (key, ci + 1, base) if base == _FWD else (key, ci - 1, base)
+        if nxt in units:
+            return [nxt]
+        end = _rounded(units[u]["piece"][-1])
+        return [
+            v for v in starts.get(end, []) if v[0] != key and units[v]["name"] == units[u]["name"]
+        ]
+
+    def straightest(
+        u: tuple[tuple[int, int], int, int],
+        options: list[tuple[tuple[int, int], int, int]],
+    ) -> tuple[tuple[int, int], int, int]:
+        heading = _chord(units[u]["piece"])[0]
+        return min(options, key=lambda v: (_turn(heading, _chord(units[v]["piece"])[0]), v))
+
+    has_predecessor = {v for u in units for v in successors(u)}
+    used: set[tuple[tuple[int, int], int, int]] = set()
+    chains = []
+    for seed in [u for u in sorted(units) if u not in has_predecessor] + sorted(units):
+        if seed in used:
+            continue
+        chain = []
+        cur: tuple[tuple[int, int], int, int] | None = seed
+        while cur is not None and cur not in used:
+            used.add(cur)
+            chain.append(cur)
+            options = [v for v in successors(cur) if v not in used]
+            cur = straightest(cur, options) if options else None
+        chains.append(chain)
+    return chains
+
+
+def _rounded(point: tuple[float, float]) -> tuple[float, float]:
+    """Round a coordinate to the precision two edges of one node agree on."""
+    return (round(point[0], 6), round(point[1], 6))
+
+
+def _turn(a: float, b: float) -> float:
+    """Absolute angle between two bearings, in degrees."""
+    d = abs(a - b) % 360.0
+    return min(d, 360.0 - d)
+
+
+def _summarize_stretch(
+    chain: list[tuple[tuple[int, int], int, int]],
+    units: dict[tuple[tuple[int, int], int, int], dict[str, Any]],
+) -> dict[str, Any]:
+    """Collapse a chained stretch into one ranked entry.
+
+    Speed and spread are length-weighted along the stretch, and the spread
+    is each chunk's own pass-to-pass deviation rather than the stretch's: a
+    ride's speed over the whole stretch varies less than over any 150 m of
+    it, so this over-states the spread and under-states the consistency.
+    That is the conservative direction, and at the fast end it costs almost
+    nothing -- against the exact figure, re-measured per ride by
+    tools/speed_consistency.py, the two agree on most of the list.  At the
+    slow end they barely agree at all, and that is a fact about the slow end
+    rather than about the approximation: the stretches there sit within a
+    mile an hour of each other, so nothing decides their order.  Read that
+    tab as a pack (findings/stretch-pace.md).
+
+    The pass count is the weakest link, not the average: the claim is about
+    the whole stretch, so it is only as well ridden as its thinnest chunk.
+    """
+    total = sum(units[u]["m"] for u in chain)
+    middle = units[chain[len(chain) // 2]]["piece"]
+    mid = middle[len(middle) // 2]
+    return {
+        "name": units[chain[0]]["name"],
+        "kmh": round(sum(units[u]["kmh"] * units[u]["m"] for u in chain) / total, 1),
+        "sd": round(sum(units[u]["sd"] * units[u]["m"] for u in chain) / total, 1),
+        "dir": _octant(_chord(middle)[0]),
+        "m": round(total),
+        "n": min(units[u]["n"] for u in chain),
+        "at": [round(mid[0], 5), round(mid[1], 5)],
+    }
+
+
+def _top_stretches(
+    edge_speed: dict[tuple[int, int], dict[str, Any]],
+    edge_geom: dict[tuple[int, int], list[tuple[float, float]]],
+    edge_name: dict[tuple[int, int], str],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Rank stretches by the speed they beat on most passes, fast end and slow.
+
+    Absolute speed, one direction, which is what _top_corridors cannot ask:
+    comparing two directions takes passes both ways, so a one-way street is
+    invisible to it -- and about half of what ranks here was never ridden the
+    other way at all.
+
+    Ranking on the mean alone would put a stretch ridden fast once above one
+    that is the same every time, so the key is the mean less its deviation at
+    the fast end and plus it at the slow end.  At most one entry per street
+    and direction, as in the corridor list.
+    """
+    units = _stretch_units(edge_speed, edge_geom, edge_name)
+    rows = [
+        _summarize_stretch(chain, units)
+        for chain in _chain_units(units)
+        if sum(units[u]["m"] for u in chain) >= config.SPEED_CORRIDOR_MIN_M
+    ]
+
+    def best(*, fastest: bool) -> list[dict[str, Any]]:
+        bound = (lambda r: -(r["kmh"] - r["sd"])) if fastest else (lambda r: r["kmh"] + r["sd"])
+        seen: set[tuple[str, str]] = set()
+        out = []
+        for r in sorted(rows, key=lambda r: (bound(r), r["name"])):
+            if (r["name"], r["dir"]) in seen:
+                continue
+            seen.add((r["name"], r["dir"]))
+            out.append(r)
+        return out[: config.SPEED_STRETCH_N]
+
+    return best(fastest=True), best(fastest=False)
+
+
 def _speed_summary(
     edge_speed: dict[tuple[int, int], dict[str, Any]],
     edge_geom: dict[tuple[int, int], list[tuple[float, float]]],
     edge_name: dict[tuple[int, int], str],
 ) -> dict[str, Any] | None:
-    """Top-level speed block: the corridor ranking plus what it was drawn from.
+    """Top-level speed block: the two rankings, plus what they were drawn from.
 
     Speeds are km/h, like every other figure in the payload; the map
     converts for display.
     """
     corridors = _top_corridors(edge_speed, edge_geom, edge_name)
-    if not corridors:
+    fastest, slowest = _top_stretches(edge_speed, edge_geom, edge_name)
+    if not corridors and not fastest:
         return None
     measured = sum(
         1
@@ -865,6 +1086,9 @@ def _speed_summary(
         "measured": measured,
         "split_n": config.SPEED_SPLIT_PASSES,
         "min_m": config.SPEED_CORRIDOR_MIN_M,
+        "fastest": fastest,
+        "slowest": slowest,
+        "stretch_n": config.SPEED_STRETCH_PASSES,
     }
 
 

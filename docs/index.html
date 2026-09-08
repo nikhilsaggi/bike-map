@@ -206,6 +206,16 @@
   #speed-list {
     max-height: 150px; overflow-y: auto; scrollbar-gutter: stable;
   }
+  /* The three rankings share one list because they rank the same thing --
+     stretches of street -- and differ only in the question. Stacked as
+     separate blocks they outran the section between them, and a reader had
+     to scroll past one ranking to learn the next one existed. */
+  #speed-tabs { display: flex; gap: 3px; margin: 3px 0 5px; }
+  /* The unit belongs to the number, not to the header: three tabs print
+     three different mph -- a pace, a pace, and a gap between two of them --
+     so a column header would have to say "mph" and mean something new each
+     time. Dim and small, because it is the same word on every row. */
+  .sp-unit { color: #777; font-size: 9px; font-weight: 400; margin-left: 2px; }
   .sp-row {
     display: flex; align-items: baseline; gap: 6px; padding: 2px 0; cursor: pointer;
     border-bottom: 1px solid #1c1c1c;
@@ -667,7 +677,8 @@
         <div id="stat-streets">
           <div id="streets-totals"></div>
           <div id="speed-block">
-            <div class="sub-title" id="speed-title">Faster one way</div>
+            <div class="sub-title" id="speed-title">Speed</div>
+            <div id="speed-tabs"></div>
             <div id="speed-list" class="scrollbox"></div>
           </div>
         </div>
@@ -1050,39 +1061,132 @@ function renderStreets(props) {
   showChip('stat-streets');
 }
 
-function renderSpeedSplits(speed) {
-  if (!speed || !speed.corridors || !speed.corridors.length) return;
+// -- Speed rankings ---------------------------------------------------------
+// Three questions about the same thing -- a stretch of street, ridden one
+// way -- so they share one list and one tab strip rather than stacking.
+//
+// Fastest and Slowest rank a stretch against the rest of the network on the
+// passes it has, which is the only way a one-way street can be ranked at
+// all: about half of what appears there was never ridden the other way. One
+// way ranks a stretch against its own opposite direction, which takes passes
+// both ways and answers almost entirely in bridges -- a gradient is what
+// makes the two directions differ.
+//
+// All three are ranked in the pipeline (edge_speed._top_stretches and
+// ._top_corridors), not here: naming a stretch needs the OSM street names,
+// which never reach the browser. A tab reads its own array; it never re-ranks.
+//
+// The number on the right is the one the list is ranked by -- for pace that
+// is the bound, not the average, which is on the line below. A column that
+// sorts by one number while printing another reads as a ranking of the
+// number on screen and is not one, the mistake the neighborhood list made
+// with metres and percentages.
+
+const SPEED_TABS = [
+  {
+    id: 'fastest', label: 'Fastest',
+    rows: s => s.fastest,
+    value: r => mi(r.kmh - r.sd),
+    help: s => paceHelp(s, 'less'),
+  },
+  {
+    id: 'slowest', label: 'Slowest',
+    rows: s => s.slowest,
+    value: r => mi(r.kmh + r.sd),
+    help: s => paceHelp(s, 'plus'),
+  },
+  {
+    id: 'oneway', label: 'One way',
+    rows: s => s.corridors,
+    value: r => mi(r.gap),
+    detail: r =>
+      `${mi(r.fast).toFixed(1)} vs ${mi(r.slow).toFixed(1)} mph over ` +
+      `${(mi(r.m / 1000)).toFixed(2)} mi, ${r.n}+ passes each way`,
+    help: s =>
+      `The mph gap between the two directions of travel, from ride ` +
+      `timestamps. Of ${s.measured.toLocaleString()} stretches measured ` +
+      `(${ftFloor(s)} ft+, ridden ${s.split_n}+ times each way), these have ` +
+      `the widest gaps.`,
+  },
+];
+let speedTab = SPEED_TABS[0].id;
+let speedData = null;
+
+function ftFloor(speed) {
+  return Math.round(mi(speed.min_m / 1000) * 5280);
+}
+
+// One rule, one word apart at each end: the fast list wants the speed a
+// stretch beats on most passes, the slow list the speed it fails to beat.
+function paceHelp(speed, side) {
+  return `The speed a stretch beats on most passes, from ride timestamps: ` +
+    `its average ${side} its pass-to-pass swing, so one ridden ` +
+    `${side === 'less' ? 'fast' : 'slow'} once ranks below one that is the ` +
+    `same every time. One street, one way, waiting at lights included. ` +
+    `${ftFloor(speed)} ft+, ridden ${speed.stretch_n}+ times; the average ` +
+    `and the swing are under each row.`;
+}
+
+function paceDetail(r) {
+  return `${mi(r.kmh).toFixed(1)} \u00b1${mi(r.sd).toFixed(1)} mph over ` +
+    `${(mi(r.m / 1000)).toFixed(2)} mi, ${r.n}+ passes`;
+}
+
+function renderSpeed(speed) {
+  if (!speed) return;
+  speedData = speed;
+  const tabs = SPEED_TABS.filter(t => (t.rows(speed) || []).length);
+  if (!tabs.length) return;
+  if (!tabs.some(t => t.id === speedTab)) speedTab = tabs[0].id;
+  document.getElementById('speed-tabs').innerHTML = tabs.map(t =>
+    `<button class="seg-btn${t.id === speedTab ? ' on' : ''}" data-tab="${t.id}">` +
+    `${t.label}</button>`).join('');
+  const block = document.getElementById('speed-block');
+  for (const btn of block.querySelectorAll('#speed-tabs .seg-btn')) {
+    btn.addEventListener('click', () => {
+      speedTab = btn.dataset.tab;
+      for (const b of block.querySelectorAll('#speed-tabs .seg-btn')) {
+        b.classList.toggle('on', b === btn);
+      }
+      renderSpeedList();
+    });
+  }
+  renderSpeedList();
+  block.style.display = 'block';
+  showChip('stat-streets');
+}
+
+// The rule the rows are ranked by rides on the heading's (?), outside the
+// scroll box, so it stays reachable however far down the list a reader is --
+// and it changes with the tab, because the tabs ask different questions.
+// A tab switch rebuilds the rows, so a circle placed by one of them would
+// outlive the row that explains it: the same reason openSection clears it.
+function renderSpeedList() {
+  const tab = SPEED_TABS.find(t => t.id === speedTab);
+  const title = document.getElementById('speed-title');
+  title.textContent = 'Speed';   // drops a mark left by an earlier render
+  title.appendChild(helpMark(tab.help(speedData)));
+
   const list = document.getElementById('speed-list');
+  if (speedRow && list.contains(speedRow)) clearSpeedMarker();
   list.innerHTML = '';
-  for (const c of speed.corridors) {
+  for (const r of tab.rows(speedData) || []) {
     const row = document.createElement('div');
     row.className = 'sp-row';
     row.innerHTML =
-      `<span class="sp-name" title="${c.name}">${c.name}</span>` +
-      `<span class="sp-dir">${c.dir}</span>` +
-      `<span class="sp-gap">${mi(c.gap).toFixed(1)}</span>`;
+      `<span class="sp-name"></span>` +
+      `<span class="sp-dir">${r.dir}</span>` +
+      `<span class="sp-gap">${tab.value(r).toFixed(1)}<span class="sp-unit">mph</span></span>`;
+    // textContent, not innerHTML: this is an OSM street name.
+    row.querySelector('.sp-name').textContent = r.name;
+    row.querySelector('.sp-name').title = r.name;
     const detail = document.createElement('div');
     detail.className = 'sp-detail';
-    detail.textContent =
-      `${mi(c.fast).toFixed(1)} vs ${mi(c.slow).toFixed(1)} mph over ` +
-      `${(mi(c.m / 1000)).toFixed(2)} mi, ${c.n}+ passes each way`;
-    row.addEventListener('click', () => toggleCorridor(c, row));
+    detail.textContent = (tab.detail || paceDetail)(r);
+    row.addEventListener('click', () => toggleCorridor(r, row));
     list.appendChild(row);
     list.appendChild(detail);
   }
-  // On the heading's (?), the same affordance the Citibike tab's charts use.
-  // The rule the rows are ranked by has to stay reachable however far down the
-  // list a reader is, and a heading outside the scroll box does that without
-  // spending three lines of the panel on it every time the tab is open.
-  const title = document.getElementById('speed-title');
-  title.textContent = 'Faster one way';   // drops a mark left by an earlier render
-  title.appendChild(helpMark(
-    `The mph gap between the two directions of travel, from ride timestamps. ` +
-    `Of ${speed.measured.toLocaleString()} stretches measured ` +
-    `(${Math.round(mi(speed.min_m / 1000) * 5280)} ft+, ridden ${speed.split_n}+ ` +
-    `times each way), these have the widest gaps.`));
-  document.getElementById('speed-block').style.display = 'block';
-  showChip('stat-streets');
 }
 
 // -- Citibike ---------------------------------------------------------------
@@ -3105,7 +3209,7 @@ fetch('rides.geojson.gz')
     }
 
     renderStreets(data.properties ?? {});
-    renderSpeedSplits(data.properties.speed);
+    renderSpeed(data.properties.speed);
     renderCitibike(data.properties?.citibike);
     initDockLayer(data.properties?.citibike);
     initNeighborhoods(data.properties?.neighborhoods);

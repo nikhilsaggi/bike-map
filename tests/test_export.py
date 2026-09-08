@@ -5,7 +5,7 @@ from __future__ import annotations
 import gzip
 import json
 
-from conftest import lonlat
+from conftest import chunk, lonlat
 
 from bike_routes import config, edge_speed, export
 
@@ -156,12 +156,12 @@ def test_export_ranks_corridors_and_leaves_features_alone(tmp_path, monkeypatch)
             # 600 m -> 4 chunks, 18 km/h forward against 9 km/h reverse.
             (1, 2): {
                 "b": edge_speed._chord_bearing(long_edge),
-                "c": [[100, 20, 20, 2, 100, 40, 40, 2] for _ in range(4)],
+                "c": [chunk((100, 20, 20, 2), (100, 40, 40, 2)) for _ in range(4)],
             },
             # Too short to be a corridor, and only measured one way.
             (3, 4): {
                 "b": edge_speed._chord_bearing(short_edge),
-                "c": [[60, 12, 12, 1, 0, 0, 0, 0]],
+                "c": [chunk((60, 12, 12, 1))],
             },
         },
     }
@@ -185,7 +185,8 @@ def test_export_ranks_corridors_and_leaves_features_alone(tmp_path, monkeypatch)
     assert c["dir"] == "E"  # the edge runs west to east and forward is faster
 
 
-def test_export_omits_speed_without_a_qualifying_corridor(tmp_path, monkeypatch):
+def test_export_ranks_a_one_way_stretch_the_corridor_list_cannot(tmp_path, monkeypatch):
+    """One direction is nothing to compare, but it is still a pace."""
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(config, "GEOJSON_OUTPUT_PATH", tmp_path / "docs" / "rides.geojson.gz")
 
@@ -195,11 +196,43 @@ def test_export_omits_speed_without_a_qualifying_corridor(tmp_path, monkeypatch)
         "edge_counts": {(1, 2): 1},
         "edge_rides": {(1, 2): [R1]},
         "ride_stats": {},
-        # Measured, but one direction only -- nothing to compare.
+        # Measured, but one direction only.
         "edge_speed": {
             (1, 2): {
                 "b": edge_speed._chord_bearing(geom),
-                "c": [[100, 20, 20, 5, 0, 0, 0, 0] for _ in range(4)],
+                "c": [chunk((100, 20, 20, 5)) for _ in range(4)],
+            }
+        },
+    }
+    export._export_geojson({(1, 2): geom}, state, None, {(1, 2): "Kent Avenue"})
+    with gzip.open(tmp_path / "docs" / "rides.geojson.gz") as f:
+        data = json.load(f)
+    speed = data["properties"]["speed"]
+    assert speed["corridors"] == []
+    fast = speed["fastest"]
+    assert [s["name"] for s in fast] == ["Kent Avenue"]
+    assert (fast[0]["kmh"], fast[0]["sd"], fast[0]["m"]) == (18.0, 0.0, 600)
+    assert fast[0]["dir"] == "E"
+    assert fast[0]["n"] == 5
+    # Nothing else was measured, so the same stretch is also the slowest.
+    assert [s["name"] for s in speed["slowest"]] == ["Kent Avenue"]
+
+
+def test_export_omits_speed_without_a_qualifying_stretch(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(config, "GEOJSON_OUTPUT_PATH", tmp_path / "docs" / "rides.geojson.gz")
+
+    geom = [lonlat(0.0, 0.0), lonlat(600.0, 0.0)]
+    state = {
+        "processed_files": {R1},
+        "edge_counts": {(1, 2): 1},
+        "edge_rides": {(1, 2): [R1]},
+        "ride_stats": {},
+        # One pass: too little for either ranking to say anything.
+        "edge_speed": {
+            (1, 2): {
+                "b": edge_speed._chord_bearing(geom),
+                "c": [chunk((100, 20, 20, 1)) for _ in range(4)],
             }
         },
     }
@@ -224,7 +257,7 @@ def test_export_ignores_unnamed_corridors(tmp_path, monkeypatch):
         "edge_speed": {
             (1, 2): {
                 "b": edge_speed._chord_bearing(geom),
-                "c": [[100, 20, 20, 2, 100, 40, 40, 2] for _ in range(4)],
+                "c": [chunk((100, 20, 20, 2), (100, 40, 40, 2)) for _ in range(4)],
             }
         },
     }

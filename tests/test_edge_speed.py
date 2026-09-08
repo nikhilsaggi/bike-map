@@ -7,7 +7,7 @@ value here is hand-computable.
 from __future__ import annotations
 
 import pytest
-from conftest import lonlat
+from conftest import chunk, lonlat
 
 from bike_routes import cache, config, edge_speed
 
@@ -199,7 +199,7 @@ def test_long_edge_records_a_gradient(tmp_path, monkeypatch):
 
 def test_oriented_chunks_flips_a_reversed_geometry():
     coords = [lonlat(0, 0), lonlat(100, 0)]
-    rec = {"b": edge_speed._chord_bearing(coords), "c": [[9, 1, 1, 1, 0, 0, 0, 0]]}
+    rec = {"b": edge_speed._chord_bearing(coords), "c": [chunk((9, 1, 1, 1))]}
     same = edge_speed._oriented_chunks(rec, coords)
     assert same[0][edge_speed._FWD] == 9
     flipped = edge_speed._oriented_chunks(rec, list(reversed(coords)))
@@ -211,7 +211,7 @@ def test_oriented_chunks_reverses_chunk_order_too():
     coords = [lonlat(0, 0), lonlat(300, 0)]
     rec = {
         "b": edge_speed._chord_bearing(coords),
-        "c": [[1, 1, 1, 1, 0, 0, 0, 0], [2, 1, 1, 1, 0, 0, 0, 0]],
+        "c": [chunk((1, 1, 1, 1)), chunk((2, 1, 1, 1))],
     }
     flipped = edge_speed._oriented_chunks(rec, list(reversed(coords)))
     # Chunk 0 of the reversed line is the far end of the original.
@@ -380,7 +380,7 @@ def test_version_bump_discards_old_records(tmp_path, monkeypatch):
 def test_malformed_records_are_discarded():
     """A format change that forgets to bump SPEED_VERSION must fail closed."""
     assert edge_speed._records_well_formed({})
-    assert edge_speed._records_well_formed({EDGE: {"b": 0.0, "c": [[0] * 8]}})
+    assert edge_speed._records_well_formed({EDGE: {"b": 0.0, "c": [edge_speed._new_chunk()]}})
     assert not edge_speed._records_well_formed({EDGE: [0.0] * 9})  # the pre-chunking layout
     assert not edge_speed._records_well_formed({EDGE: {"b": 0.0, "c": [[0] * 4]}})
 
@@ -393,10 +393,10 @@ def test_corridor_ranking_splits_a_run_at_the_sign_change():
     coords = [lonlat(x, 0) for x in range(0, 1201, 100)]
     # 6 chunks: the first three faster reverse (westbound), the last three
     # faster forward (eastbound) -- a crest in the middle.
-    slow, fast = [100, 40, 40, 5], [100, 20, 20, 5]
+    slow, fast = (100, 40, 40, 5), (100, 20, 20, 5)
     rec = {
         "b": edge_speed._chord_bearing(coords),
-        "c": [(slow + fast) if i < 3 else (fast + slow) for i in range(6)],
+        "c": [chunk(slow, fast) if i < 3 else chunk(fast, slow) for i in range(6)],
     }
     out = edge_speed._top_corridors({EDGE: rec}, {EDGE: coords}, {EDGE: "Crest Bridge"})
 
@@ -413,14 +413,14 @@ def test_corridor_ranking_splits_a_run_at_the_sign_change():
 def test_corridor_ranking_skips_short_and_undersampled_runs(monkeypatch):
     monkeypatch.setattr(config, "SPEED_CORRIDOR_MIN_M", 250.0)
     coords = [lonlat(0, 0), lonlat(600, 0)]
-    both = [100, 20, 20, 5, 100, 40, 40, 5]
-    rec = {"b": edge_speed._chord_bearing(coords), "c": [list(both) for _ in range(4)]}
+    both = ((100, 20, 20, 5), (100, 40, 40, 5))
+    rec = {"b": edge_speed._chord_bearing(coords), "c": [chunk(*both) for _ in range(4)]}
     names = {EDGE: "Kent Avenue"}
 
     assert edge_speed._top_corridors({EDGE: rec}, {EDGE: coords}, names)
 
     # One direction under the split threshold: nothing to compare.
-    thin = {"b": rec["b"], "c": [[100, 20, 20, 5, 100, 40, 40, 1] for _ in range(4)]}
+    thin = {"b": rec["b"], "c": [chunk((100, 20, 20, 5), (100, 40, 40, 1)) for _ in range(4)]}
     assert edge_speed._top_corridors({EDGE: thin}, {EDGE: coords}, names) == []
 
     # Long enough per chunk, but the run is under the length floor.
@@ -431,11 +431,11 @@ def test_corridor_ranking_skips_short_and_undersampled_runs(monkeypatch):
 def test_corridor_ranking_breaks_a_run_at_an_unmeasured_gap():
     """Two stretches either side of a gap are not one corridor."""
     coords = [lonlat(x, 0) for x in range(0, 1201, 100)]
-    both = [100, 20, 20, 5, 100, 40, 40, 5]
+    both = ((100, 20, 20, 5), (100, 40, 40, 5))
     rec = {
         "b": edge_speed._chord_bearing(coords),
         # Chunk 2 was never ridden both ways, so it splits the edge in two.
-        "c": [([0.0] * 8 if i == 2 else list(both)) for i in range(6)],
+        "c": [(chunk() if i == 2 else chunk(*both)) for i in range(6)],
     }
     out = edge_speed._top_corridors({EDGE: rec}, {EDGE: coords}, {EDGE: "Kent Avenue"})
     # Same direction either side, so the (name, dir) slot keeps only the best
@@ -446,11 +446,11 @@ def test_corridor_ranking_breaks_a_run_at_an_unmeasured_gap():
 
 def test_corridor_ranking_keeps_one_entry_per_street_and_direction():
     coords = [lonlat(0, 0), lonlat(600, 0)]
-    big = [100, 20, 20, 5, 100, 60, 60, 5]  # 18 vs 6 km/h
-    small = [100, 20, 20, 5, 100, 30, 30, 5]  # 18 vs 12 km/h
+    big = ((100, 20, 20, 5), (100, 60, 60, 5))  # 18 vs 6 km/h
+    small = ((100, 20, 20, 5), (100, 30, 30, 5))  # 18 vs 12 km/h
     edges = {
-        (1, 2): {"b": edge_speed._chord_bearing(coords), "c": [list(big) for _ in range(4)]},
-        (3, 4): {"b": edge_speed._chord_bearing(coords), "c": [list(small) for _ in range(4)]},
+        (1, 2): {"b": edge_speed._chord_bearing(coords), "c": [chunk(*big) for _ in range(4)]},
+        (3, 4): {"b": edge_speed._chord_bearing(coords), "c": [chunk(*small) for _ in range(4)]},
     }
     geom = {(1, 2): coords, (3, 4): coords}
     names = {(1, 2): "Kent Avenue", (3, 4): "Kent Avenue"}
@@ -467,7 +467,7 @@ def test_corridor_ranking_is_capped(monkeypatch):
         key = (i, i + 100)
         edges[key] = {
             "b": edge_speed._chord_bearing(coords),
-            "c": [[100, 20, 20, 5, 100, 40 + i, 40 + i, 5] for _ in range(4)],
+            "c": [chunk((100, 20, 20, 5), (100, 40 + i, 40 + i, 5)) for _ in range(4)],
         }
         geom[key] = coords
         names[key] = f"Street {i}"
@@ -483,7 +483,7 @@ def test_hairpin_chunks_do_not_name_a_run():
     coords += [lonlat(20 + 100 * i, 0) for i in range(1, 6)]
     rec = {
         "b": edge_speed._chord_bearing(coords),
-        "c": [[100, 20, 20, 5, 100, 40, 40, 5] for _ in range(4)],
+        "c": [chunk((100, 20, 20, 5), (100, 40, 40, 5)) for _ in range(4)],
     }
     out = edge_speed._top_corridors({EDGE: rec}, {EDGE: coords}, {EDGE: "Ramp Bridge"})
     assert len(out) == 1
@@ -503,7 +503,7 @@ def test_summary_reports_the_corridor_block():
     coords = [lonlat(0, 0), lonlat(600, 0)]
     rec = {
         "b": edge_speed._chord_bearing(coords),
-        "c": [[100, 20, 20, 5, 100, 40, 40, 5] for _ in range(4)],
+        "c": [chunk((100, 20, 20, 5), (100, 40, 40, 5)) for _ in range(4)],
     }
     summary = edge_speed._speed_summary({EDGE: rec}, {EDGE: coords}, {EDGE: "Kent Avenue"})
     assert summary is not None
@@ -514,6 +514,112 @@ def test_summary_reports_the_corridor_block():
 
 def test_summary_is_none_without_data():
     assert edge_speed._speed_summary({}, {}, {}) is None
+
+
+# -- stretch ranking: absolute speed, one direction --------------------------
+# The corridor list above compares a stretch with its own opposite direction,
+# which takes passes both ways.  This one compares it with the rest of the
+# network, which takes only the passes it has -- so a one-way street can be
+# ranked, and about half of what ranks was never ridden the other way.
+
+
+def _street(coords, fwd=(100, 20, 20, 5), rev=(0, 0, 0, 0), **kw):
+    """One edge measured over as many chunks as its length wants."""
+    return {
+        "b": edge_speed._chord_bearing(coords),
+        "c": [chunk(fwd, rev, **kw) for _ in range(edge_speed._n_chunks(_length(coords)))],
+    }
+
+
+def _length(coords):
+    return edge_speed._line_len([tuple(c) for c in coords])
+
+
+def test_chunk_spread_reads_the_pass_speeds_not_the_metres():
+    c = chunk((100, 20, 20, 4), fwd_speeds=[10.0, 20.0, 10.0, 20.0])
+    mean, sd = edge_speed._chunk_spread_kmh(c, edge_speed._FWD)
+    assert (mean, sd) == pytest.approx((15.0, 5.0))
+    assert edge_speed._chunk_spread_kmh(c, edge_speed._REV) is None
+
+
+def test_stretch_chains_a_street_across_the_edges_osm_split_it_into():
+    """The median edge is 63 m; nothing would clear a 250 m floor alone."""
+    edges, geom, names = {}, {}, {}
+    for i in range(3):
+        coords = [lonlat(100.0 * i, 0), lonlat(100.0 * (i + 1), 0)]
+        key = (i, i + 1)
+        edges[key], geom[key], names[key] = _street(coords), coords, "Kent Avenue"
+    fast, _slow = edge_speed._top_stretches(edges, geom, names)
+    assert len(fast) == 1
+    assert fast[0]["m"] == 300
+    assert fast[0]["dir"] == "E"
+    assert fast[0]["kmh"] == 18.0
+
+    # The same three blocks with the last one renamed: two blocks is 200 m,
+    # under the floor, so the chain that is left cannot be ranked.
+    names[2, 3] = "Other Street"
+    assert edge_speed._top_stretches(edges, geom, names) == ([], [])
+
+
+def test_stretch_ranking_prefers_the_street_that_is_the_same_every_time():
+    """Same mean, different spread -- consistency decides both ends."""
+    coords = [lonlat(0, 0), lonlat(600, 0)]
+    steady = _street(coords, fwd_speeds=[18.0] * 5)
+    erratic = _street(coords, fwd_speeds=[10.0, 10.0, 26.0, 26.0, 18.0])
+    edges = {(1, 2): steady, (3, 4): erratic}
+    geom = {(1, 2): coords, (3, 4): coords}
+    names = {(1, 2): "Steady Street", (3, 4): "Erratic Street"}
+    fast, slow = edge_speed._top_stretches(edges, geom, names)
+    assert [r["name"] for r in fast] == ["Steady Street", "Erratic Street"]
+    # And at the slow end too: a street that sometimes hits 26 is not one a
+    # rider is always slow on, whatever its average says.
+    assert [r["name"] for r in slow] == ["Steady Street", "Erratic Street"]
+    assert [r["kmh"] for r in fast] == [18.0, 18.0]
+
+
+def test_stretch_ranking_needs_the_pass_floor(monkeypatch):
+    coords = [lonlat(0, 0), lonlat(600, 0)]
+    edges = {EDGE: _street(coords, fwd=(100, 20, 20, 4))}
+    assert edge_speed._top_stretches(edges, {EDGE: coords}, {EDGE: "Kent Avenue"}) == ([], [])
+    monkeypatch.setattr(config, "SPEED_STRETCH_PASSES", 4)
+    fast, _slow = edge_speed._top_stretches(edges, {EDGE: coords}, {EDGE: "Kent Avenue"})
+    assert fast[0]["n"] == 4
+
+
+def test_stretch_ranking_keeps_one_entry_per_street_and_direction():
+    """Two stretches of one street the same way say the same thing once."""
+    edges, geom, names = {}, {}, {}
+    for i, y in enumerate((0.0, 500.0)):  # two parallel blocks, both "Kent Avenue"
+        coords = [lonlat(0, y), lonlat(600, y)]
+        key = (i, i + 10)
+        edges[key], geom[key], names[key] = _street(coords), coords, "Kent Avenue"
+    fast, _slow = edge_speed._top_stretches(edges, geom, names)
+    assert len(fast) == 1
+
+
+def test_stretch_direction_follows_travel_not_the_stored_geometry():
+    """A reversed render cache must not flip the label on the map."""
+    coords = [lonlat(0, 0), lonlat(600, 0)]
+    rec = _street(coords, fwd=(0, 0, 0, 0), rev=(100, 20, 20, 5))
+    fast, _slow = edge_speed._top_stretches({EDGE: rec}, {EDGE: coords}, {EDGE: "Kent Avenue"})
+    assert fast[0]["dir"] == "W", "the reverse bucket runs against the stored order"
+
+    flipped = list(reversed(coords))
+    fast, _slow = edge_speed._top_stretches({EDGE: rec}, {EDGE: flipped}, {EDGE: "Kent Avenue"})
+    assert fast[0]["dir"] == "W", "same riding, same direction, whichever way it is stored"
+
+
+def test_summary_reports_both_rankings():
+    coords = [lonlat(0, 0), lonlat(600, 0)]
+    rec = _street(coords, rev=(100, 40, 40, 5))
+    summary = edge_speed._speed_summary({EDGE: rec}, {EDGE: coords}, {EDGE: "Kent Avenue"})
+    assert summary["stretch_n"] == config.SPEED_STRETCH_PASSES
+    assert [c["name"] for c in summary["corridors"]] == ["Kent Avenue"]
+    # One street ridden both ways is two stretches here, ranked against the
+    # network rather than against each other -- the corridor list above is
+    # what compares them, and it reports the pair once.
+    assert [(r["dir"], r["kmh"]) for r in summary["fastest"]] == [("E", 18.0), ("W", 9.0)]
+    assert [(r["dir"], r["kmh"]) for r in summary["slowest"]] == [("W", 9.0), ("E", 18.0)]
 
 
 # -- config hash: the hard constraint ----------------------------------------
