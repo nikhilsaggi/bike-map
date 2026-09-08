@@ -39,12 +39,14 @@
   }
   #stats strong { color: #fff; }
   #stats .label { color: #888; }
-  #stats-toggle {
+  /* Both floating panels collapse, so they wear one button rather than two
+     that could drift into different affordances for the same gesture. */
+  #stats-toggle, #legend-toggle {
     position: absolute; top: 6px; right: 8px; z-index: 1;
     background: none; border: none; color: #888; cursor: pointer;
     font-size: 14px; line-height: 1; padding: 2px 4px;
   }
-  #stats-toggle:hover { color: #fff; }
+  #stats-toggle:hover, #legend-toggle:hover { color: #fff; }
   #stats-collapsed-label { display: none; color: #ccc; font-size: 12px; }
   #stats.collapsed #stats-body { display: none; }
   #stats.collapsed { width: auto; padding: 8px 32px 8px 14px; }
@@ -470,11 +472,19 @@
   #left-rail > *, #right-rail > * { pointer-events: auto; }
 
   #legend {
+    position: relative;
     background: rgba(13, 13, 13, 0.88); color: #ccc; padding: 12px 16px;
     border-radius: 8px; font-size: 12px; border: 1px solid #333;
     backdrop-filter: blur(6px); flex: none; margin-top: auto;
   }
   #legend .title { font-weight: 600; color: #fff; margin-bottom: 8px; }
+  /* Collapsed, the title is the label -- the panel already carries its own
+     name, where #stats has to hide a header and show one. The ramp, the
+     slider, the source buttons and the layer switcher all go: the box is the
+     map's control cluster, and minimizing it is a request for the map. */
+  #legend.collapsed #legend-body { display: none; }
+  #legend.collapsed { padding: 8px 32px 8px 14px; }
+  #legend.collapsed .title { margin-bottom: 0; }
   #legend .bar {
     width: 180px; height: 12px; border-radius: 3px; margin-bottom: 4px;
   }
@@ -689,43 +699,46 @@
   </div>
 
   <div id="legend">
+    <button id="legend-toggle" title="Collapse legend">&ndash;</button>
     <div class="title">Pass frequency</div>
-    <div class="bar" id="legend-bar"></div>
-    <div class="labels"><span>1</span><span id="legend-max">—</span></div>
-    <div id="filter-row">
-      <button id="play-btn" title="Play time-lapse">&#9654;</button>
-      <div id="slider">
-        <div id="slider-track"></div>
-        <div id="slider-range"></div>
-        <input type="range" id="range-lo" min="0" value="0" step="1">
-        <input type="range" id="range-hi" min="0" value="0" step="1">
+    <div id="legend-body">
+      <div class="bar" id="legend-bar"></div>
+      <div class="labels"><span>1</span><span id="legend-max">—</span></div>
+      <div id="filter-row">
+        <button id="play-btn" title="Play time-lapse">&#9654;</button>
+        <div id="slider">
+          <div id="slider-track"></div>
+          <div id="slider-range"></div>
+          <input type="range" id="range-lo" min="0" value="0" step="1">
+          <input type="range" id="range-hi" min="0" value="0" step="1">
+        </div>
       </div>
-    </div>
-    <div id="filter-dates"><span id="date-lo"></span><span id="date-hi"></span></div>
-    <!-- Most rides in the covered window turn out to be Citibike, so the
-         interesting question is which ones were not. Revealed only when the
-         payload knows the source of at least one ride. -->
-    <div id="src-row" class="hidden">
-      <button class="seg-btn on" data-src="all">All</button>
-      <button class="seg-btn" data-src="citibike">Citibike</button>
-      <button class="seg-btn" data-src="own">Own bike</button>
-    </div>
-    <div id="src-note"></div>
-    <!-- The layer switcher. The drawn network leads it and is the one that
-         starts on: it is what the box above describes and what the map has
-         always opened as. The two below it are revealed only when the payload
-         carries their block, and stay off until asked for. -->
-    <div id="layers">
-      <label id="rf-toggle">
-        <input type="checkbox" id="rf-check" checked> Pass frequency
-      </label>
-      <label id="cb-toggle" class="hidden">
-        <input type="checkbox" id="cb-check"> Citibike docks
-        <span id="cb-range"></span>
-      </label>
-      <label id="nb-toggle" class="hidden">
-        <input type="checkbox" id="nb-check"> Neighborhoods
-      </label>
+      <div id="filter-dates"><span id="date-lo"></span><span id="date-hi"></span></div>
+      <!-- Most rides in the covered window turn out to be Citibike, so the
+           interesting question is which ones were not. Revealed only when the
+           payload knows the source of at least one ride. -->
+      <div id="src-row" class="hidden">
+        <button class="seg-btn on" data-src="all">All</button>
+        <button class="seg-btn" data-src="citibike">Citibike</button>
+        <button class="seg-btn" data-src="own">Own bike</button>
+      </div>
+      <div id="src-note"></div>
+      <!-- The layer switcher. The drawn network leads it and is the one that
+           starts on: it is what the box above describes and what the map has
+           always opened as. The two below it are revealed only when the payload
+           carries their block, and stay off until asked for. -->
+      <div id="layers">
+        <label id="rf-toggle">
+          <input type="checkbox" id="rf-check" checked> Pass frequency
+        </label>
+        <label id="cb-toggle" class="hidden">
+          <input type="checkbox" id="cb-check"> Citibike docks
+          <span id="cb-range"></span>
+        </label>
+        <label id="nb-toggle" class="hidden">
+          <input type="checkbox" id="nb-check"> Neighborhoods
+        </label>
+      </div>
     </div>
   </div>
 </div>
@@ -799,20 +812,25 @@ function buildGradientCSS() {
 }
 document.getElementById('legend-bar').style.background = buildGradientCSS();
 
-// Collapsible stats panel (state persists across visits)
-const statsEl = document.getElementById('stats');
-const statsToggle = document.getElementById('stats-toggle');
-function setStatsCollapsed(collapsed) {
-  statsEl.classList.toggle('collapsed', collapsed);
-  statsToggle.innerHTML = collapsed ? '+' : '&ndash;';
-  statsToggle.title = collapsed ? 'Expand stats' : 'Collapse stats';
-  try { localStorage.setItem('statsCollapsed', collapsed ? '1' : '0'); } catch (e) {}
+// Collapsible panels: the stats box and the legend below it, each remembering
+// its own state across visits. One function for both, so the gesture cannot
+// come out different in the two places a reader meets it.
+function makeCollapsible(el, toggle, name, key) {
+  function set(collapsed) {
+    el.classList.toggle('collapsed', collapsed);
+    toggle.innerHTML = collapsed ? '+' : '&ndash;';
+    toggle.title = `${collapsed ? 'Expand' : 'Collapse'} ${name}`;
+    try { localStorage.setItem(key, collapsed ? '1' : '0'); } catch (e) {}
+  }
+  toggle.addEventListener('click', () => set(!el.classList.contains('collapsed')));
+  try {
+    if (localStorage.getItem(key) === '1') set(true);
+  } catch (e) {}
 }
-statsToggle.addEventListener('click', () =>
-  setStatsCollapsed(!statsEl.classList.contains('collapsed')));
-try {
-  if (localStorage.getItem('statsCollapsed') === '1') setStatsCollapsed(true);
-} catch (e) {}
+makeCollapsible(document.getElementById('stats'),
+  document.getElementById('stats-toggle'), 'stats', 'statsCollapsed');
+makeCollapsible(document.getElementById('legend'),
+  document.getElementById('legend-toggle'), 'legend', 'legendCollapsed');
 
 // -- Stat sections -----------------------------------------------------------
 // One section open at a time.  The panel floats over the map, and stacking

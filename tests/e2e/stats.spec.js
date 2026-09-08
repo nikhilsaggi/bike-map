@@ -196,6 +196,49 @@ test.describe('stats panel', () => {
     await expect(page.locator('#stats-toggle')).toHaveText('–');
   });
 
+  // The legend is the map's control cluster -- ramp, slider, source buttons,
+  // layer switcher -- so minimizing it is a request for the map. Its own title
+  // stays as the label, where #stats has to swap a header for one.
+  test('the legend collapses to its title and persists across reload', async ({ page }) => {
+    await gotoMap(page);
+    const legend = page.locator('#legend');
+    const body = page.locator('#legend-body');
+    await expect(body).toBeVisible();
+    const open = await legend.boundingBox();
+
+    await page.locator('#legend-toggle').click();
+    await expect(legend).toHaveClass(/collapsed/);
+    await expect(body).toBeHidden();
+    await expect(page.locator('#legend .title')).toBeVisible();
+    await expect(page.locator('#legend-toggle')).toHaveText('+');
+    const shut = await legend.boundingBox();
+    expect(shut.height).toBeLessThan(open.height);
+    // Still pinned to the bottom right: the rail places it by margin-top:auto,
+    // which a shorter box must not undo.
+    const view = page.viewportSize();
+    expect(shut.x).toBeGreaterThan(view.width / 2);
+    expect(shut.y + shut.height).toBeGreaterThan(view.height * 0.8);
+
+    await page.reload();
+    await expect(page.locator('#stat-rides')).not.toHaveText('—');
+    await expect(legend).toHaveClass(/collapsed/);
+    await expect(body).toBeHidden();
+
+    await page.locator('#legend-toggle').click();
+    await expect(legend).not.toHaveClass(/collapsed/);
+    await expect(body).toBeVisible();
+    await expect(page.locator('#legend-toggle')).toHaveText('–');
+  });
+
+  // Each panel keeps its own state -- they share one implementation, not one
+  // key.
+  test('collapsing the stats panel leaves the legend open', async ({ page }) => {
+    await gotoMap(page);
+    await page.locator('#stats-toggle').click();
+    await expect(page.locator('#stats-body')).toBeHidden();
+    await expect(page.locator('#legend-body')).toBeVisible();
+  });
+
   test('optional sections and their chips stay hidden when data is absent', async ({ page }) => {
     await gotoMap(
       page,
