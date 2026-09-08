@@ -56,7 +56,7 @@ def test_export_geojson(tmp_path, monkeypatch):
     assert features[0]["properties"]["rides"] == [0]
     assert features[1]["properties"]["rides"] == [0, 1]
     assert all("ride_count" not in f["properties"] for f in features)
-    # Per-feature names are stripped; only the top segment's is shipped.
+    # The pipeline-side name key never ships; features point at the table.
     assert all("_name" not in f["properties"] for f in features)
 
 
@@ -83,6 +83,37 @@ def test_export_repeats_a_ride_index_per_traversal(tmp_path, monkeypatch):
     # so the page's binary-search membership test still works.
     assert data["properties"]["max_count"] == 4
     assert data["features"][0]["properties"]["rides"] == [0, 0, 0, 1]
+
+
+def test_export_ships_street_names_as_a_table(tmp_path, monkeypatch):
+    """A feature carries an index into properties.street_names, or no key."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(config, "GEOJSON_OUTPUT_PATH", tmp_path / "docs" / "rides.geojson.gz")
+
+    edge_geom = {
+        (1, 2): [lonlat(0.0, 0.0), lonlat(300.0, 0.0)],
+        (3, 4): [lonlat(0.0, 1000.0), lonlat(300.0, 1000.0)],
+        (5, 6): [lonlat(0.0, 2000.0), lonlat(300.0, 2000.0)],
+    }
+    state = {
+        "processed_files": {R1},
+        "edge_counts": {(1, 2): 1, (3, 4): 1, (5, 6): 1},
+        "edge_rides": {(1, 2): [R1], (3, 4): [R1], (5, 6): [R1]},
+        "ride_stats": {},
+    }
+    # Two edges share a name a kilometre apart, so the table holds it once.
+    edge_name = {(1, 2): "Montrose Avenue", (5, 6): "Montrose Avenue"}
+
+    export._export_geojson(edge_geom, state, {}, edge_name)
+    with gzip.open(tmp_path / "docs" / "rides.geojson.gz") as f:
+        data = json.load(f)
+
+    assert data["properties"]["street_names"] == ["Montrose Avenue"]
+    named = [f for f in data["features"] if "sn" in f["properties"]]
+    assert len(named) == 2
+    assert {f["properties"]["sn"] for f in named} == {0}
+    # The unnamed edge carries no key at all rather than a null.
+    assert len(data["features"]) == 3
 
 
 def test_export_names_the_most_ridden_segment(tmp_path, monkeypatch):

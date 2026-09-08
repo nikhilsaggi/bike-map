@@ -134,6 +134,18 @@ it can also outlive the click: `applyFilter` re-renders it, gated on
 `selectedEdge` is re-painted by every bulk restyle that would otherwise wipe
 it. Escape unwinds one layer at a time -- the ride on screen, then the panel.
 
+**A street's panel is headed by its name, and not every street has one.** The
+export ships `properties.street_names` with an `sn` index per feature -- a
+table, because the same few hundred names repeat over ~15k features. Roughly
+an eighth of drawn features are unnamed, nearly all of them footway, service
+road and ramp, and they carry no `sn` at all; the pass count is still the
+heading there, so the panel has to read both ways. Where there is a name the count moves under it (`.edge-sub`),
+because the count is what the filters move and the name is not: an emptied
+street keeps its heading and says "No passes in range" below it. The name is a
+*drawn feature's*, after the merge, so a corridor carries one of its cluster's
+names -- fine for a heading, and not the same unit as the speed rankings'
+chained stretches.
+
 **The panel is sized to its content (`width: fit-content`), the stats panel
 deliberately is not.** A street's rows measure ~248px, a dock's ~227 and a
 neighborhood's ~208, so a fixed column spends the difference covering map.
@@ -483,8 +495,9 @@ and on these rides it answers in bridges. `fastest`/`slowest`
 (`_top_stretches`) compare a stretch with the rest of the network on the
 passes it has, which is the only way a one-way street can be ranked at all:
 about half of what ranks there was never ridden the other way
-([details](findings/stretch-pace.md)). Both are pipeline-side, because naming
-a street needs `edge_name`, which never reaches the browser.
+([details](findings/stretch-pace.md)). Both are pipeline-side, because a
+ranked stretch is chained speed chunks: the export ships a name per *drawn
+feature* (below), which is a different unit and cannot rebuild one.
 
 **All three rank stretches of street, so they share one list and one tab
 strip** (`#speed-tabs`, Fastest / Slowest / Faster one way), not a block each: two

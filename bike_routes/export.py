@@ -105,8 +105,10 @@ def _export_geojson(
 
     max_count = max((f["properties"]["ride_count"] for f in features), default=0)
 
-    # The busiest drawn feature, named.  A bare count says how often without
-    # saying what, and the street names never reach the browser otherwise.
+    # The busiest drawn feature, named and placed.  The page could pick it out
+    # of the features now that they carry names, but not for free: it is one
+    # pass over 15k features for a line of the stats panel that never changes
+    # with the filters.
     top_segment = None
     if features:
         top = features[-1]  # sorted ascending by ride_count above
@@ -146,13 +148,21 @@ def _export_geojson(
                 sources.get(fname, SOURCE_UNKNOWN),
             ]
         )
+    # Street names, as a table plus one index per feature (`sn`).  Repeating
+    # the strings inline costs more than pointing at them -- a few hundred
+    # names carry the whole drawn network -- and a feature OSM never named
+    # carries no key at all, which is most footway, service and ramp mileage.
+    name_table: list[str] = []
+    name_slot: dict[str, int] = {}
     for f in features:
         props = f["properties"]
         props["rides"] = [ride_id[r] for r in props["rides"] if r in ride_id]
         del props["ride_count"]
-        # Only the top segment's name is shipped; per-feature names would add
-        # ~250 KB for something nothing reads.
-        props.pop("_name", None)
+        name = props.pop("_name", None)
+        if name:
+            props["sn"] = name_slot.setdefault(name, len(name_table))
+            if props["sn"] == len(name_table):
+                name_table.append(name)
 
     total_km = sum(_geom_len_m(f["geometry"]["coordinates"]) for f in features) / 1000
 
@@ -174,6 +184,7 @@ def _export_geojson(
             "total_edges": len(features),
             "max_count": max_count,
             "top_segment": top_segment,
+            "street_names": name_table,
             "total_km": round(total_km, 1),
             "rides_per_year": rides_per_year,
             "riding": _riding_summary(state.get("ride_stats", {})),

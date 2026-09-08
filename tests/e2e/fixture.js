@@ -243,6 +243,9 @@ export function buildFixture(propertyOverrides = {}) {
       // The busiest drawn feature, named. Placed on the north edge so a click
       // is checkable against a known centre.
       top_segment: { name: 'Center Street', at: [-73.96, 40.745] },
+      // A feature's `sn` indexes this. The south edge has none, the way an
+      // unnamed footway or service road does.
+      street_names: ['Center Street', 'North Street'],
       speed: SPEED_BLOCK,
       citibike: CITIBIKE_BLOCK,
       neighborhoods: NEIGHBORHOOD_BLOCK,
@@ -251,8 +254,8 @@ export function buildFixture(propertyOverrides = {}) {
     // Sorted by ride count ascending, like the exporter.
     features: [
       { type: 'Feature', geometry: line(EDGES.south.lat), properties: { rides: EDGES.south.rides, n: 0 } },
-      { type: 'Feature', geometry: line(EDGES.north.lat), properties: { rides: EDGES.north.rides, n: 1 } },
-      { type: 'Feature', geometry: line(EDGES.center.lat), properties: { rides: EDGES.center.rides, n: 0 } },
+      { type: 'Feature', geometry: line(EDGES.north.lat), properties: { rides: EDGES.north.rides, n: 1, sn: 1 } },
+      { type: 'Feature', geometry: line(EDGES.center.lat), properties: { rides: EDGES.center.rides, n: 0, sn: 0 } },
     ],
   };
 }

@@ -16,8 +16,9 @@ test.describe('street tooltips and detail', () => {
     await gotoMap(page);
     await clickEdge(page, EDGES.center.lat);
     await expect(page.locator('#inspector')).toBeVisible();
-    // The features ship no street name, so the count is the heading.
-    await expect(page.locator('#inspector-title')).toHaveText('4 passes');
+    // Named in OSM, so the name is the heading and the count sits under it.
+    await expect(page.locator('#inspector-title')).toHaveText('Center Street');
+    await expect(page.locator('#inspector .edge-sub')).toHaveText('4 passes');
     const rows = page.locator('#inspector .ride-row');
     await expect(rows).toHaveCount(4);
     await expect(rows.nth(0)).toContainText('2023-04-01');
@@ -48,7 +49,9 @@ test.describe('street tooltips and detail', () => {
   test('a repeated ride is one row marked with its pass count', async ({ page }) => {
     await gotoMap(page);
     await clickEdge(page, EDGES.south.lat);
+    // Unnamed, so the count is the heading and there is no line under it.
     await expect(page.locator('#inspector-title')).toHaveText('2 passes across 1 ride');
+    await expect(page.locator('#inspector .edge-sub')).toHaveCount(0);
     const rows = page.locator('#inspector .ride-row');
     await expect(rows).toHaveCount(1);
     await expect(rows.nth(0)).toHaveText('2024-07-04 · 2:45pm ×2 · 2 Citibike trips');
@@ -139,6 +142,14 @@ async function setRangeHi(page, i) {
     const hi = document.getElementById('range-hi');
     hi.value = String(v);
     hi.dispatchEvent(new Event('input', { bubbles: true }));
+  }, i);
+}
+
+async function setRangeLo(page, i) {
+  await page.evaluate((v) => {
+    const lo = document.getElementById('range-lo');
+    lo.value = String(v);
+    lo.dispatchEvent(new Event('input', { bubbles: true }));
   }, i);
 }
 
@@ -304,14 +315,16 @@ test.describe('inspector panel', () => {
   test('the open panel follows the date filter', async ({ page }) => {
     await gotoMap(page);
     await clickEdge(page, EDGES.center.lat);
-    await expect(page.locator('#inspector-title')).toHaveText('4 passes');
+    await expect(page.locator('#inspector .edge-sub')).toHaveText('4 passes');
     await expect(page.locator('#inspector .ride-row')).toHaveCount(4);
 
     // Four ride dates; pull the upper handle down to the first, leaving
     // 2023-04-01.
     await setRangeHi(page, 0);
 
-    await expect(page.locator('#inspector-title')).toHaveText('1 pass');
+    // The name is fixed; the count under it is what the filter moves.
+    await expect(page.locator('#inspector-title')).toHaveText('Center Street');
+    await expect(page.locator('#inspector .edge-sub')).toHaveText('1 pass');
     await expect(page.locator('#inspector .ride-row')).toHaveCount(1);
     await expect(page.locator('#inspector .ride-row')).toContainText('2023-04-01');
   });
@@ -325,6 +338,20 @@ test.describe('inspector panel', () => {
 
     await expect(page.locator('#inspector')).toBeVisible();
     await expect(page.locator('#inspector-title')).toHaveText('No passes in range');
+    await expect(page.locator('#inspector .inspector-empty')).toBeVisible();
+  });
+
+  // A named street keeps its name when the filter empties it: the name is the
+  // street, not the passes, so it is the count under it that gives way.
+  test('an emptied street keeps its name as the heading', async ({ page }) => {
+    await gotoMap(page);
+    await clickEdge(page, EDGES.north.lat);   // rides 0 and 1, 2023 only
+    await expect(page.locator('#inspector-title')).toHaveText('North Street');
+
+    await setRangeLo(page, 2);                 // 2024 onwards
+
+    await expect(page.locator('#inspector-title')).toHaveText('North Street');
+    await expect(page.locator('#inspector .edge-sub')).toHaveText('No passes in range');
     await expect(page.locator('#inspector .inspector-empty')).toBeVisible();
   });
 });

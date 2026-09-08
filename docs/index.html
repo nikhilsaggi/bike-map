@@ -288,7 +288,7 @@
 
   /* -- Neighborhoods ---------------------------------------------------- */
   .nb-detail { min-width: 150px; }
-  .nb-sub { color: #666; font-size: 10px; margin-bottom: 4px; }
+  .nb-sub, .edge-sub { color: #666; font-size: 10px; margin-bottom: 4px; }
   .nb-row { display: flex; justify-content: space-between; gap: 14px; font-size: 12px; }
   .nb-row .v { color: #fff; font-variant-numeric: tabular-nums; }
   .nb-row .label { color: #888; }
@@ -926,6 +926,9 @@ function clockLabel(hm) {
 let dateList = [];
 let rideList = [];
 let rideDateIdx = [];
+// Distinct street names; a feature's `sn` is an index into this, absent where
+// OSM named nothing.
+let streetNames = [];
 // Fourth element of a ride row: -1 unknown (outside the Citibike export's
 // window), 0 own bike, n>=1 the number of Citibike trips it overlaps.
 let rideSrc = [];
@@ -1003,10 +1006,11 @@ function excludedLabel(coverage, n = 3) {
 }
 
 // -- Direction-split speed ---------------------------------------------------
-// Ranked in the pipeline (edge_speed._top_corridors), not here: naming a
-// corridor needs the OSM street names, which never reach the browser.  Each
-// row is one stretch that agrees on which way is faster, so a bridge appears
-// twice -- its two descents -- rather than averaging itself to nothing.
+// Ranked in the pipeline (edge_speed._top_corridors), not here: a corridor is
+// chained speed chunks, and what reaches the browser is one name per drawn
+// feature, after the merge.  Each row is one stretch that agrees on which way
+// is faster, so a bridge appears twice -- its two descents -- rather than
+// averaging itself to nothing.
 
 let speedMarker = null;
 let speedRow = null;
@@ -1097,8 +1101,9 @@ function renderStreets(props) {
 // makes the two directions differ.
 //
 // All three are ranked in the pipeline (edge_speed._top_stretches and
-// ._top_corridors), not here: naming a stretch needs the OSM street names,
-// which never reach the browser. A tab reads its own array; it never re-ranks.
+// ._top_corridors), not here: a stretch is chained speed chunks, which the
+// per-feature names the export ships cannot reconstruct. A tab reads its own
+// array; it never re-ranks.
 //
 // The number on the right is the one the list is ranked by, in every tab: a
 // column that sorts by one number while printing another reads as a ranking
@@ -2319,10 +2324,11 @@ function styleFor(count) {
 // one row marked x2 rather than two identical rows. The title carries both
 // numbers: the count on the map is passes, but the rows below are rides.
 //
-// The features ship no street name (per-feature names were measured at ~250 KB
-// and dropped in export.py), so the count is the heading -- there is nothing
-// else true to call a segment.
-function edgeDetail(rideIds) {
+// The street's name is the heading when OSM has one, with the pass count under
+// it -- the same shape as a dock's or a neighborhood's panel. About an eighth
+// of drawn features are unnamed (footway, service road, ramp), and there the
+// count is the heading again: it is the only thing true of the segment.
+function edgeDetail(rideIds, name) {
   const rows = [];
   let passes = 0;
   for (let i = 0; i < rideIds.length; i++) {
@@ -2345,19 +2351,19 @@ function edgeDetail(rideIds) {
       `${sourceTag(ri) ? ` &middot; ${sourceTag(ri)}` : ''}</div>`
     );
   }
+  const empty = '<div class="inspector-empty">Nothing crossed this street ' +
+    'under the current date range and source filter.</div>';
   if (!rows.length) {
-    return {
-      title: 'No passes in range',
-      body: '<div class="inspector-empty">Nothing crossed this street under ' +
-        'the current date range and source filter.</div>',
-    };
+    return name
+      ? { title: name, body: `<div class="edge-sub">No passes in range</div>${empty}` }
+      : { title: 'No passes in range', body: empty };
   }
-  return {
-    title: `${passes} pass${passes !== 1 ? 'es' : ''}` +
-      (passes !== rows.length
-        ? ` across ${rows.length} ride${rows.length !== 1 ? 's' : ''}` : ''),
-    body: rows.join(''),
-  };
+  const count = `${passes} pass${passes !== 1 ? 'es' : ''}` +
+    (passes !== rows.length
+      ? ` across ${rows.length} ride${rows.length !== 1 ? 's' : ''}` : '');
+  return name
+    ? { title: name, body: `<div class="edge-sub">${count}</div>${rows.join('')}` }
+    : { title: count, body: rows.join('') };
 }
 
 // -- Inspector ---------------------------------------------------------------
@@ -2469,7 +2475,8 @@ function clearSelectedEdge() {
 function selectEdge(layer, rideIds, latlng) {
   closeInspector();  // tears down a dock's links or a neighborhood's fill
   selectedEdge = layer;
-  openInspector({ kind: 'edge', latlng, render: () => edgeDetail(rideIds) });
+  const name = streetNames[layer.feature.properties.sn];
+  openInspector({ kind: 'edge', latlng, render: () => edgeDetail(rideIds, name) });
   paintSelectedEdge();
 }
 
@@ -3113,6 +3120,7 @@ fetch('rides.geojson.gz')
     dateList = data.properties?.dates ?? [];
     rideList = data.properties?.rides ?? [];
     rideDateIdx = rideList.map(r => r[0]);
+    streetNames = data.properties?.street_names ?? [];
     rideSrc = rideList.map(r => (r.length > 3 ? r[3] : -1));
     newKmByYear = data.properties?.coverage?.new_km_by_year ?? {};
 
