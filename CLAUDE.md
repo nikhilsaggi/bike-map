@@ -33,7 +33,10 @@ interactive Leaflet map (`docs/`, served via GitHub Pages) plus static PNGs.
   `python tools/traversal_audit.py` before any `TRAVERSAL_*`/`SPEED_*`
   threshold change, `python tools/hmm_matcher_eval.py` before any matcher
   change, `python tools/neighborhood_audit.py` before touching the
-  per-neighborhood block. All read state; none writes it.
+  per-neighborhood block, `python tools/speed_consistency.py` for the
+  fastest/slowest stretch ranking (it re-measures the passes instead of
+  reading `edge_speed`, which stores no pass-to-pass spread). All read
+  state; none writes it.
 
 ## Architecture
 

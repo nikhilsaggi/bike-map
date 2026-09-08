@@ -330,8 +330,11 @@ part of it; `findings/` holds what they found:
   where assigning an edge by its midpoint goes wrong
 
 `tools/hmm_matcher_eval.py` compares the two matchers on real rides,
-`tools/traversal_audit.py` checks pass counting against the raw traces, and
-`tools/neighborhood_audit.py` cuts the coverage measurement into
+`tools/traversal_audit.py` checks pass counting against the raw traces,
+`tools/speed_consistency.py` ranks the stretches that are fast or slow on
+every pass — absolute speed rather than the direction split, so a one-way
+street can be ranked at all — and `tools/neighborhood_audit.py` cuts the
+coverage measurement into
 neighborhoods (`--boundaries` also measures what midpoint assignment
 misplaces). `tools/bike_reencounters.py` re-derives the Citibike panel's
 re-encounter list from `cache/citibike_trips.json` alone, and tests it against

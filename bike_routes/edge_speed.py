@@ -434,6 +434,105 @@ def _count_traversals(
     return counts
 
 
+def _measure_ride(
+    edge_geom: dict[tuple[int, int], list[tuple[float, float]]],
+    keys: list[tuple[int, int]],
+    path: Path,
+) -> tuple[list[tuple[int, int, int]], np.ndarray, np.ndarray, list[tuple[int, int]], list[float]]:
+    """Project one ride onto the given edges and cut it into passes.
+
+    Returns (passes, along, times, slot_keys, slot_len) -- everything the two
+    folds below and tools/speed_consistency.py need, and nothing about what
+    is done with it.  An unreadable ride or an unusable edge set yields no
+    passes rather than an error.
+    """
+    empty: tuple[list[tuple[int, int, int]], np.ndarray, np.ndarray, list, list] = (
+        [],
+        np.zeros(0),
+        np.zeros(0),
+        [],
+        [],
+    )
+    track = _load_ride_track(path)
+    if track is None:
+        return empty
+    latlon, times = track
+    index = _build_index(edge_geom, keys)
+    if index is None:
+        return empty
+    tree, sample_xy, sample_slot, sample_along, slot_keys, slot_len = index
+
+    track_xy = np.column_stack([latlon[:, 1] * config.M_PER_LON, latlon[:, 0] * config.M_PER_LAT])
+    slot, along = _assign(tree, sample_xy, sample_slot, sample_along, track_xy)
+    passes = [
+        (s, a, b)
+        for s, i, j in _runs(slot, times, track_xy)
+        for a, b in _split_monotonic(along, i, j, config.SPEED_REVERSAL_M)
+    ]
+    return passes, along, times, slot_keys, slot_len
+
+
+def _admitted_passes(
+    passes: list[tuple[int, int, int]],
+    along: np.ndarray,
+    times: np.ndarray,
+    slot_len: list[float],
+) -> list[tuple[int, int, int]]:
+    """Keep the passes speed will measure: real, plausible, and long enough.
+
+    A pass covering only a few metres of an edge is the trace clipping a
+    corner and an implausibly fast one is a GPS jump; both would land in the
+    average as riding.  Counting applies these to whole traversals instead
+    (_count_traversals), which is why the two do not share a call here.
+    """
+    out = []
+    for s, i, j in passes:
+        dist = abs(along[j - 1] - along[i])
+        dt = times[j - 1] - times[i]
+        if dt <= 0 or dist <= 0:
+            continue
+        if 3.6 * dist / dt > config.SPEED_MAX_KMH:
+            continue
+        if dist < min(config.SPEED_MIN_PASS_M, 0.5 * slot_len[s]):
+            continue
+        out.append((s, i, j))
+    return out
+
+
+def _pass_chunks(
+    along: np.ndarray,
+    times: np.ndarray,
+    i: int,
+    j: int,
+    length: float,
+    nchunk: int,
+) -> dict[int, list[float]]:
+    """Split one pass into {chunk index: [distance, time, moving time]}.
+
+    The fix-to-fix loop is where a pass becomes a measurement, so it is
+    shared: state's totals and any offline audit of them have to admit and
+    bin exactly the same metres.
+    """
+    acc: dict[int, list[float]] = {}
+    for a, b in zip(range(i, j - 1), range(i + 1, j)):
+        step_dt = times[b] - times[a]
+        step_d = abs(along[b] - along[a])
+        # Per-step guard, not just per-run: a fix joining the edge from a
+        # side street can snap to the start and then jump tens of metres
+        # along, which would otherwise land as an implausible sprint in
+        # whichever chunk owns the edge's first metres.
+        if step_dt <= 0 or 3.6 * step_d / step_dt > config.SPEED_MAX_KMH:
+            continue
+        mid = 0.5 * (along[a] + along[b])
+        ci = min(nchunk - 1, max(0, int(mid / length * nchunk)))
+        c = acc.setdefault(ci, [0.0, 0.0, 0.0])
+        c[0] += step_d
+        c[1] += step_dt
+        if 3.6 * step_d / step_dt >= config.SPEED_MOVING_KMH:
+            c[2] += step_dt
+    return acc
+
+
 def _fold_ride(
     state: dict[str, Any],
     edge_geom: dict[tuple[int, int], list[tuple[float, float]]],
@@ -445,38 +544,14 @@ def _fold_ride(
     Writes speed into state["edge_speed"] and, for edges this ride crossed
     more than once, its traversal count into state["edge_traversals"].
     """
-    track = _load_ride_track(path)
-    if track is None:
+    passes, along, times, slot_keys, slot_len = _measure_ride(edge_geom, keys, path)
+    if not passes:
         return 0
-    latlon, times = track
-    index = _build_index(edge_geom, keys)
-    if index is None:
-        return 0
-    tree, sample_xy, sample_slot, sample_along, slot_keys, slot_len = index
-
-    track_xy = np.column_stack([latlon[:, 1] * config.M_PER_LON, latlon[:, 0] * config.M_PER_LAT])
-    slot, along = _assign(tree, sample_xy, sample_slot, sample_along, track_xy)
     edge_speed = state["edge_speed"]
     folded = 0
 
-    raw_runs = _runs(slot, times, track_xy)
-    passes = [
-        (s, a, b)
-        for s, i, j in raw_runs
-        for a, b in _split_monotonic(along, i, j, config.SPEED_REVERSAL_M)
-    ]
-
-    for s, i, j in passes:
+    for s, i, j in _admitted_passes(passes, along, times, slot_len):
         length = slot_len[s]
-        dist = abs(along[j - 1] - along[i])
-        dt = times[j - 1] - times[i]
-        if dt <= 0 or dist <= 0:
-            continue
-        if 3.6 * dist / dt > config.SPEED_MAX_KMH:
-            continue
-        if dist < min(config.SPEED_MIN_PASS_M, 0.5 * length):
-            continue
-
         key = slot_keys[s]
         nchunk = _n_chunks(length)
         rec = edge_speed.get(key)
@@ -487,26 +562,12 @@ def _fold_ride(
         # Direction is decided once for the whole run, so GPS wobble inside a
         # run cannot flip individual steps into the opposite bucket.
         base = _FWD if along[j - 1] > along[i] else _REV
-        touched: set[int] = set()
-        for a, b in zip(range(i, j - 1), range(i + 1, j)):
-            step_dt = times[b] - times[a]
-            step_d = abs(along[b] - along[a])
-            # Per-step guard, not just per-run: a fix joining the edge from a
-            # side street can snap to the start and then jump tens of metres
-            # along, which would otherwise land as an implausible sprint in
-            # whichever chunk owns the edge's first metres.
-            if step_dt <= 0 or 3.6 * step_d / step_dt > config.SPEED_MAX_KMH:
-                continue
-            mid = 0.5 * (along[a] + along[b])
-            ci = min(nchunk - 1, max(0, int(mid / length * nchunk)))
+        for ci, (dist, dt, moving) in _pass_chunks(along, times, i, j, length, nchunk).items():
             c = chunks[ci]
-            c[base] += step_d
-            c[base + 1] += step_dt
-            if 3.6 * step_d / step_dt >= config.SPEED_MOVING_KMH:
-                c[base + 2] += step_dt
-            touched.add(ci)
-        for ci in touched:
-            chunks[ci][base + 3] += 1
+            c[base] += dist
+            c[base + 1] += dt
+            c[base + 2] += moving
+            c[base + 3] += 1
         folded += 1
 
     # Traversal counts come from the same passes, re-joined across recording
