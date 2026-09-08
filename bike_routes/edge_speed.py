@@ -998,13 +998,9 @@ def _summarize_stretch(
     is each chunk's own pass-to-pass deviation rather than the stretch's: a
     ride's speed over the whole stretch varies less than over any 150 m of
     it, so this over-states the spread and under-states the consistency.
-    That is the conservative direction, and at the fast end it costs almost
-    nothing -- against the exact figure, re-measured per ride by
-    tools/speed_consistency.py, the two agree on most of the list.  At the
-    slow end they barely agree at all, and that is a fact about the slow end
-    rather than about the approximation: the stretches there sit within a
-    mile an hour of each other, so nothing decides their order.  Read that
-    tab as a pack (findings/stretch-pace.md).
+    That is the conservative direction, and it costs the ranking nothing:
+    the deviation only breaks ties.  It does mean the swing a row prints is
+    a little wider than the stretch's own, which is the safe way round.
 
     The pass count is the weakest link, not the average: the claim is about
     the whole stretch, so it is only as well ridden as its thinnest chunk.
@@ -1028,17 +1024,24 @@ def _top_stretches(
     edge_geom: dict[tuple[int, int], list[tuple[float, float]]],
     edge_name: dict[tuple[int, int], str],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Rank stretches by the speed they beat on most passes, fast end and slow.
+    """Rank stretches by their own speed, fast end and slow.
 
     Absolute speed, one direction, which is what _top_corridors cannot ask:
     comparing two directions takes passes both ways, so a one-way street is
     invisible to it -- and about half of what ranks here was never ridden the
     other way at all.
 
-    Ranking on the mean alone would put a stretch ridden fast once above one
-    that is the same every time, so the key is the mean less its deviation at
-    the fast end and plus it at the slow end.  At most one entry per street
-    and direction, as in the corridor list.
+    The key is the average, which is also the number the panel prints, and
+    the deviation only breaks ties.  Ranking on the average less its
+    deviation was tried: it rewards steadiness so hard that at the slow end a
+    7.7 mph street outranks a 6.3 mph one, which is not what "slowest" says,
+    and at the fast end it reorders a list it agrees with anyway (seven of
+    eight rows).  What the deviation is for is being *shown* -- five passes
+    is the floor, so no row is one lucky run, and the swing beside the
+    average says whether it was 12 mph every time or 6 and 18
+    ([why](findings/stretch-pace.md)).
+
+    At most one entry per street and direction, as in the corridor list.
     """
     units = _stretch_units(edge_speed, edge_geom, edge_name)
     rows = [
@@ -1048,10 +1051,10 @@ def _top_stretches(
     ]
 
     def best(*, fastest: bool) -> list[dict[str, Any]]:
-        bound = (lambda r: -(r["kmh"] - r["sd"])) if fastest else (lambda r: r["kmh"] + r["sd"])
+        speed = (lambda r: -r["kmh"]) if fastest else (lambda r: r["kmh"])
         seen: set[tuple[str, str]] = set()
         out = []
-        for r in sorted(rows, key=lambda r: (bound(r), r["name"])):
+        for r in sorted(rows, key=lambda r: (speed(r), r["sd"], r["name"])):
             if (r["name"], r["dir"]) in seen:
                 continue
             seen.add((r["name"], r["dir"]))

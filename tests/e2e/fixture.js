@@ -39,8 +39,8 @@ export const SPEED_BLOCK = {
   // The other ranking on the same block: absolute speed over a stretch, one
   // direction, with the pass-to-pass swing beside it. 24.14 km/h = 15.0 mph,
   // 16.09 = 10.0, 8.05 = 5.0, and 1.61 = 1.0, so every row's mph and swing
-  // are exact. Ranked by mean less the swing (fastest) and mean plus it
-  // (slowest), which puts Steady Street above Gusty Street at both ends.
+  // are exact. Ranked by the average, which the two fastest rows share on
+  // purpose: the swing breaks the tie, so Steady Street goes first.
   fastest: [
     { name: 'Steady Street', kmh: 24.14, sd: 1.61, dir: 'E', m: 400, n: 9, at: [-73.99, 40.7305] },
     { name: 'Gusty Street', kmh: 24.14, sd: 8.05, dir: 'N', m: 300, n: 6, at: [-73.98, 40.7305] },

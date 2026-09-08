@@ -1076,24 +1076,26 @@ function renderStreets(props) {
 // ._top_corridors), not here: naming a stretch needs the OSM street names,
 // which never reach the browser. A tab reads its own array; it never re-ranks.
 //
-// The number on the right is the one the list is ranked by -- for pace that
-// is the bound, not the average, which is on the line below. A column that
-// sorts by one number while printing another reads as a ranking of the
-// number on screen and is not one, the mistake the neighborhood list made
-// with metres and percentages.
+// The number on the right is the one the list is ranked by, in every tab: a
+// column that sorts by one number while printing another reads as a ranking
+// of the number on screen and is not one, the mistake the neighborhood list
+// made with metres and percentages. For the two pace tabs that number is the
+// average, and the swing under it says whether the average is what a rider
+// met every time -- shown rather than ranked on, because ranking on it put a
+// steady 7.7 mph street above a 6.3 mph one in a list called Slowest.
 
 const SPEED_TABS = [
   {
     id: 'fastest', label: 'Fastest',
     rows: s => s.fastest,
-    value: r => mi(r.kmh - r.sd),
-    help: s => paceHelp(s, 'less'),
+    value: r => mi(r.kmh),
+    help: s => paceHelp(s, 'fastest'),
   },
   {
     id: 'slowest', label: 'Slowest',
     rows: s => s.slowest,
-    value: r => mi(r.kmh + r.sd),
-    help: s => paceHelp(s, 'plus'),
+    value: r => mi(r.kmh),
+    help: s => paceHelp(s, 'slowest'),
   },
   {
     id: 'oneway', label: 'One way',
@@ -1116,19 +1118,17 @@ function ftFloor(speed) {
   return Math.round(mi(speed.min_m / 1000) * 5280);
 }
 
-// One rule, one word apart at each end: the fast list wants the speed a
-// stretch beats on most passes, the slow list the speed it fails to beat.
-function paceHelp(speed, side) {
-  return `The speed a stretch beats on most passes, from ride timestamps: ` +
-    `its average ${side} its pass-to-pass swing, so one ridden ` +
-    `${side === 'less' ? 'fast' : 'slow'} once ranks below one that is the ` +
-    `same every time. One street, one way, waiting at lights included. ` +
-    `${ftFloor(speed)} ft+, ridden ${speed.stretch_n}+ times; the average ` +
-    `and the swing are under each row.`;
+// One rule, one word apart at each end.
+function paceHelp(speed, end) {
+  return `The ${end} stretches of one street, ridden one way, averaged over ` +
+    `every pass from ride timestamps \u2014 waiting at lights included. ` +
+    `${ftFloor(speed)} ft+, ridden ${speed.stretch_n}+ times, so no row is ` +
+    `one lucky run; the swing under each says how much it varied between ` +
+    `passes.`;
 }
 
 function paceDetail(r) {
-  return `${mi(r.kmh).toFixed(1)} \u00b1${mi(r.sd).toFixed(1)} mph over ` +
+  return `\u00b1${mi(r.sd).toFixed(1)} mph swing over ` +
     `${(mi(r.m / 1000)).toFixed(2)} mi, ${r.n}+ passes`;
 }
 

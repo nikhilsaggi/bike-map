@@ -410,25 +410,24 @@ test.describe('stretch pace', () => {
     await gotoMap(page);
     await openSection(page, STREETS);
     expect(await page.locator('#speed-list .sp-dir').allTextContents()).toEqual(['E', 'N']);
-    // 24.14 km/h -> 15.0 mph, 1.61 -> 1.0, 400 m -> 0.25 mi.
+    // 1.61 km/h -> 1.0 mph, 400 m -> 0.25 mi.
     await expect(page.locator('#speed-list .sp-detail').first())
-      .toHaveText('15.0 \u00b11.0 mph over 0.25 mi, 9+ passes');
+      .toHaveText('\u00b11.0 mph swing over 0.25 mi, 9+ passes');
   });
 
-  test('the number on the row carries its unit and is the one ranked by',
+  test('the number on the row carries its unit and is the average it ranks by',
     async ({ page }) => {
-      // 15.0 less a 1.0 swing, then 15.0 less 5.0: descending, as printed.
-      // A column that sorted by one number and printed another would read as
-      // a ranking of the number on screen and would not be one.
+      // 24.14 km/h -> 15.0 mph on both, which is why the fixture's two rows
+      // are separated by the swing alone -- the tie-break, not the ranking.
       await gotoMap(page);
       await openSection(page, STREETS);
       expect(await page.locator('#speed-list .sp-gap').allTextContents())
-        .toEqual(['14.0mph', '10.0mph']);
+        .toEqual(['15.0mph', '15.0mph']);
 
       await tab(page, 'Slowest');
-      // 5.0 plus 1.0, then 15.0 plus 5.0: ascending, as printed.
+      // 8.05 km/h -> 5.0, then 24.14 -> 15.0: ascending, as printed.
       expect(await page.locator('#speed-list .sp-gap').allTextContents())
-        .toEqual(['6.0mph', '20.0mph']);
+        .toEqual(['5.0mph', '15.0mph']);
     });
 
   test('the slowest tab reads the other array, not a re-sort of this one',
@@ -438,9 +437,9 @@ test.describe('stretch pace', () => {
       await tab(page, 'Slowest');
       expect(await page.locator('#speed-list .sp-name').allTextContents())
         .toEqual(['Slow Lane', 'Gusty Street']);
-      // 8.05 km/h -> 5.0 mph: a stretch the fastest tab never showed.
+      // 250 m -> 0.16 mi: a stretch the fastest tab never showed.
       await expect(page.locator('#speed-list .sp-detail').first())
-        .toHaveText('5.0 \u00b11.0 mph over 0.16 mi, 5+ passes');
+        .toHaveText('\u00b11.0 mph swing over 0.16 mi, 5+ passes');
       await expect(page.locator('#speed-tabs .seg-btn').first()).not.toHaveClass(/\bon\b/);
     });
 
@@ -477,12 +476,12 @@ test.describe('stretch pace', () => {
     await gotoMap(page);
     await openSection(page, STREETS);
     const help = page.locator('#speed-title .cb-help');
-    await expect(help).toHaveAttribute('title', /average less its pass-to-pass swing/);
+    await expect(help).toHaveAttribute('title', /The fastest stretches/);
     await expect(help).toHaveAttribute('title', /820 ft\+, ridden 5\+ times/);
     await expect(help).toHaveAttribute('title', /waiting at lights included/);
 
     await tab(page, 'Slowest');
-    await expect(help).toHaveAttribute('title', /average plus its pass-to-pass swing/);
+    await expect(help).toHaveAttribute('title', /The slowest stretches/);
 
     await tab(page, 'One way');
     await expect(help).toHaveAttribute('title', /Of 42 stretches measured/);

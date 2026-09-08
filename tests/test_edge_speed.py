@@ -561,20 +561,37 @@ def test_stretch_chains_a_street_across_the_edges_osm_split_it_into():
     assert edge_speed._top_stretches(edges, geom, names) == ([], [])
 
 
-def test_stretch_ranking_prefers_the_street_that_is_the_same_every_time():
-    """Same mean, different spread -- consistency decides both ends."""
+def test_stretch_ranking_is_by_speed_and_carries_the_swing():
+    """The average ranks; the deviation is reported beside it."""
+    coords = [lonlat(0, 0), lonlat(600, 0)]
+    quick = _street(coords, fwd=(100, 20, 20, 5))  # 18 km/h
+    slower = _street(coords, fwd=(100, 40, 40, 5), fwd_speeds=[3.0, 15.0] * 2 + [9.0])
+    edges = {(1, 2): quick, (3, 4): slower}
+    geom = {(1, 2): coords, (3, 4): coords}
+    names = {(1, 2): "Quick Street", (3, 4): "Slower Street"}
+    fast, slow = edge_speed._top_stretches(edges, geom, names)
+    assert [r["name"] for r in fast] == ["Quick Street", "Slower Street"]
+    assert [r["name"] for r in slow] == ["Slower Street", "Quick Street"]
+    assert [(r["kmh"], r["sd"]) for r in fast] == [(18.0, 0.0), (9.0, 5.4)]
+
+
+def test_stretch_ranking_breaks_a_tie_on_the_steadier_street():
+    """Same average: the one that was the same every time goes first.
+
+    Ranking *on* the deviation was tried and rejected -- at the slow end it
+    put a steady 7.7 mph street above a 6.3 mph one -- but a tie is where it
+    costs nothing and says something.
+    """
     coords = [lonlat(0, 0), lonlat(600, 0)]
     steady = _street(coords, fwd_speeds=[18.0] * 5)
     erratic = _street(coords, fwd_speeds=[10.0, 10.0, 26.0, 26.0, 18.0])
-    edges = {(1, 2): steady, (3, 4): erratic}
+    edges = {(1, 2): erratic, (3, 4): steady}
     geom = {(1, 2): coords, (3, 4): coords}
-    names = {(1, 2): "Steady Street", (3, 4): "Erratic Street"}
+    names = {(1, 2): "Erratic Street", (3, 4): "Steady Street"}
     fast, slow = edge_speed._top_stretches(edges, geom, names)
-    assert [r["name"] for r in fast] == ["Steady Street", "Erratic Street"]
-    # And at the slow end too: a street that sometimes hits 26 is not one a
-    # rider is always slow on, whatever its average says.
-    assert [r["name"] for r in slow] == ["Steady Street", "Erratic Street"]
     assert [r["kmh"] for r in fast] == [18.0, 18.0]
+    assert [r["name"] for r in fast] == ["Steady Street", "Erratic Street"]
+    assert [r["name"] for r in slow] == ["Steady Street", "Erratic Street"]
 
 
 def test_stretch_ranking_needs_the_pass_floor(monkeypatch):

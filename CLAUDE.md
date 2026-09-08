@@ -501,18 +501,20 @@ questions would describe the two a reader is not looking at.
   continuation at a fork so a stretch never depends on dict order, and using
   each chunk once so no metre is ranked twice. `tools/speed_consistency.py`
   chains through the same function.
-- **Ranked by the average less its pass-to-pass deviation** (plus it, at the
-  slow end), so a stretch ridden fast once loses to one that is the same
-  every time -- which is what the record's `speed_sum`/`speed_sq_sum` slots
-  are for. **The page prints the bound it sorts by**, not the average: a
-  column that sorts by one number while printing another reads as a ranking
-  of the number on screen and is not one, the same trap the neighborhood
-  list fell into.
-- **The fast end is a podium and the slow end is a pack.** 18 stretches sit
-  within 1 mph of the slowest, so the order there is not a finding and the
-  panel's approximation reproduces almost none of it (the exact ranking is
-  the tool's, which re-measures every ride). Don't tune anything to make the
-  two slow lists agree.
+- **Ranked by the average, which is the number the row prints**; the
+  pass-to-pass deviation (the record's `speed_sum`/`speed_sq_sum` slots) is
+  shown beside it and breaks ties, nothing more. Ranking on the average less
+  that deviation was built and rejected: at the slow end it put a steady 7.7
+  mph street above a 6.3 mph one in a list called Slowest, and at the fast
+  end it reordered a list it agreed with anyway. What keeps a lucky run out
+  is the five-pass floor, not the deviation. Whatever the rule becomes, the
+  ranked number and the printed number stay the same number -- the trap the
+  neighborhood list fell into.
+- **The fast end is a podium and the slow end is a pack.** The whole slow
+  tab sits inside half an mph, with 20 more stretches within 1 mph of it, so
+  the order there is not a finding and the panel's approximation reproduces
+  little of it (the exact ranking is the tool's, which re-measures every
+  ride). Don't tune anything to make the two slow lists agree.
 
 - `state["edge_speed"]` / `state["edge_traversals"]` / `state["speed_rides"]`
   are deliberately **outside** `_processing_config()`, so changing them never

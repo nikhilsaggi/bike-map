@@ -10,12 +10,11 @@ two.
 
 So this ranks absolute speed instead, over a stretch a rider would recognise:
 a run of measured chunks along one named street, chained across the edges OSM
-happens to have split it into, travelled one way.  A stretch is ranked by the
-speed it beats on most passes -- mean minus one standard deviation across the
-rides that rode it, and mean plus one for the slow end -- so a street that was
-fast once and crawling twice loses to one that is the same every time.  That is
-what "consistently" has to mean here: the spread is across passes, not along
-the street.
+happens to have split it into, travelled one way.  A stretch is ranked by its
+average over the rides that rode it, and reported with the spread across those
+rides beside it -- which is what "consistently" has to mean here: pass to
+pass, not along the street.  The spread breaks ties and nothing else; ranking
+on the average less it was tried and rejected (findings/stretch-pace.md).
 
 The map ships this ranking too (edge_speed._top_stretches), but from the
 stored record, whose spread is per chunk rather than per stretch.  Here every
@@ -201,8 +200,6 @@ def _summarize(
         "n": len(speeds),
         "mean": mean,
         "sd": sd,
-        "floor": mean - sd,
-        "ceiling": mean + sd,
         "dir": edge_speed._octant(_bearing(middle)),  # noqa: SLF001
         "at": middle[len(middle) // 2],
     }
@@ -237,14 +234,16 @@ def _stretches(
     return out
 
 
-def _ranked(rows: list[dict[str, Any]], field: str, *, fastest: bool) -> list[dict[str, Any]]:
-    """Sort by the given bound, one entry per street and direction.
+def _ranked(rows: list[dict[str, Any]], *, fastest: bool) -> list[dict[str, Any]]:
+    """Sort by average speed, one entry per street and direction.
 
-    A street ridden the same way twice in one list is two stretches of it,
-    and the second says nothing the first did not -- the same rule
+    The pipeline's order (edge_speed._top_stretches): the average ranks and
+    the deviation only breaks ties, so the two lists are comparable row for
+    row.  A street ridden the same way twice in one list is two stretches of
+    it, and the second says nothing the first did not -- the same rule
     _top_corridors uses to stop one bridge filling the panel.
     """
-    ordered = sorted(rows, key=lambda r: (-r[field] if fastest else r[field], r["name"]))
+    ordered = sorted(rows, key=lambda r: (-r["mean"] if fastest else r["mean"], r["sd"], r["name"]))
     seen: set[tuple[str, str]] = set()
     out = []
     for r in ordered:
@@ -260,25 +259,23 @@ def _mph(kmh: float) -> float:
     return kmh * KMH_TO_MPH
 
 
-def _print_rows(title: str, rows: list[dict[str, Any]], top: int, *, fastest: bool) -> None:
+def _print_rows(title: str, rows: list[dict[str, Any]], top: int) -> None:
     """Print one ranking, with what each row is a claim about.
 
-    The first column is the bound the list is ranked by, not the average, so
-    the order is the order of the number printed; the average and the swing
-    it came from follow it.  The midpoint is there to be pasted into a map: a
-    ranking of streets is only worth as much as the stretch it names can be
-    found and checked.
+    The first column is the average, which is what the list is ordered by,
+    and the swing beside it is across the rides that rode the stretch.  The
+    midpoint is there to be pasted into a map: a ranking of streets is only
+    worth as much as the stretch it names can be found and checked.
     """
     print(f"\n{title}")
     print(
-        f"  {'mph':>5}  {'average':>13}  {'rides':>5}  {'length':>7}  "
+        f"  {'mph':>13}  {'rides':>5}  {'length':>7}  "
         f"{'dir':>3}  {'way':>4}  {'lat,lon':<19}  street"
     )
     for r in rows[:top]:
         lon, lat = r["at"]
-        bound = r["floor"] if fastest else r["ceiling"]
         print(
-            f"  {_mph(bound):5.1f}  {_mph(r['mean']):5.1f} +-{_mph(r['sd']):4.1f}  "
+            f"  {_mph(r['mean']):5.1f} +-{_mph(r['sd']):4.1f}  "
             f"{r['n']:>5}  {r['m']:>6.0f}m  {r['dir']:>3}  "
             f"{'one' if r['one_way'] else 'both':>4}  {lat:.5f},{lon:.5f}  {r['name']}"
         )
@@ -329,8 +326,8 @@ def _print_sweep(units: dict[Unit, dict[str, Any]]) -> None:
     """
     base_rows = _stretches(units, MIN_PASSES, MIN_M, MIN_COVER)
     base = {
-        "fast": _names(_ranked(base_rows, "floor", fastest=True)),
-        "slow": _names(_ranked(base_rows, "ceiling", fastest=False)),
+        "fast": _names(_ranked(base_rows, fastest=True)),
+        "slow": _names(_ranked(base_rows, fastest=False)),
     }
     print("\nSensitivity -- top ten kept, against the defaults:")
     print(f"  {'passes':>6} {'min m':>6} {'cover':>6}  {'rows':>5}  {'fast':>5}  {'slow':>5}")
@@ -343,8 +340,8 @@ def _print_sweep(units: dict[Unit, dict[str, Any]]) -> None:
         (MIN_PASSES, MIN_M, 0.8),
     ]:
         rows = _stretches(units, passes, min_m, cover)
-        fast = _names(_ranked(rows, "floor", fastest=True))
-        slow = _names(_ranked(rows, "ceiling", fastest=False))
+        fast = _names(_ranked(rows, fastest=True))
+        slow = _names(_ranked(rows, fastest=False))
         print(
             f"  {passes:>6} {min_m:>6.0f} {cover:>6.1f}  {len(rows):>5}  "
             f"{len(base['fast'] & fast):>4}  {len(base['slow'] & slow):>5}"
@@ -365,7 +362,7 @@ def _print_shipped(
     Both differences are here.  What the comparison is for is the shape of
     the disagreement, not a score: the fast end is spread over several mph
     and survives the approximation, the slow end is a pack a few tenths wide
-    where nothing decides the order.
+    where the order is decided by less than the measurement error.
     """
     shipped_fast, shipped_slow = edge_speed._top_stretches(  # noqa: SLF001
         state.get("edge_speed", {}), edge_geom, edge_name
@@ -408,20 +405,10 @@ def main() -> None:
     units = _measure(state, edge_geom, edge_name, rides)
     rows = _stretches(units, MIN_PASSES, MIN_M, MIN_COVER)
     _print_coverage(units, rows, rides)
-    fast = _ranked(rows, "floor", fastest=True)
-    slow = _ranked(rows, "ceiling", fastest=False)
-    _print_rows(
-        f"Consistently fastest -- mean less one deviation, {MIN_PASSES}+ rides:",
-        fast,
-        args.top,
-        fastest=True,
-    )
-    _print_rows(
-        "Consistently slowest -- mean plus one deviation:",
-        slow,
-        args.top,
-        fastest=False,
-    )
+    fast = _ranked(rows, fastest=True)
+    slow = _ranked(rows, fastest=False)
+    _print_rows(f"Fastest stretches -- {MIN_PASSES}+ rides over each:", fast, args.top)
+    _print_rows("Slowest stretches:", slow, args.top)
     _print_shipped(state, edge_geom, edge_name, fast, slow)
     if args.sweep:
         _print_sweep(units)
