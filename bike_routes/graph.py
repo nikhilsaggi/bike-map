@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import contextlib
 import pickle
+import socket
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlparse
 
 import networkx as nx
 import numpy as np
 import osmnx as ox
+import requests
 from shapely import affinity, wkt
 from shapely.geometry import LineString, Point, box
 from shapely.ops import unary_union
@@ -144,12 +148,55 @@ def _remove_subsumed_edges(G: nx.MultiDiGraph) -> int:
     return len(to_remove)
 
 
+def _overpass_diagnosis(url: str) -> str:
+    """Report which of an Overpass host's addresses accept a connection.
+
+    osmnx pins a whole run to one IP (``_http._config_dns`` resolves the
+    hostname once with ``socket.gethostbyname`` and mutates ``getaddrinfo``
+    to return it), so a hostname that round-robins between a live server and
+    a dead one fails every time while curl, which walks the whole address
+    list, still works.  That is a connection error with no cause in it, so
+    the cause is printed here instead.
+    """
+    host = urlparse(url).netloc.split(":")[0]
+    try:
+        pinned = socket.gethostbyname(host)
+        addrs = sorted({a[4][0] for a in socket.getaddrinfo(host, 443, socket.AF_INET)})
+    except OSError as exc:
+        return f"  {host} does not resolve ({exc})"
+    lines = [f"  {host} resolves to {len(addrs)} address(es); osmnx pins {pinned}:"]
+    for ip in addrs:
+        sock = socket.socket()
+        sock.settimeout(8)
+        try:
+            sock.connect((ip, 443))
+            state = "accepts connections"
+        except OSError as exc:
+            state = f"{type(exc).__name__}: {exc}"
+        finally:
+            sock.close()
+        name = ip
+        with contextlib.suppress(OSError):
+            name = f"{socket.gethostbyaddr(ip)[0]} ({ip})"
+        lines.append(f"    {'-> ' if ip == pinned else '   '}{name}: {state}")
+    lines.append("  Set config.OVERPASS_URL to https://<a server that answers>/api/interpreter")
+    return "\n".join(lines)
+
+
 def _fetch_graph(region: BaseGeometry) -> nx.MultiDiGraph:
     """Fetch OSM networks for the region, merge, and cache."""
+    if config.OVERPASS_URL:
+        ox.settings.overpass_url = config.OVERPASS_URL
+        print(f"  Overpass: {config.OVERPASS_URL}")
     graphs = []
     for nt in config.NETWORK_TYPES:
         print(f"  Fetching OSM '{nt}' network...")
-        g = ox.graph_from_polygon(region, network_type=nt, simplify=True)
+        try:
+            g = ox.graph_from_polygon(region, network_type=nt, simplify=True)
+        except requests.ConnectionError:
+            print("  Cannot reach the Overpass server:")
+            print(_overpass_diagnosis(ox.settings.overpass_url))
+            raise
         graphs.append(g)
         print(f"    {g.number_of_nodes():,} nodes, {g.number_of_edges():,} edges")
 

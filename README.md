@@ -224,6 +224,12 @@ lowers it.
 All intermediate results are cached. First run takes longer
 (OSM download + full processing). Subsequent runs process only new rides.
 
+If that first fetch dies on `Connection refused`, it is probably not your
+network: `overpass-api.de` round-robins between two servers, and osmnx pins a
+whole run to whichever one the resolver names first, with no fallback — so
+one server being down refuses every fetch while `curl` still works. The run
+prints which address answers; put that server in `OVERPASS_URL`.
+
 ## Map-Matching
 
 Raw GPS traces are noisy — points drift to sidewalks, parallel service roads,
@@ -270,6 +276,7 @@ worth knowing about:
 | `RESAMPLE_SPACING_M` | 20 | Resample GPS points to this spacing (meters) |
 | `MAX_GPS_GAP_M` | 300 | Split ride into segments at gaps larger than this |
 | `NETWORK_TYPES` | bike, drive, walk | OSM network types to fetch |
+| `OVERPASS_URL` | None | Overpass endpoint; None uses osmnx's default |
 | `NYC_BBOX` | 40.49, -74.30, 41.0, -73.60 | The city box: which rides count, and what coverage is measured over |
 | `CORRIDOR_BUFFER_M` | 500 | Width of the graph corridor around riding outside the box |
 | `SAMPLE_SIZE` | None | Limit number of rides processed (for testing) |

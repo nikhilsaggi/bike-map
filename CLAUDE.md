@@ -46,7 +46,13 @@ interactive Leaflet map (`docs/`, served via GitHub Pages) plus static PNGs.
 2. `graph.py` -- fetch/merge OSM networks (bike+drive+walk), cache to pickle.
    The fetch is a **polygon**, not a box: `_fetch_region` is the city box as
    far as the rides reach it, unioned with a `CORRIDOR_BUFFER_M` corridor
-   around whatever they ride outside it (see below)
+   around whatever they ride outside it (see below). A `Connection refused`
+   from Overpass is usually not the network: osmnx's `_config_dns` resolves
+   the host **once** with `gethostbyname` and mutates `getaddrinfo` to pin
+   the run to that one IP, so a hostname round-robining between a live
+   server and a dead one fails every time while curl walks past it.
+   `_overpass_diagnosis` prints which address answers and
+   `config.OVERPASS_URL` names it
 3. `hmm.py` / `matching.py` -- map-match rides to edges. `MATCHER = "hmm"`
    (leuvenmapmatching Viterbi) is the default; the "heuristic" snap+route
    matcher is kept for comparison. Parallel matching via worker processes

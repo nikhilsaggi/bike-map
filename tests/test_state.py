@@ -7,6 +7,8 @@ import pickle
 
 import networkx as nx
 import numpy as np
+import pytest
+import requests
 import shapely.geometry
 
 from bike_routes import cache, config, graph, render
@@ -204,6 +206,84 @@ def test_region_grows_with_a_ride_and_never_shrinks(tmp_path, monkeypatch):
     graph._load_graph([("a.csv", coords)], state)
 
     assert fetched[0].contains(shapely.geometry.box(-74.0, 40.7, -73.9, 40.8))
+
+
+_REFUSED = "Connection refused"
+
+
+class _RefusingSocket:
+    """A socket whose connect fails for one address and succeeds for the rest."""
+
+    dead = "65.0.0.2"
+
+    def __init__(self):
+        self.timeout = None
+
+    def settimeout(self, t):
+        self.timeout = t
+
+    def connect(self, addr):
+        if addr[0] == self.dead:
+            raise ConnectionRefusedError(111, _REFUSED)
+
+    def close(self):
+        pass
+
+
+def test_overpass_diagnosis_names_the_server_that_answers(monkeypatch):
+    # The failure this exists for: osmnx pins the run to one of a hostname's
+    # addresses and never falls back, so a half-dead round-robin refuses
+    # every time while curl works. The report has to say which half.
+    monkeypatch.setattr(graph.socket, "gethostbyname", lambda _h: _RefusingSocket.dead)
+    monkeypatch.setattr(
+        graph.socket,
+        "getaddrinfo",
+        lambda *_a, **_k: [(2, 1, 6, "", (ip, 443)) for ip in ("162.0.0.1", _RefusingSocket.dead)],
+    )
+    monkeypatch.setattr(graph.socket, "socket", lambda *_a, **_k: _RefusingSocket())
+    monkeypatch.setattr(graph.socket, "gethostbyaddr", lambda ip: (f"host-{ip}", [], [ip]))
+
+    report = graph._overpass_diagnosis("https://overpass-api.de/api/interpreter")
+
+    assert "162.0.0.1" in report
+    assert "accepts connections" in report
+    assert "Connection refused" in report
+    assert f"osmnx pins {_RefusingSocket.dead}" in report  # the one that is down
+    assert "config.OVERPASS_URL" in report
+
+
+def test_fetch_graph_diagnoses_a_refused_overpass_and_reraises(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+
+    def _refuse(*_a, **_k):
+        raise requests.ConnectionError(_REFUSED)
+
+    monkeypatch.setattr(graph.ox, "graph_from_polygon", _refuse)
+    monkeypatch.setattr(graph, "_overpass_diagnosis", lambda _url: "  <diagnosis>")
+
+    with pytest.raises(requests.ConnectionError):
+        graph._fetch_graph(shapely.geometry.box(-74.0, 40.7, -73.9, 40.8))
+
+    out = capsys.readouterr().out
+    assert "Cannot reach the Overpass server" in out
+    assert "<diagnosis>" in out
+
+
+def test_configured_overpass_url_is_used(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(config, "OVERPASS_URL", "https://gall.example/api/interpreter")
+    monkeypatch.setattr(graph.ox.settings, "overpass_url", "https://default.example/api")
+
+    def _refuse(*_a, **_k):
+        raise requests.ConnectionError(_REFUSED)
+
+    monkeypatch.setattr(graph.ox, "graph_from_polygon", _refuse)
+    monkeypatch.setattr(graph, "_overpass_diagnosis", lambda _url: "")
+
+    with pytest.raises(requests.ConnectionError):
+        graph._fetch_graph(shapely.geometry.box(-74.0, 40.7, -73.9, 40.8))
+
+    assert graph.ox.settings.overpass_url == "https://gall.example/api/interpreter"
 
 
 def test_region_is_refetched_for_a_ride_that_leaves_the_box(tmp_path, monkeypatch):

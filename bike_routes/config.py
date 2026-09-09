@@ -12,6 +12,14 @@ SAMPLE_SIZE = None  # set to e.g. 100 for quick preview, None for all rides
 RIDE_FILES = None  # set to e.g. ["2024-06-19_13-35-52_-0400.csv"] to process specific rides
 RESAMPLE_SPACING_M = 20
 NETWORK_TYPES = ["bike", "drive", "walk"]
+# Overpass endpoint, or None for osmnx's own default (overpass-api.de).
+# Worth knowing before you need it: overpass-api.de round-robins between two
+# machines (gall and lambert .openstreetmap.de), and osmnx pins the whole run
+# to whichever ONE of them socket.gethostbyname returns, with no fallback --
+# so if that machine is down, every fetch dies on "Connection refused" while
+# curl and every other client still work.  graph._overpass_diagnosis() prints
+# which server answers; name it here.
+OVERPASS_URL = None
 SNAP_TOLERANCE_M = 80
 MAX_ROUTING_DISTANCE_M = 2500
 MAX_ROUTE_DETOUR = 3.0  # reject routes longer than this multiple of straight-line distance
