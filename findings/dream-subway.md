@@ -5,12 +5,11 @@ serve the trips these rides actually make? Everything below is measured from
 `rides/*.csv` and `docs/rides.geojson.gz`. Reproduce it with
 `tools/dream_subway/` (see its README for the running order).
 
-## The two measurements the design rests on
+## Where the rides end
 
-**Where rides end.** The first and last fix of each of the 1,407 recordings,
-clustered by density at a 300 m radius, gives 2,814 trip ends in 329 places.
-The distribution is extremely top-heavy, which is the only reason a network is
-possible at all:
+The first and last fix of each of the 1,407 recordings, clustered by density at
+a 300 m radius, gives 2,814 trip ends in 329 places. The distribution is
+extremely top-heavy, which is the only reason a network is possible at all:
 
 | Place (nearest dock) | Trip ends |
 | --- | ---: |
@@ -24,38 +23,75 @@ possible at all:
 Four places take 44% of every trip end; twenty take 65%. 1,320 rides ended
 somewhere other than where they began; the other 87 are loops.
 
-**Which streets carry the passes.** Ranking named streets by pass-metres --
-drawn length times recorded crossings -- over the export's features:
+The *flows* between them are far flatter than that: 697 distinct pairs, of
+which the five heaviest carry only 15% of rides. The demand is a star with a
+very long tail, so a network is judged on the tail.
 
-| Corridor | pass-km |
-| --- | ---: |
-| Broadway | 241 |
-| Central Park drives (West + East) | 235 |
-| Sixth Avenue | 196 |
-| Second Avenue | 181 |
-| Hudson River Greenway | 179 |
-| Williamsburg Bridge path | 167 |
-| Manhattan Bridge path | 167 |
-| Eighth Avenue | 124 |
-| Queensboro Bridge path | 92 |
+## The first cut was wrong, and how that was caught
 
-That ranking *is* the line map. Eight lines cover it: 2 (Second Av), 6 (Sixth
-Av, continuing on Broadway below W 8 St), 9 (Eighth Av / Columbus),
-C (Midtown crosstown, W 49 St to the Queensboro), H (Hudson Greenway),
-P (Park Loop), L (Williamsburg Bridge), M (Manhattan Bridge).
+The first version placed stations at pass-count maxima along ridden corridors
+and aligned every line to a street. Scored on the same test -- walk from each
+ride end to the nearest station -- trip-end clusters alone beat it at equal
+station count:
 
-## What the design is scored on
+| Station set | <=400 m | <=600 m | <=800 m |
+| --- | ---: | ---: | ---: |
+| corridor + anchor stations, 52 | 55% | 72% | 80% |
+| top-52 trip-end clusters, 52 | 68% | 76% | 81% |
 
-45 stations, 52 km, 7 transfers. Taking each of the 1,320 A-to-B rides and
-measuring the walk from each end to the nearest station:
+26 of those 52 stations sat somewhere that was not a significant trip end. The
+street data was spending station budget rather than earning it, because street
+passes measure *how the bike gets there*, which is dominated by bike-lane
+geography a tunnel does not share. Two whole lines were artefacts of it: a
+Hudson River Greenway line (179 pass-km, 29 trip ends) and a Central Park loop
+(235 pass-km, almost no trip ends). Both are how this rider travels, not where.
 
-| Walk at each end | Rides | Share |
+The kept version consults the origin-destination matrix and nothing else, and
+is scored on changes rather than on walk access alone.
+
+## What the O-D matrix asks for
+
+44 places clear the nine-trip-end bar; 36 of them end up on a line. Five lines,
+44.9 km:
+
+| | Line | Stops | Route |
+| --- | --- | ---: | --- |
+| 1 | Broadway - Bushwick | 12 | W 78 St - Montrose Av |
+| 2 | West Side - Yorkville | 13 | Division St - E 89 St |
+| 3 | East Side - Tribeca | 10 | E 47 St - Murray St |
+| 4 | SoHo - Bushwick | 9 | Pier 40 - McKibbin St |
+| 5 | Broadway Local | 9 | W 54 St - Murray St |
+
+Line 1 is the whole finding in one route: all four of the busiest places in
+five years sit on it, so any pair of them is reachable without a change. It
+follows no single street -- it runs diagonally from the Upper West Side through
+Times Square and Grand Central to the Lower East Side and out to Bushwick.
+
+Outcomes over the 1,320 point-to-point rides:
+
+| Outcome | Rides | Share |
 | --- | ---: | ---: |
-| within 400 m | 722 | 55% |
-| within 600 m | 947 | 72% |
-| within 800 m | 1,050 | 80% |
+| no change at all | 773 | 59% |
+| one change | 176 | 13% |
+| two or more changes | 133 | 10% |
+| no station within 800 m | 238 | 18% |
 
 ## Decisions worth recording
+
+**Five lines is the knee, not a preference.** Four reach 68% of rides within
+one change, five 72%, six 74% for another 7 km of route. The sweep is in
+`odnet.py`'s output.
+
+**Terminals have to earn their length, and seeds bypass that.** Each line is
+seeded on a demand pair before any density test, so `trim_terminals` runs
+afterwards: an end stop stays only if it keeps at least 3.5 rides per km of
+route it adds. Without it a line ran to W 204 St -- nine trip ends, ten
+kilometres -- because the seed put it there and nothing took it back off.
+
+**Insertion beats extension.** Growing lines only at their ends made them
+wander into the tail chasing small gains. Allowing a station to be inserted at
+any position, gated on demand per kilometre added, keeps lines straight and
+lets them pick up an intermediate place without distorting their shape.
 
 **A pass count is `len(properties["rides"])`, never `properties["n"]`.**
 `n` is the neighborhood index (`neighborhoods.py:361`). An early ranking used
@@ -66,40 +102,17 @@ Boro route -- and that `properties.max_count` said 174 while the ranking
 claimed 209.
 
 **Street names repeat across boroughs, so a corridor needs a lat/lon window.**
-Unwindowed, "Broadway" chains Manhattan to Bushwick in one polyline and adds a
-2.9 km hop across the East River.
-
-**The four anchors are three lines, not four.** Grand Central to the Lower East
-Side to East Williamsburg is one through-route -- Second Avenue, then the
-Williamsburg Bridge -- because that is how the rides run. Times Square is the
-odd one out: it is the largest anchor by a factor of 1.5 and it is served by
-two lines crossing (9 and C) rather than by a terminal.
-
-**Express is a rule, not a judgement.** A stop runs express if it is a transfer
-or if it is one of the fourteen busiest trip ends (26 arrivals or more). The
-cut at 26 is a real break in the cluster distribution -- 26 then 22 -- not a
-round number. It gives 16 express stops of 45.
-
-**Two lines are local-only.** The Park Loop, where every stop is a destination
-rather than a way through, and the Manhattan Bridge, at four stops too short
-for the distinction to buy anything.
-
-**The bridge is the express run.** The Williamsburg Bridge path averages 74
-passes over 2.2 km -- the heaviest single stretch in the whole export -- and
-carries no intermediate stop. A station was placed there by the demand
-sampler and removed: it was reading FDR service roads beside the approach,
-not the path.
+This mattered to the superseded first cut and still matters to `corridors.py`,
+which the diagnostics use: unwindowed, "Broadway" chains Manhattan to Bushwick
+in one polyline and adds a 2.9 km hop across the East River.
 
 ## What it cannot claim
 
 - A trip end is where a recording started, which is not always where the rider
   did.
-- Passes are counted per drawn feature, so a corridor of two parallel ways
-  (a street and its bike lane) splits its traffic between them and both rank
-  lower than the corridor deserves.
-- The greenway and the park drives are credited with riding that is the point
-  of the trip rather than a way through it. A subway line is the wrong shape
-  for that traffic, and the Park Loop is the honest version of the concession.
-- Second Avenue above E 63 St carries 4 to 8 passes a stretch against 90 at
-  Grand Street. It is drawn because the rides are there, not because the
-  traffic justifies a train.
+- Frequency, capacity and interchange time are not modelled. "One change"
+  counts a change; it does not price one.
+- The 238 unreachable rides are spread thin -- no single missing place accounts
+  for more than a handful -- so no sixth line recovers them. They are the cost
+  of a 36-station network in a city this size, not a fixable gap.
+- It is fitted to one rider's five years. It is a portrait, not a plan.

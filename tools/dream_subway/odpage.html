@@ -1,0 +1,411 @@
+<title>Dream Subway</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600&display=swap">
+<style>
+:root{
+  --paper:#e9edf0; --card:#fbfcfd; --sunk:#dfe6ea;
+  --ink:#0f1a21; --ink-2:#3d4d57; --mute:#65767f;
+  --rule:#c6d2d9; --rule-soft:#dbe3e8;
+  --chord:#7d95a2;
+  --stn:#fbfcfd; --stn-ring:#0f1a21;
+  --shadow:0 1px 2px rgba(15,26,33,.06),0 8px 28px rgba(15,26,33,.07);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --paper:#0a1014; --card:#121b21; --sunk:#0e161b;
+    --ink:#e6eef3; --ink-2:#b3c3cc; --mute:#8497a1;
+    --rule:#243239; --rule-soft:#1b262c;
+    --chord:#4a626e;
+    --stn:#121b21; --stn-ring:#e6eef3;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px rgba(0,0,0,.35);
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#0a1014; --card:#121b21; --sunk:#0e161b;
+  --ink:#e6eef3; --ink-2:#b3c3cc; --mute:#8497a1;
+  --rule:#243239; --rule-soft:#1b262c;
+  --chord:#4a626e;
+  --stn:#121b21; --stn-ring:#e6eef3;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px rgba(0,0,0,.35);
+}
+
+*{box-sizing:border-box}
+body{background:var(--paper);color:var(--ink);
+  font:400 15px/1.6 Barlow,"Helvetica Neue",Arial,sans-serif;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1180px;margin:0 auto;padding:0 24px 96px}
+h1,h2{font-family:Archivo,"Helvetica Neue",Arial,sans-serif;text-wrap:balance;margin:0}
+.eyebrow{font:600 11px/1 Barlow,sans-serif;letter-spacing:.16em;text-transform:uppercase;color:var(--mute)}
+
+header{padding:56px 0 28px;border-bottom:2px solid var(--ink)}
+h1{font-size:clamp(40px,7vw,76px);font-weight:700;letter-spacing:-.03em;line-height:.94;margin:14px 0 0}
+.lede{margin:18px 0 0;max-width:62ch;font-size:17px;color:var(--ink-2)}
+.figs{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:1px;
+  background:var(--rule);border:1px solid var(--rule);margin:30px 0 0}
+.fig{background:var(--paper);padding:14px 16px 15px}
+.fig b{display:block;font:600 30px/1 Archivo,sans-serif;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.fig span{display:block;margin-top:5px;font-size:12.5px;color:var(--mute);line-height:1.35}
+
+section{padding-top:52px}
+.shead{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-bottom:6px}
+.shead h2{font-size:26px;font-weight:600;letter-spacing:-.015em}
+.snote{margin:0 0 22px;max-width:66ch;color:var(--ink-2)}
+
+.mapcard{background:var(--card);border:1px solid var(--rule);box-shadow:var(--shadow);padding:8px 8px 0}
+.mapwrap{overflow-x:auto}
+svg.map{display:block;width:100%;min-width:820px;height:auto}
+.maplegend{display:flex;flex-wrap:wrap;gap:6px;padding:12px 8px 14px;
+  border-top:1px solid var(--rule-soft);margin-top:4px}
+.chip{display:inline-flex;align-items:center;gap:8px;border:1px solid transparent;
+  background:var(--sunk);border-radius:999px;padding:4px 12px 4px 4px;cursor:pointer;
+  font:500 13px/1 Barlow,sans-serif;color:var(--ink);transition:opacity .15s}
+.chip:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+.chip.off{opacity:.34}
+.bullet{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;
+  font:700 12px/1 Archivo,sans-serif;color:#fff}
+.mapfoot{display:flex;justify-content:space-between;gap:18px;flex-wrap:wrap;
+  font-size:12.5px;color:var(--mute);padding:0 8px 14px}
+
+.guide{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:1px;
+  background:var(--rule);border:1px solid var(--rule)}
+.lcard{background:var(--card);padding:18px 18px 22px;display:flex;flex-direction:column;gap:14px}
+.lhead{display:flex;gap:11px;align-items:flex-start}
+.lhead .bullet{width:28px;height:28px;font-size:15px;flex:0 0 auto;margin-top:1px}
+.lname{font:600 16px/1.15 Archivo,sans-serif;letter-spacing:-.01em}
+.lterm{font-size:12.5px;color:var(--mute);margin-top:3px}
+.lmeta{font:500 11px/1 Barlow,sans-serif;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--mute);font-variant-numeric:tabular-nums}
+.strip{display:grid;grid-template-columns:26px 1fr auto;align-items:center}
+.strip .rail{grid-column:1;position:relative;height:32px;display:grid;place-items:center}
+.strip .rail::before{content:"";position:absolute;left:50%;top:0;bottom:0;width:6px;
+  transform:translateX(-50%);background:var(--lc)}
+.strip .rail.first::before{top:50%}
+.strip .rail.last::before{bottom:50%}
+.dot{position:relative;width:9px;height:9px;border-radius:50%;background:var(--stn);border:2px solid var(--lc)}
+.dot.exp{width:14px;height:14px;border:2.5px solid var(--stn-ring)}
+.sname{grid-column:2;padding-left:10px;font-size:13.5px;line-height:1.25;
+  display:flex;align-items:center;min-height:32px;gap:7px}
+.sname.exp{font-weight:600}
+.xfmark{display:inline-flex;gap:3px}
+.xfmark i{width:15px;height:15px;border-radius:50%;display:grid;place-items:center;
+  font:700 9px/1 Archivo,sans-serif;color:#fff;font-style:normal}
+.wt{grid-column:3;min-height:32px;display:flex;align-items:center;gap:6px;justify-content:flex-end;
+  font-variant-numeric:tabular-nums;font-size:11.5px;color:var(--mute)}
+.wtbar{height:5px;background:var(--lc);opacity:.5;border-radius:1px}
+.lfoot{font-size:12.5px;color:var(--ink-2);border-top:1px solid var(--rule-soft);padding-top:12px}
+
+.two{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:28px}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
+caption{text-align:left;font:600 11px/1 Barlow,sans-serif;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--mute);padding-bottom:10px}
+th,td{text-align:left;padding:7px 10px 7px 0;border-bottom:1px solid var(--rule-soft);
+  font-size:13.5px;vertical-align:baseline}
+th{font:600 11px/1 Barlow,sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--mute)}
+td.num,th.num{text-align:right;padding-right:0;white-space:nowrap}
+td.bar{width:34%;padding-right:0}
+.mini{height:7px;background:var(--ink);opacity:.7;border-radius:1px}
+.mini.alt{background:var(--mute);opacity:.5}
+
+.method{background:var(--sunk);border:1px solid var(--rule);padding:26px 28px}
+.method ul{margin:14px 0 0;padding-left:20px;display:flex;flex-direction:column;gap:9px}
+.method li{max-width:74ch;color:var(--ink-2);font-size:14px}
+.method b{color:var(--ink);font-weight:600}
+footer{margin-top:44px;padding-top:18px;border-top:1px solid var(--rule);font-size:12.5px;color:var(--mute)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+<header>
+  <div class="eyebrow">Transit proposal &middot; fitted to 1,320 point-to-point rides, 2021&ndash;2026</div>
+  <h1>Dream&nbsp;Subway</h1>
+  <p class="lede">Five lines fitted to where the rides <em>go</em> &mdash; not to the streets they
+  take getting there. Stations are the places rides begin and end. Lines are whichever paths
+  through those places carry the most trips without a change. No alignment follows a bike
+  route, because a tunnel has no reason to.</p>
+  <div class="figs" id="figs"></div>
+</header>
+
+<section>
+  <div class="shead">
+    <h2>The network</h2>
+    <span class="eyebrow" id="mapcount"></span>
+  </div>
+  <p class="snote">A schematic, not a map: stations sit at their true positions rotated so
+  Manhattan stands upright, but every route between them is drawn as a straight run or a
+  45&deg; turn. The grey chords behind the lines are the demand itself &mdash; one for each pair
+  of places with two or more rides between them. The network is the attempt to cover them.</p>
+  <div class="mapcard">
+    <div class="mapwrap">
+      <svg class="map" id="svg" viewBox="-415 -398 1425 796" role="img"
+           aria-label="Five-line schematic over the origin-destination demand it serves"></svg>
+    </div>
+    <div class="maplegend" id="legend"></div>
+    <div class="mapfoot">
+      <span>Large ring = express stop &middot; small dot = local &middot; black ring = interchange</span>
+      <span>Select a route to isolate it</span>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="shead">
+    <h2>Line guide</h2>
+    <span class="eyebrow">local and express patterns</span>
+  </div>
+  <p class="snote">A stop runs express if it is an interchange or a place with 45 or more
+  recorded arrivals. The bar beside each stop is how many rides have begun or ended there
+  &mdash; which on this network is the whole reason the stop exists.</p>
+  <div class="guide" id="lineguide"></div>
+</section>
+
+<section>
+  <div class="shead"><h2>What it was fitted to, and what it misses</h2></div>
+  <p class="snote">The demand is a star, not a grid. 1,320 point-to-point rides spread over
+  697 distinct pairs of places, and the five heaviest pairs carry only 15% of them &mdash; so
+  the network is judged on the long tail, not the headline flows.</p>
+  <div class="two">
+    <div><table id="pairs"><caption>Heaviest flows</caption></table></div>
+    <div><table id="hubs"><caption>Busiest interchanges</caption></table></div>
+  </div>
+  <div class="two" style="margin-top:32px">
+    <div><table id="outcome"><caption>Every point-to-point ride, by outcome</caption></table></div>
+    <div>
+      <p class="snote" style="margin-top:26px">The 238 unreachable rides are the honest
+      cost of a 36-station network in a city this size: an end more than 800&nbsp;m from
+      anywhere the rider has repeatedly been. They are spread thin &mdash; no single missing
+      place accounts for more than a handful &mdash; so no sixth line recovers them. The 133
+      stranded rides do reach the network but need two changes, and a sixth line buys back
+      only two points of them.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="shead"><h2>How it was cut</h2></div>
+  <div class="method">
+    <ul>
+      <li><b>Stations, from trip ends only.</b> The first and last fix of every ride,
+      clustered at 300&nbsp;m, then merged again at 480&nbsp;m so no two stops crowd each
+      other. A place needs nine recorded arrivals to earn a stop. Names are the nearest
+      Citi Bike dock.</li>
+      <li><b>Lines, from the demand matrix.</b> Each line is seeded on the heaviest pair
+      not yet served without a change, then grown by inserting whichever station buys the
+      most unserved demand per kilometre of route it adds. A line may not kink more than
+      62&deg; at a stop, nor wander more than 1.38&times; its own straight run, nor repeat
+      more than half of a line already laid down.</li>
+      <li><b>Five, because the sixth is not worth it.</b> Four lines reach 68% of rides
+      within one change; five reach 72%; six reach 74% and cost another 7&nbsp;km of route.
+      The count is the knee, not a preference.</li>
+      <li><b>What this version deliberately drops.</b> An earlier cut of this proposal
+      aligned its lines to the streets the bike actually rides, which put a line down the
+      Hudson River Greenway and a loop around Central Park. Both carry enormous bike
+      traffic and almost no trip ends: they are how the rider travels, not where. Scored
+      on walk access at equal station count, street-derived stations lost to trip-end
+      stations at every radius.</li>
+      <li><b>What it still cannot say.</b> A trip end is where a recording started, which
+      is not always where the rider did. Frequency, capacity and interchange time are not
+      modelled &mdash; &ldquo;one change&rdquo; counts a change, not what it costs. And the
+      whole thing is fitted to one person's five years, so it is a portrait, not a plan.</li>
+    </ul>
+  </div>
+</section>
+
+<footer>
+  Built from the ride CSVs and <code>docs/rides.geojson.gz</code>. Station positions are real
+  lon/lat, rotated 29&deg; and stretched east&ndash;west; route geometry is schematic.
+</footer>
+</div>
+
+<script id="netdata" type="application/json">__DATA__</script>
+<script>
+const D = JSON.parse(document.getElementById('netdata').textContent);
+const LINES = D.lines, ST = D.stations, SC = D.score;
+const NS = 'http://www.w3.org/2000/svg';
+const el = (n,a) => { const e = document.createElementNS(NS,n);
+  for (const k in a) e.setAttribute(k, a[k]); return e; };
+const byId = Object.fromEntries(LINES.map(l => [l.id, l]));
+
+/* ---------- figures ---------- */
+const km = LINES.reduce((t,l)=>t+l.km,0);
+document.getElementById('figs').innerHTML = [
+  [String(LINES.length), 'lines'],
+  [String(ST.length), `stations, ${ST.filter(s=>s.xf).length} of them interchanges`],
+  [km.toFixed(0)+' km', 'of route'],
+  [Math.round(SC.pct_direct)+'%', 'of rides with no change at all'],
+  [Math.round(SC.pct_within_one)+'%', 'with at most one change']
+].map(([b,s])=>`<div class="fig"><b>${b}</b><span>${s}</span></div>`).join('');
+document.getElementById('mapcount').textContent =
+  `${ST.length} stations · ${km.toFixed(1)} km · ${ST.filter(s=>s.xf).length} interchanges`;
+
+/* ---------- diagram ---------- */
+const svg = document.getElementById('svg');
+const gCh = el('g',{id:'chords'}), gCase = el('g',{id:'case'}),
+      gRt = el('g',{id:'route'}), gSt = el('g',{id:'stn'}), gLb = el('g',{id:'lab'});
+svg.append(gCh, gCase, gRt, gSt, gLb);
+
+const maxChord = Math.max(...D.chords.map(c=>c[4]));
+D.chords.forEach(([x1,y1,x2,y2,v])=>{
+  gCh.append(el('line',{x1,y1,x2,y2, stroke:'var(--chord)',
+    'stroke-width': (0.5 + 3.2*v/maxChord).toFixed(2),
+    'stroke-opacity': (0.16 + 0.4*v/maxChord).toFixed(2), 'stroke-linecap':'round'}));
+});
+
+const routeEls = {};
+LINES.forEach(l=>{
+  const cs = [], rt = [];
+  l.segs.forEach(d=>{
+    cs.push(gCase.appendChild(el('path',{d, fill:'none', stroke:'var(--card)',
+      'stroke-width':11.5, 'stroke-linecap':'round','stroke-linejoin':'round'})));
+    rt.push(gRt.appendChild(el('path',{d, fill:'none', stroke:l.colour,
+      'stroke-width':6.2, 'stroke-linecap':'round','stroke-linejoin':'round'})));
+  });
+  routeEls[l.id] = cs.concat(rt);
+});
+
+ST.forEach((s,i)=>{
+  const g = el('g',{class:'stnode','data-lines':s.lines.join(' ')});
+  const r = s.xf ? 6.0 : s.exp ? 4.8 : 3.4;
+  g.append(el('circle',{cx:s.p[0], cy:s.p[1], r, fill:'var(--stn)',
+    stroke: s.xf ? 'var(--stn-ring)' : byId[s.lines[0]].colour,
+    'stroke-width': s.xf ? 2.6 : 2.2}));
+  const t = el('title');
+  t.textContent = `${s.n} — ${s.w} recorded arrivals or departures · ${s.lines.join(' ')}`;
+  g.append(t);
+  gSt.append(g);
+});
+
+/* label side: overrides first, then east/west of centre */
+const OVER = {
+  'Broadway & W 48 St':['l',-14,-6], 'E 43 St & Madison Ave':['r',14,11],
+  'Broadway & W 58 St':['l',-14,4], 'W 70 St & Amsterdam Ave':['l',-14,4],
+  'W 78 St & Broadway':['l',-14,4], 'W 54 St & 9 Ave':['l',-14,4],
+  'W 42 St & 8 Ave':['l',-14,4],    '8 Ave & W 31 St':['l',-14,4],
+  '9 Ave & W 22 St':['l',-14,4],    'Hudson St & W 13 St':['l',-14,4],
+  'Pier 40 - Hudson River Park':['l',-14,11], 'W Broadway & Spring St':['u',0,-12],
+  'Murray St & Greenwich St':['l',-14,4], 'Leonard St & Church St':['l',-14,11],
+  'Broadway & W 36 St':['r',14,-6], 'Broadway & W 25 St':['r',14,-6],
+  'Lexington Ave & E 29 St':['r',14,4], '4 Ave & E 12 St':['r',14,4],
+  'Washington Pl & Broadway':['l',-14,12], 'Cleveland Pl & Spring St':['r',14,-6],
+  'Division St & Bowery':['d',14,19], 'Forsyth St & Broome St':['l',-14,-6],
+  'Clinton St & Grand St':['r',15,11], 'Suffolk St & Stanton St':['u',0,-12],
+  '1 Ave & E 6 St':['u',0,-12],     'E 47 St & 2 Ave':['r',14,4],
+  'E 50 St & Park Ave':['r',14,4],  'E 58 St & 1 Ave (NW Corner)':['r',14,4],
+  'E 77 St & 1 Ave':['r',14,4],     'E 85 St & 3 Ave':['r',14,4],
+  'E 89 St & 3 Ave':['r',14,4],
+  'N 6 St & Bedford Ave':['d',0,19], 'Manhattan Ave & Devoe St':['u',0,-11],
+  'Montrose Ave & Bushwick Ave':['u',0,-12], 'McKibbin St & Bogart St':['r',14,4],
+  'Lorimer St & Broadway':['d',0,20],
+};
+const TIDY = s => s.replace(' (NW Corner)','').replace(' - Hudson River Park','')
+  .replace(/ & /g,' / ').replace(/\bAve\b/g,'Av');
+ST.forEach(s=>{
+  const o = OVER[s.n] || (s.p[0] >= 0 ? ['r',14,4] : ['l',-14,4]);
+  const anchor = o[0]==='r' ? 'start' : o[0]==='l' ? 'end' : 'middle';
+  const t = el('text',{x:s.p[0]+o[1], y:s.p[1]+o[2], 'text-anchor':anchor,
+    fill:'var(--ink)', 'font-family':'"Barlow Condensed",Barlow,sans-serif',
+    'font-size': s.exp ? 13 : 12, 'font-weight': s.exp ? 600 : 500,
+    'paint-order':'stroke', stroke:'var(--card)', 'stroke-width':3.6,
+    'stroke-linejoin':'round'});
+  t.textContent = TIDY(s.n);
+  gLb.append(t);
+});
+
+/* ---------- legend ---------- */
+const legend = document.getElementById('legend');
+let iso = null;
+LINES.forEach(l=>{
+  const b = document.createElement('button');
+  b.className='chip'; b.type='button'; b.dataset.line=l.id;
+  b.setAttribute('aria-pressed','false');
+  b.innerHTML = `<span class="bullet" style="background:${l.colour}">${l.id}</span>${l.name}`;
+  b.addEventListener('click', ()=>{
+    iso = (iso === l.id) ? null : l.id;
+    document.querySelectorAll('.chip').forEach(c=>{
+      c.classList.toggle('off', !!iso && c.dataset.line !== iso);
+      c.setAttribute('aria-pressed', String(iso === c.dataset.line));
+    });
+    LINES.forEach(j=>routeEls[j.id].forEach(p=>
+      p.setAttribute('stroke-opacity', iso && j.id !== iso ? 0.12 : 1)));
+    gSt.querySelectorAll('.stnode').forEach(n=>{
+      const has = !iso || n.dataset.lines.split(' ').includes(iso);
+      n.setAttribute('opacity', has ? 1 : 0.16);
+    });
+  });
+  legend.append(b);
+});
+
+/* ---------- line guide ---------- */
+const NOTE = {
+  '1':'The spine the demand asks for: every one of the four busiest places in five years sits on this one line, and it needs no change to link any pair of them.',
+  '2':'The long way round the west side and up to Yorkville. Its stops are individually light, which is why it is the line most sensitive to where the walk radius is drawn.',
+  '3':'Grand Central down the east side to the Lower East Side, then west through Chinatown to Tribeca.',
+  '4':'The other Bushwick route, via SoHo and Bedford Avenue rather than the Lower East Side crossing.',
+  '5':'A Broadway local: Times Square down to Murray Street, doubling the spine through Midtown where the demand is thickest.'
+};
+const maxW = Math.max(...ST.map(s=>s.w));
+document.getElementById('lineguide').innerHTML = LINES.map(l=>{
+  const n = l.stops.length;
+  const rows = l.stops.map((si,i)=>{
+    const s = ST[si];
+    const cls = ['rail', i===0?'first':'', i===n-1?'last':''].join(' ');
+    const others = s.lines.filter(x=>x!==l.id);
+    const xf = others.length
+      ? `<span class="xfmark">${others.map(x=>
+          `<i style="background:${byId[x].colour}">${x}</i>`).join('')}</span>` : '';
+    return `<div class="${cls}"><span class="dot${s.exp?' exp':''}"></span></div>
+      <div class="sname${s.exp?' exp':''}">${TIDY(s.n)}${xf}</div>
+      <div class="wt"><span class="wtbar" style="width:${
+        Math.max(3, 44*s.w/maxW).toFixed(0)}px"></span>${s.w}</div>`;
+  }).join('');
+  return `<div class="lcard" style="--lc:${l.colour}">
+    <div class="lhead"><span class="bullet" style="background:${l.colour}">${l.id}</span>
+      <div><div class="lname">${l.name}</div>
+      <div class="lterm">${TIDY(l.from)} &ndash; ${TIDY(l.to)}</div></div></div>
+    <div class="lmeta">${l.km.toFixed(1)} km · ${n} stops · ${
+      l.stops.filter(si=>ST[si].exp).length} express</div>
+    <div class="strip">${rows}</div>
+    <div class="lfoot">${NOTE[l.id]}</div>
+  </div>`;
+}).join('');
+
+/* ---------- evidence ---------- */
+const bar = (v,max,alt) => `<td class="bar"><div class="mini${alt?' alt':''}" style="width:${
+  Math.max(2,100*v/max).toFixed(1)}%"></div></td>`;
+const PLACE = {
+  'Broadway & W 48 St':'Times Square','E 43 St & Madison Ave':'Grand Central',
+  'Clinton St & Grand St':'Lower East Side','Montrose Ave & Bushwick Ave':'East Williamsburg',
+  'W 70 St & Amsterdam Ave':'Upper West Side','Washington Pl & Broadway':'Washington Square',
+  'Leonard St & Church St':'Tribeca','Broadway & W 58 St':'Columbus Circle',
+  'Lorimer St & Broadway':'South Williamsburg','E 50 St & Park Ave':'E 50 St / Park Av',
+  'E 47 St & 2 Ave':'E 47 St / Second Av','4 Ave & E 12 St':'Union Square'
+};
+const nice = n => PLACE[n] || TIDY(n);
+
+const PAIRS = [
+  ['Times Square','Upper West Side',57],['Times Square','Grand Central',45],
+  ['Grand Central','Lower East Side',38],['Times Square','E 50 St / Park Av',30],
+  ['East Williamsburg','South Williamsburg',24],['Times Square','Washington Square',16],
+  ['Grand Central','E 47 St / Second Av',13],['Grand Central','East Williamsburg',12]
+];
+document.getElementById('pairs').innerHTML +=
+  '<tr><th>From</th><th>To</th><th class="num">Rides</th></tr>' +
+  PAIRS.map(([a,b,v])=>`<tr><td>${a}</td><td>${b}</td><td class="num">${v}</td></tr>`).join('');
+
+const hubs = ST.filter(s=>s.xf).sort((a,b)=>b.w-a.w).slice(0,8);
+document.getElementById('hubs').innerHTML +=
+  '<tr><th>Station</th><th></th><th class="num">Trip ends</th><th class="num">Lines</th></tr>' +
+  hubs.map(s=>`<tr><td>${nice(s.n)}</td>${bar(s.w,hubs[0].w)}<td class="num">${s.w}</td>` +
+    `<td class="num"><span class="xfmark">${s.lines.map(x=>
+      `<i style="background:${byId[x].colour}">${x}</i>`).join('')}</span></td></tr>`).join('');
+
+const OUT = [
+  ['no change at all', SC.direct],
+  ['one change', SC.one_change],
+  ['two or more changes', SC.stranded],
+  ['no station within 800 m', SC.rides - SC.reachable]
+];
+document.getElementById('outcome').innerHTML +=
+  '<tr><th>Outcome</th><th></th><th class="num">Rides</th><th class="num">Share</th></tr>' +
+  OUT.map(([k,v],i)=>`<tr><td>${k}</td>${bar(v,SC.rides,i>1)}<td class="num">${
+    Math.round(v)}</td><td class="num">${Math.round(100*v/SC.rides)}%</td></tr>`).join('');
+</script>
