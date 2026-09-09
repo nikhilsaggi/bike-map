@@ -1,0 +1,477 @@
+<title>Dream Subway</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600&display=swap">
+<style>
+:root{
+  --paper:#e9edf0; --card:#fbfcfd; --sunk:#dfe6ea;
+  --ink:#0f1a21; --ink-2:#3d4d57; --mute:#65767f;
+  --rule:#c6d2d9; --rule-soft:#dbe3e8;
+  --ghost:#95a8b2; --ghost-hi:#7c929e;
+  --stn:#fbfcfd; --stn-ring:#0f1a21;
+  --shadow:0 1px 2px rgba(15,26,33,.06),0 8px 28px rgba(15,26,33,.07);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --paper:#0a1014; --card:#121b21; --sunk:#0e161b;
+    --ink:#e6eef3; --ink-2:#b3c3cc; --mute:#8497a1;
+    --rule:#243239; --rule-soft:#1b262c;
+    --ghost:#33454e; --ghost-hi:#46606d;
+    --stn:#121b21; --stn-ring:#e6eef3;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px rgba(0,0,0,.35);
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#0a1014; --card:#121b21; --sunk:#0e161b;
+  --ink:#e6eef3; --ink-2:#b3c3cc; --mute:#8497a1;
+  --rule:#243239; --rule-soft:#1b262c;
+  --ghost:#33454e; --ghost-hi:#46606d;
+  --stn:#121b21; --stn-ring:#e6eef3;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px rgba(0,0,0,.35);
+}
+
+*{box-sizing:border-box}
+body{
+  background:var(--paper); color:var(--ink);
+  font:400 15px/1.6 Barlow,"Helvetica Neue",Arial,sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1180px;margin:0 auto;padding:0 24px 96px}
+h1,h2,h3{font-family:Archivo,"Helvetica Neue",Arial,sans-serif;text-wrap:balance;margin:0}
+.eyebrow{
+  font:600 11px/1 Barlow,sans-serif;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--mute);
+}
+
+/* ---------- masthead ---------- */
+header{padding:56px 0 28px;border-bottom:2px solid var(--ink)}
+h1{font-size:clamp(40px,7vw,76px);font-weight:700;letter-spacing:-.03em;line-height:.94;margin:14px 0 0}
+.lede{margin:18px 0 0;max-width:62ch;font-size:17px;color:var(--ink-2)}
+.figs{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:1px;
+  background:var(--rule);border:1px solid var(--rule);margin:30px 0 0}
+.fig{background:var(--paper);padding:14px 16px 15px}
+.fig b{display:block;font:600 30px/1 Archivo,sans-serif;letter-spacing:-.02em;
+  font-variant-numeric:tabular-nums}
+.fig span{display:block;margin-top:5px;font-size:12.5px;color:var(--mute);line-height:1.35}
+
+/* ---------- sections ---------- */
+section{padding-top:52px}
+.shead{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-bottom:6px}
+.shead h2{font-size:26px;font-weight:600;letter-spacing:-.015em}
+.snote{margin:0 0 22px;max-width:66ch;color:var(--ink-2)}
+
+/* ---------- map ---------- */
+.mapcard{background:var(--card);border:1px solid var(--rule);box-shadow:var(--shadow);
+  padding:8px 8px 0;position:relative}
+.mapwrap{overflow-x:auto}
+svg.map{display:block;width:100%;min-width:760px;height:auto}
+.maplegend{display:flex;flex-wrap:wrap;gap:6px;padding:12px 8px 14px;
+  border-top:1px solid var(--rule-soft);margin-top:4px}
+.chip{display:inline-flex;align-items:center;gap:8px;border:1px solid transparent;
+  background:var(--sunk);border-radius:999px;padding:4px 12px 4px 4px;cursor:pointer;
+  font:500 13px/1 Barlow,sans-serif;color:var(--ink);transition:opacity .15s,border-color .15s}
+.chip:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+.chip.off{opacity:.34}
+.bullet{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;
+  font:700 12px/1 Archivo,sans-serif;color:#fff}
+.bullet.dk{color:#231a00}
+.mapfoot{display:flex;justify-content:space-between;gap:18px;flex-wrap:wrap;
+  font-size:12.5px;color:var(--mute);padding:0 8px 14px}
+
+/* ---------- line guide ---------- */
+.guide{display:grid;grid-template-columns:repeat(auto-fill,minmax(268px,1fr));gap:1px;
+  background:var(--rule);border:1px solid var(--rule)}
+.lcard{background:var(--card);padding:18px 18px 22px;display:flex;flex-direction:column;gap:14px}
+.lhead{display:flex;gap:11px;align-items:flex-start}
+.lhead .bullet{width:28px;height:28px;font-size:15px;flex:0 0 auto;margin-top:1px}
+.lname{font:600 16px/1.15 Archivo,sans-serif;letter-spacing:-.01em}
+.lterm{font-size:12.5px;color:var(--mute);margin-top:3px}
+.lmeta{font:500 11px/1 Barlow,sans-serif;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--mute);font-variant-numeric:tabular-nums}
+.strip{display:grid;grid-template-columns:26px 1fr auto;align-items:center;row-gap:0}
+.strip .rail{grid-column:1;position:relative;height:34px;display:grid;place-items:center}
+.strip .rail::before{content:"";position:absolute;left:50%;top:0;bottom:0;width:6px;
+  transform:translateX(-50%);background:var(--lc)}
+.strip .rail.first::before{top:50%}
+.strip .rail.last::before{bottom:50%}
+.dot{position:relative;width:9px;height:9px;border-radius:50%;background:var(--stn);
+  border:2px solid var(--lc)}
+.dot.exp{width:14px;height:14px;border:2.5px solid var(--stn-ring)}
+.dot.xf{box-shadow:0 0 0 3px var(--card)}
+.sname{grid-column:2;padding-left:10px;font-size:13.5px;line-height:1.25;
+  display:flex;align-items:center;min-height:34px;gap:7px}
+.sname.exp{font-weight:600}
+.xfmark{font:600 9.5px/1 Barlow,sans-serif;letter-spacing:.08em;color:var(--mute);
+  border:1px solid var(--rule);border-radius:3px;padding:2px 4px;white-space:nowrap}
+.load{grid-column:3;min-height:34px;display:flex;align-items:center;gap:6px;
+  justify-content:flex-end;font-variant-numeric:tabular-nums;font-size:11.5px;color:var(--mute)}
+.loadbar{height:5px;background:var(--lc);opacity:.55;border-radius:1px}
+.lfoot{font-size:12.5px;color:var(--ink-2);border-top:1px solid var(--rule-soft);padding-top:12px}
+
+/* ---------- evidence ---------- */
+.two{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:28px}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
+caption{text-align:left;font:600 11px/1 Barlow,sans-serif;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--mute);padding-bottom:10px}
+th,td{text-align:left;padding:7px 10px 7px 0;border-bottom:1px solid var(--rule-soft);
+  font-size:13.5px;vertical-align:baseline}
+th{font:600 11px/1 Barlow,sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--mute)}
+td.num,th.num{text-align:right;padding-right:0;white-space:nowrap}
+td.bar{width:38%;padding-right:0}
+.mini{height:7px;background:var(--ink);opacity:.72;border-radius:1px}
+.mini.alt{background:var(--mute);opacity:.5}
+
+/* ---------- method ---------- */
+.method{background:var(--sunk);border:1px solid var(--rule);padding:26px 28px}
+.method ul{margin:14px 0 0;padding-left:20px;display:flex;flex-direction:column;gap:9px}
+.method li{max-width:74ch;color:var(--ink-2);font-size:14px}
+.method b{color:var(--ink);font-weight:600}
+footer{margin-top:44px;padding-top:18px;border-top:1px solid var(--rule);
+  font-size:12.5px;color:var(--mute)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<div class="wrap">
+<header>
+  <div class="eyebrow">Transit proposal &middot; drawn from 1,407 recorded rides, 2021&ndash;2026</div>
+  <h1>Dream&nbsp;Subway</h1>
+  <p class="lede">Eight lines fitted to where one rider's bike actually goes. Every alignment
+  follows a corridor the GPS has already worn in; every station sits on a place a ride
+  has repeatedly started or ended. Nothing here is planned &mdash; it is measured.</p>
+  <div class="figs" id="figs"></div>
+</header>
+
+<section id="map">
+  <div class="shead">
+    <h2>The network</h2>
+    <span class="eyebrow" id="mapcount"></span>
+  </div>
+  <p class="snote">Drawn on the real street geometry, rotated so Manhattan's avenues stand
+  upright and stretched east&ndash;west so the avenues separate. Behind the routes, in grey,
+  is every street the rider has ridden more than once &mdash; the surface the lines were cut from.</p>
+  <div class="mapcard">
+    <div class="mapwrap">
+      <svg class="map" id="svg" viewBox="-462 -404 1052 806" role="img"
+           aria-label="Proposed eight-line network over the ridden street network"></svg>
+    </div>
+    <div class="maplegend" id="legend"></div>
+    <div class="mapfoot">
+      <span>Large ring = express stop &middot; small dot = local &middot; linked rings = transfer</span>
+      <span>Select a route to isolate it</span>
+    </div>
+  </div>
+</section>
+
+<section id="guide">
+  <div class="shead">
+    <h2>Line guide</h2>
+    <span class="eyebrow">local and express patterns</span>
+  </div>
+  <p class="snote">A stop runs express if it is a transfer or if it is one of the fourteen
+  places the rider most often starts or finishes &mdash; 26 arrivals or more over five years.
+  The bar beside each segment is the measured traffic on it: average passes per stretch of
+  street between those two stops.</p>
+  <div class="guide" id="lineguide"></div>
+</section>
+
+<section id="why">
+  <div class="shead"><h2>Why these lines</h2></div>
+  <p class="snote">Two measurements decide the map. Where rides end sets the stations;
+  which streets carry the passes sets the alignments. Both come out lopsided, which is what
+  makes a network possible at all: 2,814 trip ends fall into 329 places, and four of them
+  take 44% of them.</p>
+  <div class="two">
+    <div>
+      <table id="anchors"><caption>Where rides begin and end</caption></table>
+    </div>
+    <div>
+      <table id="pairs"><caption>The commonest A to B</caption></table>
+    </div>
+  </div>
+  <div class="two" style="margin-top:32px">
+    <div>
+      <table id="streets"><caption>Which streets carry it</caption></table>
+    </div>
+    <div>
+      <table id="served"><caption>What the network would reach</caption></table>
+      <p class="snote" style="margin-top:14px">Of the 1,320 rides that ended somewhere
+      other than where they began, four in five could be done end to end with an
+      800&nbsp;m walk at each end. The 87 loop rides &mdash; out and back to the same door &mdash;
+      are the ones no subway can serve, and the Park Loop is the answer to them.</p>
+    </div>
+  </div>
+</section>
+
+<section id="method">
+  <div class="shead"><h2>How it was cut</h2></div>
+  <div class="method">
+    <ul>
+      <li><b>Stations.</b> The first and last fix of every ride CSV, clustered at a 300&nbsp;m
+      radius by density. A cluster becomes a stop where it lands on a corridor; the rest of
+      the stops are the local maxima of pass traffic along the corridor, spaced at least
+      500&ndash;800&nbsp;m apart. Names are the nearest Citi Bike dock, tidied.</li>
+      <li><b>Alignments.</b> Streets ranked by pass-metres &mdash; length times the number of
+      recorded crossings &mdash; out of the published <code>rides.geojson</code>. The top of that
+      ranking is Broadway, Sixth Avenue, Second Avenue, the Hudson River Greenway and the two
+      East River bridge paths, and those are the eight lines.</li>
+      <li><b>Express and local.</b> Express stops are the transfers plus the fourteen busiest
+      trip ends. Two lines run local only: the Park Loop, where every stop is a destination,
+      and the Manhattan Bridge, which is too short for the distinction to buy anything.</li>
+      <li><b>Where it is thin.</b> Second Avenue above E&nbsp;63&nbsp;St carries four to eight
+      passes a stretch against ninety at Grand Street; the Crosstown east of First Avenue is
+      the Queensboro path and little else. Both are drawn because the rides are there, not
+      because the traffic justifies a train.</li>
+      <li><b>What it cannot say.</b> Trip ends are where a recording started, which is not
+      always where the rider did. Passes are counted per drawn segment, so a corridor of two
+      parallel ways splits its traffic between them. And a bike is not a train: the map
+      credits the greenway and the park drives with riding that is the point of the trip
+      rather than a way through it.</li>
+    </ul>
+  </div>
+</section>
+
+<footer>
+  Built from <code>docs/rides.geojson.gz</code> and the ride CSVs &mdash; 1,407 recordings,
+  September 2021 to August 2026. Station coordinates are real; the diagram is rotated 29&deg;
+  and stretched 1.85&times; east&ndash;west.
+</footer>
+</div>
+
+<script id="netdata" type="application/json">__DATA__</script>
+<script>
+const D = JSON.parse(document.getElementById('netdata').textContent);
+const L = D.lines, S = D.summary;
+const ORDER = ['2','6','9','C','H','P','L','M'];
+const DARKTEXT = {'M':1};
+const SVGNS = 'http://www.w3.org/2000/svg';
+const el = (n, a) => { const e = document.createElementNS(SVGNS, n);
+  for (const k in a) e.setAttribute(k, a[k]); return e; };
+
+/* ---------- station complexes (a transfer is one station, not two) ---------- */
+const complexes = [];
+ORDER.forEach(k => L[k].stations.forEach((s,i) => {
+  const hit = complexes.find(c => c.n === s.n &&
+    Math.hypot(c.p[0]-s.p[0], c.p[1]-s.p[1]) < 90);
+  if (hit) { hit.mem.push([k,i,s]); hit.exp = hit.exp || s.e; }
+  else complexes.push({n:s.n, p:s.p.slice(), mem:[[k,i,s]], exp:s.e, od:s.od});
+}));
+
+/* ---------- masthead figures ---------- */
+const nSt = complexes.length;
+const nExp = complexes.filter(c=>c.exp).length;
+const nXfer = complexes.filter(c=>c.mem.length>1).length;
+const km  = ORDER.reduce((t,k)=>t+L[k].km,0);
+const pct = Math.round(100*S.served['800']/S.rides);
+document.getElementById('figs').innerHTML = [
+  ['8', 'lines'],
+  [String(nSt), `stations, ${nExp} of them express`],
+  [km.toFixed(0)+'\u00a0km', 'of route, all of it already ridden'],
+  [pct+'%', 'of A-to-B rides served end to end'],
+  ['1,407', 'recorded rides behind it']
+].map(([b,s])=>`<div class="fig"><b>${b}</b><span>${s}</span></div>`).join('');
+document.getElementById('mapcount').textContent =
+  `${nSt} stations · ${km.toFixed(1)} km · ${nXfer} transfers`;
+
+/* ---------- the map ---------- */
+const svg = document.getElementById('svg');
+const gGhost = el('g',{id:'ghost'}), gCase = el('g',{id:'case'}),
+      gRoute = el('g',{id:'route'}), gStn = el('g',{id:'stn'}), gLab = el('g',{id:'lab'});
+svg.append(gGhost, gCase, gRoute, gStn, gLab);
+
+const GW = [0.7, 1.15, 1.9], GO = [0.62, 0.8, 1];
+D.ghost.forEach((d,i)=> gGhost.append(el('path',{d, fill:'none',
+  stroke:i===2?'var(--ghost-hi)':'var(--ghost)', 'stroke-width':GW[i],
+  'stroke-opacity':GO[i], 'stroke-linecap':'round'})));
+
+const routeEls = {};
+ORDER.forEach(k=>{
+  const v = L[k];
+  const base = {d:v.d, fill:'none', 'stroke-linecap':'round', 'stroke-linejoin':'round'};
+  const cs = el('path', Object.assign({}, base, {stroke:'var(--card)', 'stroke-width':11.5}));
+  const rt = el('path', Object.assign({}, base, {stroke:v.colour, 'stroke-width':6.4}));
+  gCase.append(cs); gRoute.append(rt);
+  routeEls[k] = [cs, rt];
+});
+
+/* label placement: side per line, with overrides for the crowded corners */
+const SIDE = {'2':'r','6':'r','9':'l','H':'l','M':'r','C':'u','L':'d','P':'l'};
+const OVER = {
+  'Times Sq–W 48 St':['l',-14,11], 'Bryant Park':['r',13,4],
+  'Grand Central–E 43 St':['d',0,26], 'E 50 St–Park Av':['u',0,-11],
+  'E 47 St–Second Av':['r',13,-4], 'E 58 St–First Av':['r',13,4],
+  'Queens Plaza–21 St':['d',0,20],  'W 50 St–Tenth Av':['u',0,-11],
+  'Hudson River–W 47 St':['l',-13,4],
+  'Columbus Circle':['l',-15,4],   'Central Park South':['d',0,26],
+  'Grand Army Plaza':['r',13,4],   'Houston St':['r',14,-3],
+  'Grand St–Clinton St':['r',14,10],'South 4 St–Wythe Av':['d',0,20],
+  'Lorimer St':['d',0,20],         'Montrose Av':['d',0,20],
+  'Union Sq–E 12 St':['r',13,4],   'Washington Sq':['r',13,4],
+  'Spring St':['r',13,4],          'Canal St–Broadway':['l',-13,6],
+  'Canal St–Chrystie St':['l',-13,4],
+  'W 11 St–Sixth Av':['l',-13,4],  'W 23 St–Eighth Av':['r',13,4],
+  'W 86 St–West Dr':['l',-13,4],   'North Woods–W 110 St':['u',0,-11],
+  'E 97 St–East Dr':['r',13,4],    'E 79 St–East Dr':['r',13,4],
+  'E 72 St–East Dr':['r',13,4],
+};
+const labelFor = c => {
+  const o = OVER[c.n];
+  if (o) return {side:o[0], dx:o[1], dy:o[2]};
+  const s = SIDE[c.mem[0][0]];
+  return s==='r' ? {side:'r',dx:13,dy:4} : s==='l' ? {side:'l',dx:-13,dy:4}
+       : s==='u' ? {side:'u',dx:0,dy:-11} : {side:'d',dx:0,dy:20};
+};
+
+complexes.forEach(c=>{
+  // connector between members of a multi-line complex
+  if (c.mem.length > 1) {
+    const pts = c.mem.map(m=>m[2].p);
+    for (let i=1;i<pts.length;i++)
+      gStn.append(el('line',{x1:pts[i-1][0],y1:pts[i-1][1],x2:pts[i][0],y2:pts[i][1],
+        stroke:'var(--stn-ring)','stroke-width':2.4,'stroke-linecap':'round'}));
+  }
+  c.mem.forEach(([k,i,s])=>{
+    const g = el('g',{class:'stnode','data-line':k});
+    const r = s.x ? 5.6 : s.e ? 4.8 : 3.4;
+    g.append(el('circle',{cx:s.p[0], cy:s.p[1], r,
+      fill:'var(--stn)', stroke: (s.e||s.x) ? 'var(--stn-ring)' : L[k].colour,
+      'stroke-width': (s.e||s.x) ? 2.4 : 2.2}));
+    const t = el('title'); t.textContent =
+      `${s.n} — ${L[k].name}${s.od ? ` · ${s.od} recorded arrivals or departures` : ''}`;
+    g.append(t);
+    gStn.append(g);
+  });
+  const lp = labelFor(c);
+  const anchor = lp.side==='r' ? 'start' : lp.side==='l' ? 'end' : 'middle';
+  const t = el('text',{x:c.p[0]+lp.dx, y:c.p[1]+lp.dy, 'text-anchor':anchor,
+    fill:'var(--ink)', 'font-family':'"Barlow Condensed",Barlow,sans-serif',
+    'font-size': c.exp ? 13 : 12, 'font-weight': c.exp ? 600 : 500,
+    'paint-order':'stroke', stroke:'var(--card)', 'stroke-width':3.4,
+    'stroke-linejoin':'round'});
+  t.textContent = c.n;
+  gLab.append(t);
+});
+
+
+
+/* ---------- legend / isolate ---------- */
+const legend = document.getElementById('legend');
+let isolated = null;
+ORDER.forEach(k=>{
+  const v = L[k];
+  const b = document.createElement('button');
+  b.className = 'chip'; b.type = 'button'; b.dataset.line = k;
+  b.setAttribute('aria-pressed','false');
+  b.innerHTML = `<span class="bullet${DARKTEXT[k]?' dk':''}" style="background:${v.colour}">${k}</span>${v.name}`;
+  b.addEventListener('click', ()=>{
+    isolated = (isolated === k) ? null : k;
+    document.querySelectorAll('.chip').forEach(c=>{
+      const on = !isolated || c.dataset.line === isolated;
+      c.classList.toggle('off', !on);
+      c.setAttribute('aria-pressed', String(isolated === c.dataset.line));
+    });
+    ORDER.forEach(j=>{
+      const dim = isolated && j !== isolated;
+      routeEls[j].forEach(p=>p.setAttribute('stroke-opacity', dim ? 0.13 : 1));
+    });
+    gStn.querySelectorAll('.stnode').forEach(n=>{
+      const dim = isolated && n.dataset.line !== isolated;
+      n.setAttribute('opacity', dim ? 0.18 : 1);
+    });
+  });
+  legend.append(b);
+});
+
+/* ---------- line guide ---------- */
+const XF = {};
+D.transfers.forEach(t=>{
+  (XF[t.a[0]+'|'+t.a[1]] ||= []).push(t.b[0]);
+  (XF[t.b[0]+'|'+t.b[1]] ||= []).push(t.a[0]);
+});
+const NOTE = {
+  '2':'The busiest thing on it is its last stop: Grand Street is 278 recorded arrivals, and the traffic climbs the whole way down from Yorkville to meet it.',
+  '6':'Sixth Avenue as far as W&nbsp;8&nbsp;St, then Broadway. The heaviest single stretch on the map north of the bridges is Bryant Park to Herald Square.',
+  '9':'Eighth Avenue and Columbus, carrying the commonest pair of all: Times Square to W&nbsp;72&nbsp;St, 57 rides.',
+  'C':'The one line that touches Times Square and Grand Central both, which is the second commonest pair. East of First Avenue it is the Queensboro path.',
+  'H':'The greenway. Its traffic is recreational rather than directed, and it is the only line whose busiest stretch has no station at either end that anyone starts from.',
+  'P':'A ring, both directions, no express. Central Park is where the 87 loop rides go &mdash; the ones that end at the door they left from.',
+  'L':'The heaviest link in the whole network. The bridge itself is a 2.2&nbsp;km non-stop run, averaging 74 passes.',
+  'M':'The other river crossing. Four stops, all local, joining the Second Avenue line at Houston Street.'
+};
+const maxLoad = Math.max(...ORDER.flatMap(k=>L[k].segments.map(s=>s.load)));
+document.getElementById('lineguide').innerHTML = ORDER.map(k=>{
+  const v = L[k], n = v.stations.length;
+  const rows = v.stations.map((s,i)=>{
+    const cls = ['rail', i===0?'first':'', i===n-1?'last':''].join(' ');
+    const dot = `<span class="dot${s.e?' exp':''}${s.x?' xf':''}"></span>`;
+    const to = XF[k+'|'+i];
+    const xf = to ? `<span class="xfmark">${[...new Set(to)].join(' ')}</span>` : '';
+    const seg = v.segments[i];
+    const bar = seg ? `<div class="load"><span class="loadbar"
+        style="width:${Math.max(3, 46*seg.load/maxLoad).toFixed(0)}px"></span>${
+        seg.load.toFixed(0)}</div>` : `<div class="load"></div>`;
+    return `<div class="${cls}">${dot}</div>
+      <div class="sname${s.e?' exp':''}">${s.n}${xf}</div>${bar}`;
+  }).join('');
+  return `<div class="lcard" style="--lc:${v.colour}">
+    <div class="lhead">
+      <span class="bullet${DARKTEXT[k]?' dk':''}" style="background:${v.colour}">${k}</span>
+      <div><div class="lname">${v.name}</div>
+      <div class="lterm">${v.terminals}</div></div>
+    </div>
+    <div class="lmeta">${v.km.toFixed(2)} km · ${n} stops · ${
+      v.stations.filter(s=>s.e).length} express</div>
+    <div class="strip">${rows}</div>
+    <div class="lfoot">${NOTE[k]}</div>
+  </div>`;
+}).join('');
+
+/* ---------- evidence tables ---------- */
+const PLACE = {
+  'Broadway & W 48 St':'Times Square', 'E 43 St & Madison Ave':'Grand Central',
+  'Clinton St & Grand St':'Lower East Side', 'Montrose Ave & Bushwick Ave':'East Williamsburg',
+  'W 70 St & Amsterdam Ave':'Upper West Side', 'Washington Pl & Broadway':'Washington Square',
+  'E 50 St & Park Ave':'E 50 St & Park Av', 'Leonard St & Church St':'Tribeca',
+  'E 47 St & 2 Ave':'E 47 St & Second Av', 'Lorimer St & Broadway':'South Williamsburg',
+  'Broadway & W 58 St':'Columbus Circle', 'W 56 St & 8 Ave':'W 56 St & Eighth Av'
+};
+const bar = (v, max, alt) =>
+  `<td class="bar"><div class="mini${alt?' alt':''}" style="width:${
+    Math.max(2, 100*v/max).toFixed(1)}%"></div></td>`;
+
+const aMax = D.anchors[0].c;
+document.getElementById('anchors').innerHTML +=
+  '<tr><th>Place</th><th></th><th class="num">Trip ends</th></tr>' +
+  D.anchors.slice(0,8).map(a=>
+    `<tr><td>${PLACE[a.n]||a.n}</td>${bar(a.c,aMax)}<td class="num">${a.c}</td></tr>`).join('');
+
+const PAIRS = [
+  ['Times Square','Upper West Side',57],['Times Square','Grand Central',45],
+  ['Grand Central','Lower East Side',38],['Times Square','E 50 St & Park Av',30],
+  ['East Williamsburg','South Williamsburg',24],['Times Square','Washington Square',16],
+  ['Grand Central','E 47 St & Second Av',13],['Grand Central','East Williamsburg',12]
+];
+document.getElementById('pairs').innerHTML +=
+  '<tr><th>From</th><th>To</th><th class="num">Rides</th></tr>' +
+  PAIRS.map(([a,b,n])=>`<tr><td>${a}</td><td>${b}</td><td class="num">${n}</td></tr>`).join('');
+
+const STREETS = [
+  ['Broadway',241,'6'],['Sixth Avenue',196,'6'],['Second Avenue',181,'2'],
+  ['Hudson River Greenway',179,'H'],['Williamsburg Bridge path',167,'L'],
+  ['Manhattan Bridge path',167,'M'],['Eighth Avenue',124,'9'],
+  ['Central Park drives',235,'P'],['Queensboro Bridge path',92,'C']
+].sort((a,b)=>b[1]-a[1]);
+document.getElementById('streets').innerHTML +=
+  '<tr><th>Corridor</th><th></th><th class="num">Pass-km</th><th class="num">Line</th></tr>' +
+  STREETS.map(([n,v,k])=>`<tr><td>${n}</td>${bar(v,STREETS[0][1],true)}<td class="num">${
+    v}</td><td class="num"><span class="bullet${DARKTEXT[k]?' dk':''}" style="background:${
+    L[k].colour};width:19px;height:19px;font-size:11px;display:inline-grid;vertical-align:-4px"
+    >${k}</span></td></tr>`).join('');
+
+const SV = [[400,S.served['400']],[600,S.served['600']],[800,S.served['800']]];
+document.getElementById('served').innerHTML +=
+  '<tr><th>Walk at each end</th><th></th><th class="num">Rides</th><th class="num">Share</th></tr>' +
+  SV.map(([r,n])=>`<tr><td>within ${r} m</td>${bar(n,S.rides)}<td class="num">${
+    n}</td><td class="num">${Math.round(100*n/S.rides)}%</td></tr>`).join('') +
+  `<tr><td>loop rides, no A to B</td>${bar(87,S.rides,true)}<td class="num">87</td>` +
+  `<td class="num">&mdash;</td></tr>`;
+</script>
