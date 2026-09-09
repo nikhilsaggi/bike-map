@@ -253,6 +253,37 @@ test.describe('inspector panel', () => {
     }
   });
 
+  // On a phone the two rails stack into one column, so #stats staying at full
+  // height while the inspector opens crowds the map exactly as much as its
+  // width would suggest -- the same "one thing open" #stats-sections already
+  // does between its own sections.
+  test('on a phone the inspector collapses stats and restores it on close', async ({ page }) => {
+    await page.setViewportSize({ width: 430, height: 932 });
+    await gotoMap(page);
+    const stats = page.locator('#stats');
+    await expect(stats).not.toHaveClass(/collapsed/);
+
+    await clickEdge(page, EDGES.center.lat);
+    await expect(stats).toHaveClass(/collapsed/);
+    await page.locator('#inspector-close').click();
+    await expect(stats).not.toHaveClass(/collapsed/);
+
+    // A reader's own collapse is a different thing and outlives the panel.
+    await page.locator('#stats-toggle').click();
+    await expect(stats).toHaveClass(/collapsed/);
+    await clickEdge(page, EDGES.center.lat);
+    await expect(stats).toHaveClass(/collapsed/);
+    await page.locator('#inspector-close').click();
+    await expect(stats).toHaveClass(/collapsed/);
+    await page.locator('#stats-toggle').click();  // back open, for the next case
+
+    // Never happens on a desktop viewport: the two rails have their own
+    // columns and neither needs to give way to the other.
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await clickEdge(page, EDGES.center.lat);
+    await expect(stats).not.toHaveClass(/collapsed/);
+  });
+
   test('the close button, Escape and a click on empty map each close it', async ({ page }) => {
     await gotoMap(page);
     const panel = page.locator('#inspector');

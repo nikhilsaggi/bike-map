@@ -820,20 +820,26 @@ document.getElementById('legend-bar').style.background = buildGradientCSS();
 
 // Collapsible panels: the stats box and the legend below it, each remembering
 // its own state across visits. One function for both, so the gesture cannot
-// come out different in the two places a reader meets it.
+// come out different in the two places a reader meets it. `set` is returned
+// so the inspector can drive `#stats` too (persist: false) without that
+// borrowing writing over the reader's own manually-chosen state.
 function makeCollapsible(el, toggle, name, key) {
-  function set(collapsed) {
+  function set(collapsed, persist = true) {
     el.classList.toggle('collapsed', collapsed);
     toggle.innerHTML = collapsed ? '+' : '&ndash;';
     toggle.title = `${collapsed ? 'Expand' : 'Collapse'} ${name}`;
-    try { localStorage.setItem(key, collapsed ? '1' : '0'); } catch (e) {}
+    if (persist) {
+      try { localStorage.setItem(key, collapsed ? '1' : '0'); } catch (e) {}
+    }
   }
   toggle.addEventListener('click', () => set(!el.classList.contains('collapsed')));
   try {
     if (localStorage.getItem(key) === '1') set(true);
   } catch (e) {}
+  return set;
 }
-makeCollapsible(document.getElementById('stats'),
+const statsEl = document.getElementById('stats');
+const setStatsCollapsed = makeCollapsible(statsEl,
   document.getElementById('stats-toggle'), 'stats', 'statsCollapsed');
 makeCollapsible(document.getElementById('legend'),
   document.getElementById('legend-toggle'), 'legend', 'legendCollapsed');
@@ -2381,6 +2387,11 @@ function edgeDetail(rideIds, name) {
 
 let inspector = null;     // the open source, or null
 let selectedEdge = null;  // the geoLayer layer drawn as selected, if any
+// Set only when opening the inspector collapsed #stats itself, on a phone,
+// where the two rails stack into one column and stay stacked whatever either
+// panel's own content does. Closing the inspector then reopens exactly that
+// collapse -- never a reader's own, which stays in localStorage untouched.
+let statsAutoCollapsed = false;
 
 const railEl = document.getElementById('left-rail');
 const inspectorEl = document.getElementById('inspector');
@@ -2394,6 +2405,15 @@ const inspectorBodyEl = document.getElementById('inspector-body');
 // bottom row, and anything narrower is the desktop column. It is the rail that
 // is measured, not the panel: the panel is sized to its rows on a phone too,
 // so its own width says nothing about which edge it is parked against.
+// Same measurement railPadding takes, for the same reason: a rail as wide as
+// the map is the phone's bottom-row layout, and restating the stylesheet's
+// 640px breakpoint here would be a second number to keep in sync with it.
+function isPhoneLayout() {
+  const box = railEl.getBoundingClientRect();
+  const view = map.getContainer().getBoundingClientRect();
+  return box.width > view.width * 0.6;
+}
+
 function railPadding() {
   const box = railEl.getBoundingClientRect();
   const view = map.getContainer().getBoundingClientRect();
@@ -2425,6 +2445,15 @@ function openInspector(source, pan = true) {
   // panInside only moves the map when it has to, so a feature already in the
   // clear stays exactly where the reader left it.
   if (pan && source.latlng) map.panInside(source.latlng, railPadding());
+  // On a phone the inspector lands in the same bottom row #stats would need
+  // to share the screen with; collapsing #stats for the duration is the same
+  // "one thing open at a time" #stats-sections already does. Skipped when
+  // #stats is already collapsed -- the reader's own choice or a still-open
+  // auto-collapse from the previous feature -- so this never fights either.
+  if (isPhoneLayout() && !statsEl.classList.contains('collapsed')) {
+    statsAutoCollapsed = true;
+    setStatsCollapsed(true, false);
+  }
 }
 
 function closeInspector() {
@@ -2436,6 +2465,10 @@ function closeInspector() {
   clearSelectedEdge();
   if (kind === 'dock') { clearDockLinks(); unghostEdges(); }
   if (kind === 'area') { nbSelected = null; syncNbOutline(); }
+  if (statsAutoCollapsed) {
+    statsAutoCollapsed = false;
+    setStatsCollapsed(false, false);
+  }
 }
 
 // -- Selection ---------------------------------------------------------------
