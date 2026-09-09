@@ -30,8 +30,10 @@ The pipeline exports a compressed GeoJSON that powers an interactive
   it is sized to its own rows, the clicked feature is highlighted instead of
   being pointed at, the map pans only when the feature would fall behind the
   panel, and the panel follows the date and source filters while it is open.
-  The stats panel and the legend hold the right edge, top and bottom. On a
-  narrow screen the panel becomes a bottom sheet.
+  The stats panel and the legend hold the right edge, top and bottom.
+- On a phone, one bottom sheet instead of those rails: the stats, the filters
+  or the clicked feature, one at a time, dragged between three heights. The
+  rest of the screen is map
 - Date-range slider with time-lapse playback (watch the network grow)
 - A layer switcher under the legend: the pass-frequency network, the Citibike
   docks and the neighborhoods, one checkbox each. Only the network starts on.

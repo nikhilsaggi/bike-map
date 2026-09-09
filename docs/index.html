@@ -13,10 +13,18 @@
      open section is the one part that can give up height, so this is what it
      has to leave behind -- and it has to be kept in step with the legend,
      which grew by a row when the layer switcher gained its third toggle.
-     Desktop enforces this through the rail's flex-shrink and only reads the
-     value as a cap; the mobile rail has no height of its own to shrink
-     against, so there it is the only thing holding the panel off the bottom. */
-  :root { --rail-fixed: 320px; }
+     The rail enforces this through its flex-shrink and reads the value as a
+     cap. It is a desktop measurement only: a phone has no rails, and the one
+     sheet there is bounded by the height the reader has dragged it to.
+
+     `--layout` is which of the two layouts is in force, as a value the script
+     can read back, and `--sheet-h` is how much of the screen the sheet is
+     taking, written by the script as it moves. The breakpoint itself is
+     written once, in the media query at the foot of this stylesheet: it is
+     the stylesheet that decides there is no room for two rails, and a second
+     copy of 640px in the script is the kind of number that goes stale
+     silently. */
+  :root { --rail-fixed: 320px; --layout: wide; --sheet-h: 0px; }
   body { background: #0d0d0d; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
   #map { width: 100vw; height: 100vh; }
 
@@ -37,8 +45,12 @@
     border-radius: 8px; font-size: 13px; line-height: 1.6;
     border: 1px solid #333; backdrop-filter: blur(6px);
   }
-  #stats strong { color: #fff; }
-  #stats .label { color: #888; }
+  /* Scoped to the body rather than to #stats, because the body is the part
+     that travels: on a phone it is inside the sheet, and a rule hung on the
+     box it left behind would take the panel's own colours off with it. The
+     same goes for the legend's ramp and its end labels, below. */
+  #stats-body strong { color: #fff; }
+  #stats-body .label { color: #888; }
   /* Both floating panels collapse, so they wear one button rather than two
      that could drift into different affordances for the same gesture. */
   #stats-toggle, #legend-toggle {
@@ -483,18 +495,23 @@
     border-radius: 8px; font-size: 12px; border: 1px solid #333;
     backdrop-filter: blur(6px); flex: none; margin-top: auto;
   }
-  #legend .title { font-weight: 600; color: #fff; margin-bottom: 8px; }
+  /* Named, and scoped to the name: the caption travels into the sheet with
+     the ramp it captions, so it cannot be addressed through the box it left. */
+  #legend-title { font-weight: 600; color: #fff; margin-bottom: 8px; }
   /* Collapsed, the title is the label -- the panel already carries its own
      name, where #stats has to hide a header and show one. The ramp, the
      slider, the source buttons and the layer switcher all go: the box is the
      map's control cluster, and minimizing it is a request for the map. */
   #legend.collapsed #legend-body { display: none; }
   #legend.collapsed { padding: 8px 32px 8px 14px; }
-  #legend.collapsed .title { margin-bottom: 0; }
-  #legend .bar {
+  #legend.collapsed #legend-title { margin-bottom: 0; }
+  #legend-body .bar {
     width: 180px; height: 12px; border-radius: 3px; margin-bottom: 4px;
   }
-  #legend .labels { display: flex; justify-content: space-between; font-size: 11px; color: #888; }
+  #legend-body .labels {
+    display: flex; justify-content: space-between; width: 180px;
+    font-size: 11px; color: #888;
+  }
   #filter-row {
     display: none; align-items: center; gap: 8px; margin-top: 10px;
     font-size: 11px; color: #888;
@@ -622,39 +639,165 @@
      filter that emptied it is one drag away from filling it again. */
   .inspector-empty { color: #777; font-size: 11px; line-height: 1.5; }
 
-  @media (max-width: 640px) {
-    #stats-sections.open { max-height: min(240px, calc(100vh - var(--rail-fixed))); }
-    /* The left rail lies down along the bottom of a phone -- the top-left
-       corner belongs to the zoom control, and the bottom is where a thumb is.
-       It keeps the full width even though the panel in it does not: the rail's
-       own width is how railPadding() tells the two layouts apart, and a
-       bottom-anchored panel still has to be panned out from under, however
-       narrow it is. That is where a bottom-anchored legend would sit too, so
-       the right rail gives up its bottom and the legend stacks under the stats
-       panel instead -- the two are one control cluster. */
-    #left-rail {
-      left: 0; right: 0; top: auto; gap: 8px;
-      align-items: flex-start; padding: 0 12px;
+  /* -- Sheet -------------------------------------------------------------
+     The phone's whole chrome, and the only thing on that screen that is not
+     map. The rails are a desktop idea: two columns of floating boxes, each
+     free to grow because there is room beside the map for them to grow into.
+     On a phone there is no beside -- the stats panel and the legend together
+     took the top half of a 390px screen before anything was clicked, and the
+     street through the middle of the map was under them, so the hottest
+     feature on screen could not be tapped.
+
+     So on a phone there is one surface, parked at the bottom where a thumb
+     is, and it shows exactly one thing: the stats, the filters, or whatever
+     was last clicked. The reader says how much of the screen it gets by
+     dragging it between three heights -- out of the way, half, and most --
+     which is the lever the desktop's collapse buttons are, made continuous
+     and put where the hand already is.
+
+     The panels are not rebuilt for it. Their *bodies* (#stats-body,
+     #legend-body, #inspector-body) move in and out of the panes below as the
+     layout changes, so every listener, every open section and every scroll
+     position is the same object in both layouts, and there is one copy of
+     each control on the page rather than a phone one and a desktop one. */
+  #sheet {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 1100;
+    display: flex; flex-direction: column; height: var(--sheet-h);
+    background: rgba(13, 13, 13, 0.94); backdrop-filter: blur(10px);
+    border-top: 1px solid #333; border-radius: 14px 14px 0 0;
+    color: #ccc; font-size: 13px; line-height: 1.6;
+    box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.45);
+  }
+  #sheet[hidden] { display: none; }
+  /* Only while the sheet is moving itself. A drag sets the height every frame
+     from the finger's own position, and a transition there would make the
+     sheet lag the thumb by the length of the easing. */
+  #sheet.animating { transition: height 220ms cubic-bezier(0.32, 0.72, 0, 1); }
+
+  /* The grab strip: the drag target, and a tap target that shows and hides.
+     touch-action: none because the gesture it wants -- a vertical drag -- is
+     exactly the one the browser would otherwise spend on scrolling the page.
+     It is generously tall for a 4px grip: the bar is the affordance, the
+     strip around it is the target. */
+  #sheet-handle {
+    flex: none; display: flex; align-items: center; justify-content: center;
+    height: 22px; cursor: grab; touch-action: none;
+  }
+  #sheet-handle:active { cursor: grabbing; }
+  #sheet-grip { width: 36px; height: 4px; border-radius: 2px; background: #555; }
+  #sheet-handle:hover #sheet-grip { background: #777; }
+
+  /* One row that is either the switcher or a detail's heading, never both:
+     what is in the sheet is either one of the two standing panes or the thing
+     the reader just tapped, and the row says which. */
+  /* Same column as the panes below it -- 520px of content inside 14px of
+     padding, centred -- so the tabs and a detail's heading start where the
+     rows they head start. On a portrait phone the cap never bites and both
+     are simply full width; it is the wider end of the breakpoint, a landscape
+     phone, where a left-pinned switcher over a centred pane reads as two
+     different boxes. */
+  #sheet-nav {
+    flex: none; display: flex; align-items: center; gap: 8px;
+    width: 100%; max-width: 548px; margin: 0 auto;
+    padding: 0 14px 10px; min-height: 30px;
+  }
+  #sheet-tabs { display: flex; gap: 6px; }
+  #sheet-tabs[hidden], #sheet-title[hidden], #sheet-back[hidden] { display: none; }
+  .sheet-tab {
+    background: #1a1a1a; color: #ccc; border: 1px solid #333; border-radius: 14px;
+    padding: 5px 14px; font: inherit; font-size: 12px; line-height: 1.4;
+    cursor: pointer;
+  }
+  .sheet-tab.active { background: #7b3ff2; border-color: #7b3ff2; color: #fff; }
+  /* Back, not close: it returns to the pane the reader came from, which is
+     the tab they had open. Escape and a tap on the map do the same thing. */
+  #sheet-back {
+    flex: none; background: none; border: none; color: #ccc;
+    font-size: 22px; line-height: 1; padding: 0 8px 3px; cursor: pointer;
+  }
+  #sheet-back:hover { color: #fff; }
+  /* Carries the clicked feature's own name, so the sheet still says what it
+     is about when it is dragged down to the grab strip and the nav row. */
+  #sheet-title {
+    flex: 1; color: #fff; font-weight: 600; font-size: 14px; line-height: 1.3;
+    overflow-wrap: anywhere;
+  }
+  #sheet.kind-dock #sheet-title { color: #a8d8e8; }
+  #sheet.kind-area #sheet-title { color: #e8dcc0; }
+
+  /* One scrolling surface for whatever pane is showing. The panes' own inner
+     scroll boxes are unwrapped below: a list that scrolls inside a sheet that
+     scrolls is two gestures a thumb cannot tell apart. */
+  #sheet-body {
+    flex: 1 1 auto; min-height: 0; overflow-y: auto;
+    -webkit-overflow-scrolling: touch; padding: 0 14px 20px;
+  }
+  /* Capped and centred, not full-bleed: a phone in landscape or a small
+     tablet is still under the breakpoint, and the hero grid, the
+     right-justified rows and the flex:1 histogram bars would all stretch with
+     the viewport. The cap is well above a portrait phone's width, so there it
+     never bites and the content simply fills the sheet. */
+  .sheet-pane { display: none; max-width: 520px; margin: 0 auto; }
+  .sheet-pane.active { display: block; }
+
+  /* Too narrow for two rails, or too short for them. The second half is the
+     landscape phone: 844px of width and 390px of height passes any width test
+     comfortably and then has nowhere to put a stats panel that is most of the
+     screen tall. Both are the same question -- is there room beside the map --
+     and both get the same answer. */
+  @media (max-width: 640px), (max-height: 480px) {
+    :root { --layout: phone; }
+    /* The rails and their boxes are the desktop layout, whole. Their bodies
+       are in the sheet; what stays behind is the chrome that framed them, and
+       an empty bordered box is worse than no box. */
+    #right-rail, #stats, #legend, #inspector { display: none; }
+    /* Pinch is the zoom gesture here, and the buttons sat in the one corner
+       a reader needs to be able to reach the map through. */
+    .leaflet-control-zoom { display: none; }
+    /* Attribution is not optional, so it rides above the sheet rather than
+       under it -- the one thing on the map that has to clear the chrome
+       whatever height the reader has dragged it to. */
+    .leaflet-bottom { bottom: var(--sheet-h); }
+    /* Wider tap targets and larger type throughout the sheet: the same rows
+       are being read at arm's length by a thumb rather than a cursor. */
+    #sheet-body .chip {
+      font-size: 12px; padding: 6px 12px; border-radius: 14px;
     }
-    #right-rail { bottom: auto; }
-    #legend { margin-top: 0; }
-    /* Nothing about the width here, deliberately: `align-items: flex-start`
-       above leaves the desktop rule in charge, so the box is still sized to
-       its rows and capped at the narrower of 272px and the viewport, and the
-       12px rail padding is the margin that cap is measured against. A
-       full-bleed sheet was tried first and spent most of a portrait screen
-       stretching a box whose content measures ~250px. Only the height is a
-       phone's own problem: 45vh, so the panel can never take the screen. */
-    #inspector { max-height: 45vh; }
-    #inspector.entering { transform: translateY(8px); }
-    /* The bar and the stats panel both want the top of the screen, and the
-       panel is most of a phone's width, so a centred bar lands on top of it.
-       Rejoining the rail's flow is the fix the rest of the page already uses:
-       a flex column cannot overlap itself, whatever the label wraps to, where
-       an offset under a reserved strip would be a number that goes stale the
-       first time the bar grows a second line. The bottom is also where the
-       exit button is reachable, and it puts the bar next to the sheet whose
-       row opened the ride. */
+    #sheet-body #stat-chips { gap: 6px; }
+    /* The hero's two columns are 1fr each inside a 236px panel; given the
+       sheet's width they would drift a phone's screen apart. Capped and
+       pushed together instead, and the reserved strip for the collapse
+       button goes -- that button is the desktop's, and the sheet's own grab
+       strip is above all this. */
+    #sheet-body #stat-hero {
+      grid-template-columns: repeat(2, minmax(0, 148px));
+      column-gap: 28px; padding-right: 0;
+    }
+    #sheet-body .hero-tile strong { font-size: 19px; }
+    #sheet-body .hero-tile .label { font-size: 11px; }
+    #sheet-body #stats-sections { font-size: 12px; }
+    #sheet-body .year-row, #sheet-body .ride-row, #sheet-body .nb-row,
+    #sheet-body .cb-row { padding-top: 3px; padding-bottom: 3px; }
+    /* The panels stop bounding their own content: the sheet is the box now,
+       and the reader sets its height. Every inner cap goes with it, so the
+       sheet body is the page's one scrolling surface on a phone. */
+    #sheet-body #stats-sections.open, #sheet-body #speed-list,
+    #sheet-body .cb-met, #sheet-body .cal-detail {
+      max-height: none; overflow: visible;
+    }
+    /* Nothing is left in the left rail but the ride-view bar, and it sits on
+       top of the sheet rather than in a corner of its own -- the ride it
+       names was almost always opened from a row inside the sheet, and the
+       bar's exit button wants to be under the same thumb. */
+    #left-rail {
+      left: 0; right: 0; top: auto; bottom: calc(var(--sheet-h) + 8px);
+      padding: 0 12px; align-items: stretch;
+    }
+    /* Centred over the map is a desktop answer: on a phone the bar is as wide
+       as the screen anyway, so it rejoins the rail's flow and lets the rail
+       place it. A flex column cannot overlap itself whatever the label wraps
+       to, where an offset under a reserved strip would be a number that goes
+       stale the first time the bar grows a second line. */
     #ride-view-bar {
       position: static; transform: none; justify-content: space-between;
     }
@@ -706,7 +849,7 @@
 
   <div id="legend">
     <button id="legend-toggle" title="Collapse legend">&ndash;</button>
-    <div class="title">Pass frequency</div>
+    <div class="title" id="legend-title">Pass frequency</div>
     <div id="legend-body">
       <div class="bar" id="legend-bar"></div>
       <div class="labels"><span>1</span><span id="legend-max">—</span></div>
@@ -760,6 +903,29 @@
       <button id="inspector-close" title="Close (Esc)">&times;</button>
     </div>
     <div id="inspector-body" class="scrollbox"></div>
+  </div>
+</div>
+
+<!-- The phone's one panel. Empty in the markup: the three panes are filled at
+     runtime with the very bodies the rails hold on a desktop, so there is one
+     stats panel, one legend and one inspector on the page and this is only
+     where they are put when the screen is too narrow to stand them side by
+     side with the map. -->
+<div id="sheet" hidden>
+  <div id="sheet-handle" role="button" tabindex="0" aria-label="Resize panel"
+       aria-expanded="true"><span id="sheet-grip"></span></div>
+  <div id="sheet-nav">
+    <button id="sheet-back" hidden title="Back (Esc)">&lsaquo;</button>
+    <div id="sheet-tabs" role="group" aria-label="Panels">
+      <button class="sheet-tab" data-pane="stats">Stats</button>
+      <button class="sheet-tab" data-pane="legend">Filters</button>
+    </div>
+    <span id="sheet-title" hidden></span>
+  </div>
+  <div id="sheet-body" class="scrollbox">
+    <div class="sheet-pane" id="pane-stats"></div>
+    <div class="sheet-pane" id="pane-legend"></div>
+    <div class="sheet-pane" id="pane-detail"></div>
   </div>
 </div>
 
@@ -820,26 +986,22 @@ document.getElementById('legend-bar').style.background = buildGradientCSS();
 
 // Collapsible panels: the stats box and the legend below it, each remembering
 // its own state across visits. One function for both, so the gesture cannot
-// come out different in the two places a reader meets it. `set` is returned
-// so the inspector can drive `#stats` too (persist: false) without that
-// borrowing writing over the reader's own manually-chosen state.
+// come out different in the two places a reader meets it. Desktop only in
+// effect -- on a phone both bodies are in the sheet, whose height is the same
+// lever made continuous, and nothing else drives these.
 function makeCollapsible(el, toggle, name, key) {
-  function set(collapsed, persist = true) {
+  function set(collapsed) {
     el.classList.toggle('collapsed', collapsed);
     toggle.innerHTML = collapsed ? '+' : '&ndash;';
     toggle.title = `${collapsed ? 'Expand' : 'Collapse'} ${name}`;
-    if (persist) {
-      try { localStorage.setItem(key, collapsed ? '1' : '0'); } catch (e) {}
-    }
+    try { localStorage.setItem(key, collapsed ? '1' : '0'); } catch (e) {}
   }
   toggle.addEventListener('click', () => set(!el.classList.contains('collapsed')));
   try {
     if (localStorage.getItem(key) === '1') set(true);
   } catch (e) {}
-  return set;
 }
-const statsEl = document.getElementById('stats');
-const setStatsCollapsed = makeCollapsible(statsEl,
+makeCollapsible(document.getElementById('stats'),
   document.getElementById('stats-toggle'), 'stats', 'statsCollapsed');
 makeCollapsible(document.getElementById('legend'),
   document.getElementById('legend-toggle'), 'legend', 'legendCollapsed');
@@ -2387,45 +2549,40 @@ function edgeDetail(rideIds, name) {
 
 let inspector = null;     // the open source, or null
 let selectedEdge = null;  // the geoLayer layer drawn as selected, if any
-// Set only when opening the inspector collapsed #stats itself, on a phone,
-// where the two rails stack into one column and stay stacked whatever either
-// panel's own content does. Closing the inspector then reopens exactly that
-// collapse -- never a reader's own, which stays in localStorage untouched.
-let statsAutoCollapsed = false;
 
 const railEl = document.getElementById('left-rail');
 const inspectorEl = document.getElementById('inspector');
 const inspectorTitleEl = document.getElementById('inspector-title');
 const inspectorBodyEl = document.getElementById('inspector-body');
 
-// The clicked feature has to stay clear of everything in the rail, not just of
-// the panel: the legend is in there too, and on a phone it is the piece that
-// ends up over the map. Measured off the rail's own rect rather than restating
-// the stylesheet's breakpoint here -- a rail as wide as the map is the phone's
-// bottom row, and anything narrower is the desktop column. It is the rail that
-// is measured, not the panel: the panel is sized to its rows on a phone too,
-// so its own width says nothing about which edge it is parked against.
-// Same measurement railPadding takes, for the same reason: a rail as wide as
-// the map is the phone's bottom-row layout, and restating the stylesheet's
-// 640px breakpoint here would be a second number to keep in sync with it.
-function isPhoneLayout() {
-  const box = railEl.getBoundingClientRect();
-  const view = map.getContainer().getBoundingClientRect();
-  return box.width > view.width * 0.6;
-}
-
+// Keep the clicked feature clear of the chrome, whichever layout is in force.
+// On a phone that is the sheet along the bottom and nothing else -- the rails
+// are gone and so is the zoom control, so the rest of the screen is map. The
+// bottom padding is capped at just over half the view: a sheet dragged up to
+// 88% would otherwise ask panInside for more room than the map has, and a
+// reader at that height is reading the sheet rather than the map anyway.
 function railPadding() {
-  const box = railEl.getBoundingClientRect();
   const view = map.getContainer().getBoundingClientRect();
-  return box.width > view.width * 0.6
-    ? { paddingTopLeft: [24, 96], paddingBottomRight: [24, view.bottom - box.top + 16] }
-    : { paddingTopLeft: [box.right - view.left + 16, 96], paddingBottomRight: [24, 24] };
+  if (!sheetEl.hidden) {
+    // The higher of the sheet and the ride-view bar riding on top of it: with
+    // no ride on screen the rail is a zero-height box just above the sheet, so
+    // the same expression covers both cases without asking which.
+    const top = Math.min(sheetEl.getBoundingClientRect().top,
+                         railEl.getBoundingClientRect().top);
+    const bottom = Math.min(view.bottom - top + 16, Math.round(view.height * 0.55));
+    return { paddingTopLeft: [24, 24], paddingBottomRight: [24, bottom] };
+  }
+  const box = railEl.getBoundingClientRect();
+  return { paddingTopLeft: [box.right - view.left + 16, 96], paddingBottomRight: [24, 24] };
 }
 
 function renderInspector() {
   if (!inspector) return;
   const { title, body } = inspector.render();
+  // Both headings, always: only one of them is on screen, and which one is the
+  // layout's business rather than this function's.
   inspectorTitleEl.textContent = title;
+  sheetTitleEl.textContent = title;
   inspectorBodyEl.textContent = '';
   if (typeof body === 'string') inspectorBodyEl.innerHTML = body;
   else inspectorBodyEl.appendChild(body);
@@ -2445,15 +2602,13 @@ function openInspector(source, pan = true) {
   // panInside only moves the map when it has to, so a feature already in the
   // clear stays exactly where the reader left it.
   if (pan && source.latlng) map.panInside(source.latlng, railPadding());
-  // On a phone the inspector lands in the same bottom row #stats would need
-  // to share the screen with; collapsing #stats for the duration is the same
-  // "one thing open at a time" #stats-sections already does. Skipped when
-  // #stats is already collapsed -- the reader's own choice or a still-open
-  // auto-collapse from the previous feature -- so this never fights either.
-  if (isPhoneLayout() && !statsEl.classList.contains('collapsed')) {
-    statsAutoCollapsed = true;
-    setStatsCollapsed(true, false);
-  }
+  // On a phone the sheet is where the detail lands, so it has to be showing
+  // the detail pane and be tall enough to read. Both are derived rather than
+  // toggled: syncSheet reads `inspector`, so going from one street to the next
+  // -- close then open, in one tick -- cannot leave the sheet out of step with
+  // what is open, which is what the panel it replaced kept getting wrong.
+  syncSheet();
+  raiseSheet();
 }
 
 function closeInspector() {
@@ -2465,11 +2620,217 @@ function closeInspector() {
   clearSelectedEdge();
   if (kind === 'dock') { clearDockLinks(); unghostEdges(); }
   if (kind === 'area') { nbSelected = null; syncNbOutline(); }
-  if (statsAutoCollapsed) {
-    statsAutoCollapsed = false;
-    setStatsCollapsed(false, false);
+  // Back to the standing pane the reader had open, at the height they left it:
+  // closing a detail is not a request for the map, it is a step back up the
+  // list they were working through.
+  syncSheet();
+}
+
+// -- Sheet -------------------------------------------------------------------
+// The phone layout, in full. Two columns of floating boxes is a desktop idea
+// -- it works because there is room beside the map to put them. There is no
+// beside on a phone: the stats panel and the legend between them took the top
+// half of a 390px screen before anything had been clicked, and the busiest
+// street on the map ran underneath them, so it could not be tapped at all.
+//
+// One surface instead, parked at the bottom where the thumb is, showing
+// exactly one thing at a time: the stats, the filters, or whatever was last
+// clicked. Two rules hold it together.
+//
+// **What is in it is derived, never toggled.** The pane is a function of
+// `inspector` and the standing tab, so every path in and out of a detail --
+// a click, a second click on another street, Back, Escape, a tap on the map --
+// goes through syncSheet and lands in the same place. Its predecessor toggled
+// the stats panel's own collapse on open and untoggled it on close, which put
+// two owners on one piece of state: a reader who reopened the panel over a
+// detail had it shut again by their next click, and closing a detail reopened
+// a panel they had deliberately shut. That is a state bug, not a tuning
+// problem, and no threshold fixes it -- so there is no stored "was it open",
+// only a question asked of `inspector` whenever the answer is needed.
+//
+// **How much screen it takes is the reader's.** Three heights, dragged
+// between or tapped through, replacing the collapse button the desktop
+// panels wear: same lever, made continuous, and moved to where the hand is.
+// Nothing else moves it except a detail opening while it is out of the way,
+// and then only up to the middle stop.
+
+const sheetEl = document.getElementById('sheet');
+const sheetHandleEl = document.getElementById('sheet-handle');
+const sheetNavEl = document.getElementById('sheet-nav');
+const sheetBackEl = document.getElementById('sheet-back');
+const sheetTabsEl = document.getElementById('sheet-tabs');
+const sheetTitleEl = document.getElementById('sheet-title');
+const sheetTabs = [...sheetTabsEl.querySelectorAll('.sheet-tab')];
+
+// Each pane is one of the rails' own bodies, on loan. The box it came out of
+// is remembered here so the swap runs both ways: a phone rotated into
+// landscape, or a desktop window dragged narrow and back, has to end up with
+// the same page it started with. The legend's caption comes with its ramp,
+// listed first so appendChild leaves it above the ramp in the pane and back
+// above the body in the box.
+const SHEET_PANES = [['stats', 'stats-body'],
+                     ['legend', 'legend-title'], ['legend', 'legend-body'],
+                     ['detail', 'inspector-body']].map(([pane, id]) => {
+  const el = document.getElementById(id);
+  return { pane, el, home: el.parentNode, into: document.getElementById(`pane-${pane}`) };
+});
+
+// The lowest stop is measured rather than written down: it is the grab strip
+// plus the nav row, which is exactly what is left when the sheet is pushed out
+// of the way, and it moves on its own if either ever grows a line.
+function sheetStops() {
+  const peek = sheetHandleEl.offsetHeight + sheetNavEl.offsetHeight;
+  const h = window.innerHeight;
+  return [peek, Math.round(h * 0.46), Math.round(h * 0.88)];
+}
+
+let sheetStop = 1;       // 0 out of the way, 1 half the screen, 2 most of it
+let sheetTab = 'stats';  // the standing pane, held while a detail is over it
+let sheetDrag = null;
+try {
+  // Matched against the stops themselves, not range-checked: a missing key
+  // reads as null, and +null is 0, which is a real stop -- so a first visit
+  // would open to the one height that shows a reader nothing.
+  const saved = ['0', '1', '2'].indexOf(localStorage.getItem('sheetStop'));
+  if (saved !== -1) sheetStop = saved;
+  const tab = localStorage.getItem('sheetTab');
+  if (sheetTabs.some(t => t.dataset.pane === tab)) sheetTab = tab;
+} catch (e) {}
+
+function setSheetHeight(px) {
+  document.documentElement.style.setProperty('--sheet-h', `${Math.round(px)}px`);
+}
+
+function setSheetStop(i, animate = true) {
+  sheetStop = i;
+  sheetEl.classList.toggle('animating', animate);
+  setSheetHeight(sheetStops()[i]);
+  sheetHandleEl.setAttribute('aria-expanded', String(i > 0));
+  try { localStorage.setItem('sheetStop', String(i)); } catch (e) {}
+}
+
+// Only ever upwards, and only to the middle: a detail opening is a reason to
+// show the sheet, not a reason to take the map away from a reader who had it
+// pushed down, nor to shrink one they had dragged all the way up.
+function raiseSheet() {
+  if (!sheetEl.hidden && sheetStop === 0) setSheetStop(1);
+}
+
+function syncSheet() {
+  const detail = inspector !== null;
+  const pane = detail ? 'detail' : sheetTab;
+  for (const p of SHEET_PANES) p.into.classList.toggle('active', p.pane === pane);
+  for (const tab of sheetTabs) {
+    const on = !detail && tab.dataset.pane === sheetTab;
+    tab.classList.toggle('active', on);
+    // Pressed rather than selected: a tab is a toggle here, since a tap on the
+    // one already showing puts the sheet away.
+    tab.setAttribute('aria-pressed', String(on));
+  }
+  sheetBackEl.hidden = !detail;
+  sheetTitleEl.hidden = !detail;
+  sheetTabsEl.hidden = detail;
+  // The heading takes the clicked layer's colour here for the same reason it
+  // does in the rail's panel: it says which of the three is being described
+  // before it is read.
+  sheetEl.classList.remove('kind-edge', 'kind-dock', 'kind-area');
+  if (detail) sheetEl.classList.add(`kind-${inspector.kind}`);
+}
+
+// The breakpoint lives in the stylesheet and is read back from it, so its two
+// numbers are written once. A media query is the right place for them: it is
+// the stylesheet, not the script, that decides there is no room for two rails
+// -- and it asks about height as well as width, because a landscape phone has
+// plenty of the one and none of the other.
+function layoutIsPhone() {
+  return getComputedStyle(document.documentElement)
+    .getPropertyValue('--layout').trim() === 'phone';
+}
+
+let sheetShown = false;
+function applyLayout() {
+  const phone = layoutIsPhone();
+  if (phone === sheetShown) {
+    // Two of the three stops are shares of the window, so a rotation moves
+    // them even when the layout itself has not changed.
+    if (phone) setSheetHeight(sheetStops()[sheetStop]);
+    return;
+  }
+  sheetShown = phone;
+  // appendChild moves rather than copies, so every listener, every open
+  // section and every scroll position survives the trip in both directions.
+  for (const p of SHEET_PANES) (phone ? p.into : p.home).appendChild(p.el);
+  sheetEl.hidden = !phone;
+  if (phone) {
+    syncSheet();
+    setSheetStop(sheetStop, false);
+  } else {
+    setSheetHeight(0);
   }
 }
+
+for (const tab of sheetTabs) {
+  tab.addEventListener('click', () => {
+    // A tap on the tab already showing hands the screen back to the map and
+    // takes it again -- the same "enough of that" the chips and the desktop
+    // collapse buttons are, on the control the reader's thumb is already on.
+    if (inspector === null && sheetTab === tab.dataset.pane) {
+      setSheetStop(sheetStop === 0 ? 1 : 0);
+      return;
+    }
+    sheetTab = tab.dataset.pane;
+    try { localStorage.setItem('sheetTab', sheetTab); } catch (e) {}
+    // closeInspector tears the detail down and syncs; with none open there is
+    // nothing to tear down and the sync is all that is wanted.
+    if (inspector !== null) closeInspector();
+    else syncSheet();
+    raiseSheet();
+  });
+}
+sheetBackEl.addEventListener('click', closeInspector);
+
+// Drag the grab strip to any height between the outer two stops and it snaps
+// to the nearest on release; tap it and the sheet simply shows or hides. A
+// tap is not a step through all three: what a reader means by it is "give me
+// the map" or "give me that back", and a gesture that sometimes answers with
+// a third thing is a gesture they stop trusting.
+function finishSheetDrag(tapped) {
+  const drag = sheetDrag;
+  sheetDrag = null;
+  if (!drag) return;
+  if (tapped && !drag.moved) { setSheetStop(sheetStop === 0 ? 1 : 0); return; }
+  const h = sheetEl.getBoundingClientRect().height;
+  const stops = sheetStops();
+  let best = 0;
+  for (let i = 1; i < stops.length; i++) {
+    if (Math.abs(stops[i] - h) < Math.abs(stops[best] - h)) best = i;
+  }
+  setSheetStop(best);
+}
+
+sheetHandleEl.addEventListener('pointerdown', e => {
+  sheetDrag = { y: e.clientY, h: sheetEl.getBoundingClientRect().height, moved: false };
+  sheetEl.classList.remove('animating');
+  sheetHandleEl.setPointerCapture(e.pointerId);
+});
+sheetHandleEl.addEventListener('pointermove', e => {
+  if (!sheetDrag) return;
+  const dy = sheetDrag.y - e.clientY;
+  // A few pixels of slop, so a tap that shifts under the thumb is still a tap.
+  if (Math.abs(dy) > 4) sheetDrag.moved = true;
+  const stops = sheetStops();
+  setSheetHeight(Math.max(stops[0], Math.min(stops[2], sheetDrag.h + dy)));
+});
+sheetHandleEl.addEventListener('pointerup', () => finishSheetDrag(true));
+sheetHandleEl.addEventListener('pointercancel', () => finishSheetDrag(false));
+sheetHandleEl.addEventListener('keydown', e => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  e.preventDefault();
+  setSheetStop(sheetStop === 0 ? 1 : 0);
+});
+
+window.addEventListener('resize', applyLayout);
+applyLayout();
 
 // -- Selection ---------------------------------------------------------------
 // Without a popup tip there is nothing tying the panel to a place, so the

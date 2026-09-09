@@ -145,24 +145,33 @@ test.describe('stats panel', () => {
     expect(await height()).toBeGreaterThan(closed);
   });
 
-  test('a phone viewport keeps the panel at its desktop width', async ({ page }) => {
-    // The panel used to go full-bleed under 640px, which stretched everything
-    // width-driven inside it -- the hero grid, the right-justified rows, the
-    // flex:1 histogram bars -- to ~1.7x their desktop size.
+  // A phone has no rails, so the panel's box is not on that screen at all --
+  // its body is, inside the sheet. What has to survive the move is the panel
+  // itself: the same open section, in the same DOM, with the same listeners,
+  // handed back to the box it came from when there is room for it again.
+  test('a phone lends the stats body to the sheet and takes it back', async ({ page }) => {
     await page.setViewportSize({ width: 430, height: 932 });
     await gotoMap(page);
-    await openSection(page, 'stat-riding');
-    const box = () => page.locator('#stats').evaluate((el) => el.getBoundingClientRect());
-    expect((await box()).width).toBe(236);
-    // Still anchored to the right edge, same as on a desktop viewport.
-    expect((await box()).right).toBe(430 - 12);
+    await page.locator('#stat-chips .chip[data-section="stat-riding"]').click();
 
-    // Only a viewport narrower than the panel itself shrinks it, and then it
-    // keeps its 12px margins rather than running off the screen.
-    await page.setViewportSize({ width: 200, height: 932 });
-    const narrow = await box();
-    expect(narrow.width).toBe(200 - 24);
-    expect(narrow.left).toBe(12);
+    const parentOf = (sel) => page.locator(sel).evaluate((el) => el.parentElement.id);
+    expect(await parentOf('#stats-body')).toBe('pane-stats');
+    await expect(page.locator('#stats')).toBeHidden();
+    await expect(page.locator('#sheet')).toBeVisible();
+    // The section the reader opened is open, and it is the same element: the
+    // body was moved, not rebuilt, so nothing in it had to be restored.
+    await expect(page.locator('#stat-riding')).toBeVisible();
+
+    // Wide again, and the panel is back in its own box with the section still
+    // open. A window dragged narrow and back has to end where it started.
+    await page.setViewportSize({ width: 1280, height: 800 });
+    expect(await parentOf('#stats-body')).toBe('stats');
+    await expect(page.locator('#sheet')).toBeHidden();
+    await expect(page.locator('#stats')).toBeVisible();
+    await expect(page.locator('#stat-riding')).toBeVisible();
+    const box = await page.locator('#stats').evaluate((el) => el.getBoundingClientRect());
+    expect(box.width).toBe(236);
+    expect(box.right).toBe(1280 - 12);
   });
 
   test('legend shows the max ride count and a gradient bar', async ({ page }) => {
