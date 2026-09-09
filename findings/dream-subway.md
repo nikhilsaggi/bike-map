@@ -106,6 +106,32 @@ This mattered to the superseded first cut and still matters to `corridors.py`,
 which the diagnostics use: unwindowed, "Broadway" chains Manhattan to Bushwick
 in one polyline and adds a 2.9 km hop across the East River.
 
+## On the map
+
+The network ships as `properties.subway` and draws as a fourth layer on
+`docs/index.html`, off until asked for. Three things about it are
+load-bearing.
+
+**The chords are straight.** A station's position is real -- the centroid of a
+cluster of ride endpoints -- but the line between two stations is drawn as a
+straight chord, because `odnet.py` never opens the street geometry. Routing it
+along roads for display would put a plausible-looking path on the map that no
+measurement backs, which is the same reason a Citibike dock's links stay
+straight.
+
+**The streets go to outline underneath it.** Five of the line colours sit
+inside the plasma ramp the network is drawn in, so at full brightness the
+overlay and the heatmap lose against each other. The layer ghosts the network
+the way a focused dock already did -- the streets stay on screen, and the
+slider still moves them, in outline. The predicate is shared
+(`networkIsContext`), because it is the same judgement twice.
+
+**It cannot follow the slider**, and that is the one thing a reader would
+otherwise assume. Station weights and the lines themselves are fitted to the
+whole history; a date-filtered version would resize the markers while leaving
+the network under them unchanged, which is a filter that looks like it works.
+The toggle's tooltip says so.
+
 ## What it cannot claim
 
 - A trip end is where a recording started, which is not always where the rider

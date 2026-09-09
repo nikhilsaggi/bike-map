@@ -83,6 +83,9 @@ interactive Leaflet map (`docs/`, served via GitHub Pages) plus static PNGs.
    the merge. The boundary file is fetched once by `cli.main`, never by the
    export: keeping the network out of `_export_geojson` is what keeps the
    export tests offline
+11. `subway.py` -- the dream-subway overlay, same shape once more. It reshapes
+   `cache/dream_subway/od_network.json`, which `tools/dream_subway/` writes by
+   hand like the Citibike export; `None` when that file is absent
 
 `bike_routes/ingest/` is the front of the pipeline (`garmin_sync`, `gpx_to_csv`,
 `citibike`), run as `python -m bike_routes.ingest.<mod>`; it fills `rides/`
@@ -110,7 +113,7 @@ owned what; don't reintroduce that.
 `docs/index.html` is a single self-contained Leaflet page (no build step); it
 reads everything from `rides.geojson.gz` top-level `properties`.
 
-**The three drawn layers share one switcher (`#layers`), and only the network
+**The four drawn layers share one switcher (`#layers`), and only the network
 starts on.** Switching the network off is the same lever the date filter
 already pulls -- `routesOn` gates `applyFilter`'s add/remove, so the children
 leave the map and keep their counts, and the switch always renormalizes so
@@ -147,7 +150,7 @@ rather than `absolute`, or it would centre on the rail's width instead of the
 map's. `map.panInside` moves the map
 only when the clicked feature would fall behind the panel (`showArea` frames
 the whole polygon itself instead, so `selectArea` is told not to pan on top of
-the flight). One panel serves all three layers: a source is `{ kind, latlng,
+the flight). One panel serves every layer: a source is `{ kind, latlng,
 render }`, and `render()` returns `{ title, body }`. Because it covers nothing
 it can also outlive the click: `applyFilter` re-renders it, gated on
 `renormalize` so playback frames do not rebuild a 141-row dock, and
@@ -553,6 +556,25 @@ because attribution is not optional.
   covers 95% of the track by construction). If a chart is ever reinstated
   here, read [why each failed](findings/bike-reencounters.md) first, and note
   that the working one still lost to a list you can click.
+- **The dream subway measures nothing, and the page must never let it
+  look as though it does.** `properties.subway` is a hypothetical fitted to
+  where rides begin and end, so it stays out of `edge_counts`, `coverage` and
+  `features[]` the same way Citibike trips do. A station's position is real --
+  the centroid of a cluster of ride endpoints -- but **the chord between two
+  stations is drawn straight**, because `odnet.py` never opens the geometry:
+  routing it along streets would make a guess look like a trace, which is the
+  argument that keeps a dock's links straight too. It is also the one drawn
+  layer the slider cannot move: the weights and the lines are both fitted to
+  the whole history, so a date-filtered version would resize the markers while
+  leaving the network under them unchanged ([why](findings/dream-subway.md)).
+- **`networkIsContext()` is why the streets go to outline, and it has two
+  owners.** A dock in focus and the subway overlay both lay thin bright lines
+  over 21k plasma ones, which is a haystack rather than a comparison; the
+  subway is the worse case, because five of its line colours sit inside the
+  plasma ramp itself. Both ghost the network with ride view's own `EDGE_GHOST`
+  and leave it on screen in outline -- reading the overlay against where the
+  bike goes is the point of both layers -- and the slider still moves it, in
+  outline. Ride view outranks both: it owns the drawn edges whenever it is up.
 - **The dock layer is meant to be explored, not read.** Markers resize with
   the same `filterLo`/`filterHi` range that filters the edges (`applyFilter`
   calls `applyDockFilter`), so the slider and time-lapse move them too. The

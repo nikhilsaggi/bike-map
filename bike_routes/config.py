@@ -155,6 +155,10 @@ CITIBIKE_STATIONS_PATH = CACHE_DIR / "citibike_stations.json"
 # NYC neighborhood boundaries, fetched once from NYC Open Data and never
 # refreshed -- unlike the weather, they do not change between runs.
 NTA_CACHE_PATH = CACHE_DIR / "nta_boundaries.geojson"
+# The hypothetical network tools/dream_subway/odnet.py fits to the ride
+# endpoints. Written by hand like the Citibike export, summarised on every
+# later run; absent on any checkout that has not run the tool.
+SUBWAY_NETWORK_PATH = CACHE_DIR / "dream_subway" / "od_network.json"
 
 
 RENDER_CACHE_FORMAT = "hw-name-v1"  # bump invalidates render_cache.pkl (rebuilt from the graph)

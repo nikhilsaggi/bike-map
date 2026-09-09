@@ -297,6 +297,10 @@
   #rf-check { accent-color: #f0a02a; }
   #cb-check { accent-color: #a8d8e8; }
   #nb-check { accent-color: #cfc3a8; }
+  /* The subway carries five line colours and so is none of them; a pale
+     violet sits outside the plasma ramp, ride view's cyan, the dock blue and
+     the neighborhood tan, which is all the identity the row needs. */
+  #sw-check { accent-color: #b9a9e8; }
 
   /* -- Neighborhoods ---------------------------------------------------- */
   .nb-detail { min-width: 150px; }
@@ -309,6 +313,28 @@
      difference between "nothing to show" and "this is broken". */
   #cb-range { color: #555; font-size: 9px; }
   .dock-sub { color: #666; font-size: 10px; line-height: 1.5; margin-bottom: 4px; }
+
+  /* -- Dream subway ------------------------------------------------------
+     A station's rows are its lines, and each one is a control: it picks that
+     line out of the network. Same row shape as the dock panel's, so the two
+     read as the same kind of list. */
+  .sw-detail { min-width: 190px; }
+  .sw-sub { color: #666; font-size: 10px; margin-bottom: 5px; }
+  .sw-reach { margin: 6px 0 0; padding-top: 5px; border-top: 1px solid #2a2a2a; }
+  .sw-row {
+    display: flex; align-items: center; gap: 7px; width: 100%;
+    background: none; border: 0; padding: 3px 0; cursor: pointer;
+    color: #ccc; font: inherit; font-size: 12px; text-align: left;
+  }
+  .sw-row:hover, .sw-row.on { color: #fff; }
+  .sw-row.on .sw-name { text-decoration: underline; }
+  .sw-bullet {
+    width: 15px; height: 15px; border-radius: 50%; flex: 0 0 auto;
+    display: grid; place-items: center;
+    color: #fff; font-size: 9px; font-weight: 700;
+  }
+  .sw-name { flex: 1; }
+  .sw-meta { color: #666; font-size: 10px; white-space: nowrap; }
   .dock-count { color: #666; }
   /* Second line of a dock row: the counts, and the route link when there is
      one. Indented under the name it belongs to, and set back from it. */
@@ -626,6 +652,7 @@
   }
   #inspector.kind-dock #inspector-title { color: #a8d8e8; }
   #inspector.kind-area #inspector-title { color: #e8dcc0; }
+  #inspector.kind-subway #inspector-title { color: #cfc0f2; }
   #inspector-close {
     flex: none; background: none; border: none; color: #888; font-size: 15px;
     line-height: 1; cursor: pointer; padding: 0 2px;
@@ -886,6 +913,9 @@
         </label>
         <label id="nb-toggle" class="hidden">
           <input type="checkbox" id="nb-check"> Neighborhoods
+        </label>
+        <label id="sw-toggle" class="hidden">
+          <input type="checkbox" id="sw-check"> Dream subway
         </label>
       </div>
     </div>
@@ -2445,6 +2475,210 @@ function initNeighborhoods(nb) {
   });
 }
 
+// -- Dream subway ------------------------------------------------------------
+// A hypothetical network fitted to where the rides begin and end, drawn over
+// the streets they were fitted from. It is the one drawn layer that measures
+// nothing: the stations are real places -- the centroids of clustered ride
+// endpoints -- but the line between two of them is a straight chord, because
+// the network was built without consulting a single street. Routing it along
+// roads would make a guess look like a trace, which is the same reason a
+// dock's links stay straight.
+//
+// It is also the one layer the slider cannot move. Station weights and the
+// lines themselves are fitted to the whole history, so a date-filtered
+// version would resize the markers while leaving the network under them
+// unchanged -- a filter that looks like it works and does not.
+
+let swData = null;
+let swLayer = null;        // casings, chords and station markers, in that order
+let swChords = [];         // [casing, line] per route, index-aligned to swData.lines
+let swMarkers = [];        // one per station, index-aligned to swData.stations
+let swSelected = null;     // station index whose panel is open
+let swFocusLine = null;    // line id a panel row has asked to pick out
+
+const SW_DIM = 0.16;
+
+function subwayOn() {
+  return swLayer !== null && map.hasLayer(swLayer);
+}
+
+function swLineById(id) {
+  return swData.lines.find(l => l.id === id);
+}
+
+// A station is drawn as what it is on the network: an interchange in white,
+// because it belongs to no one line, and a single-line stop in that line's
+// own colour.
+function swMarkerStyle(i) {
+  const s = swData.stations[i];
+  const own = s.xf ? '#fff' : (swLineById(s.lines[0])?.colour || '#fff');
+  const lit = swFocusLine === null || s.lines.includes(swFocusLine);
+  const sel = swSelected === i;
+  return {
+    radius: sel ? (s.xf ? 8 : 7) : (s.xf ? 6 : 4.5),
+    fillColor: own, fillOpacity: lit ? 0.95 : SW_DIM,
+    // White is what a click means everywhere else on this map, so a selected
+    // stop wears it as a ring rather than a fill -- an interchange is already
+    // white inside.
+    color: sel ? '#fff' : '#0d0d0d',
+    weight: sel ? 3 : (s.xf ? 2 : 1.5),
+    opacity: lit ? 1 : SW_DIM,
+  };
+}
+
+function paintSubway() {
+  if (!swLayer || !map.hasLayer(swLayer)) return;
+  swData.lines.forEach((l, li) => {
+    const lit = swFocusLine === null || swFocusLine === l.id;
+    const [casing, chord] = swChords[li];
+    casing.setStyle({ opacity: lit ? 0.85 : SW_DIM * 0.5 });
+    chord.setStyle({ opacity: lit ? 0.9 : SW_DIM });
+  });
+  swMarkers.forEach((m, i) => m.setStyle(swMarkerStyle(i)));
+}
+
+// How many other stations this one reaches without a change: the question the
+// whole network was built to answer, asked of one stop.
+function swDirectFrom(i) {
+  const reach = new Set();
+  for (const l of swData.lines) {
+    if (!l.stops.includes(i)) continue;
+    for (const s of l.stops) reach.add(s);
+  }
+  reach.delete(i);
+  return reach.size;
+}
+
+function subwayDetail(si) {
+  const s = swData.stations[si];
+  const box = document.createElement('div');
+  box.className = 'sw-detail';
+
+  const sub = document.createElement('div');
+  sub.className = 'sw-sub';
+  sub.textContent = `${s.ends} ride ${s.ends === 1 ? 'end' : 'ends'} here`;
+  box.appendChild(sub);
+
+  for (const id of s.lines) {
+    const l = swLineById(id);
+    if (!l) continue;
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'sw-row' + (swFocusLine === id ? ' on' : '');
+    const dot = document.createElement('span');
+    dot.className = 'sw-bullet';
+    dot.style.background = l.colour;
+    dot.textContent = l.id;
+    const name = document.createElement('span');
+    name.className = 'sw-name';
+    name.textContent = l.name;
+    const meta = document.createElement('span');
+    meta.className = 'sw-meta';
+    meta.textContent = `${l.stops.length} stops · ${l.km} km`;
+    row.append(dot, name, meta);
+    // Toggling, so a second click on the row that lit a line puts the rest
+    // back rather than stranding the reader in a picked-out network.
+    row.addEventListener('click', () => {
+      swFocusLine = swFocusLine === id ? null : id;
+      paintSubway();
+      renderInspector();
+    });
+    box.appendChild(row);
+  }
+
+  const reach = document.createElement('div');
+  reach.className = 'sw-sub sw-reach';
+  reach.textContent =
+    `Direct to ${swDirectFrom(si)} of ${swData.stations.length - 1} other stations`;
+  box.appendChild(reach);
+  return { title: s.name, body: box };
+}
+
+function selectSubwayStation(si) {
+  if (inspector?.kind !== 'subway') closeInspector();
+  const s = swData.stations[si];
+  swSelected = si;
+  openInspector({
+    kind: 'subway',
+    latlng: L.latLng(s.at[1], s.at[0]),
+    render: () => subwayDetail(si),
+  });
+  paintSubway();
+}
+
+function buildSubwayLayer() {
+  swLayer = L.layerGroup();
+  const at = i => [swData.stations[i].at[1], swData.stations[i].at[0]];
+  // Casings first, then every chord, then the stations: three passes rather
+  // than three layers per route, so a line never draws over its neighbour's
+  // casing and a marker is never buried by a chord added after it.
+  swChords = swData.lines.map(l => {
+    const pts = l.stops.map(at);
+    const casing = L.polyline(pts, {
+      color: '#0d0d0d', weight: 7, opacity: 0.85,
+      lineJoin: 'round', lineCap: 'round', interactive: false,
+    });
+    const chord = L.polyline(pts, {
+      color: l.colour, weight: 4, opacity: 0.9,
+      lineJoin: 'round', lineCap: 'round',
+      // The streets are what a click on this map has always been about, and
+      // 21k of them lie under these chords. The route is not clickable, so a
+      // click passes through to the edge beneath it; the stations are.
+      interactive: false,
+    });
+    swLayer.addLayer(casing);
+    return [casing, chord];
+  });
+  for (const [, chord] of swChords) swLayer.addLayer(chord);
+
+  swMarkers = swData.stations.map((s, i) => {
+    const m = L.circleMarker(at(i), swMarkerStyle(i));
+    m.bindTooltip(
+      () => `${s.name}<br>${s.lines.join(' ')} · ${s.ends} ride ends`,
+      { sticky: true });
+    // Stopped, or the map's own click handler would close the panel this
+    // click just opened.
+    m.on('click', e => { L.DomEvent.stopPropagation(e); selectSubwayStation(i); });
+    swLayer.addLayer(m);
+    return m;
+  });
+}
+
+function initSubway(sw) {
+  if (!sw || !sw.lines?.length || !sw.stations?.length) return;
+  swData = sw;
+  buildSubwayLayer();
+  const toggle = document.getElementById('sw-toggle');
+  const check = document.getElementById('sw-check');
+  const pct = sw.rides ? Math.round((100 * (sw.direct + sw.one_change)) / sw.rides) : 0;
+  // On the control rather than under it, like the neighborhoods row: what the
+  // layer is, and the one thing about it a reader would otherwise assume
+  // wrong -- that the slider moves it.
+  toggle.title =
+    `${sw.stations.length} stations and ${sw.lines.length} lines fitted to where ` +
+    `rides begin and end, carrying ${pct}% of them with at most one change. ` +
+    'The chords are straight because no street was consulted. All-time: the ' +
+    'date slider does not move it.';
+  toggle.classList.remove('hidden');
+  check.addEventListener('change', () => {
+    if (check.checked) {
+      // On the map before ghosting: subwayOn() reads the map, so the streets
+      // would still think they were the subject.
+      swLayer.addTo(map);
+      paintSubway();
+      ghostEdges();
+      restackLayers();
+    } else {
+      // Only the subway's own panel goes with the layer.
+      if (inspector?.kind === 'subway') closeInspector();
+      map.removeLayer(swLayer);
+      swSelected = null;
+      swFocusLine = null;
+      unghostEdges();
+    }
+  });
+}
+
 // What an edge looks like when something else is the subject: ride view's
 // unselected streets, and the whole network while a dock is in focus. One
 // style, because they mean the same thing -- the network is context now.
@@ -2453,19 +2687,21 @@ const EDGE_RIDE = {
   color: '#00e5ff', weight: 4, opacity: 0.95, lineJoin: 'round', lineCap: 'round',
 };
 
-// Ride view owns the drawn edges whenever it is up, so dock focus only
-// paints when there is no ride on screen to be the subject instead.
-function dockFocus() {
-  return dockSelected !== null && rideView === null;
+// The network stops being the subject whenever something is laid over it to
+// be read against it: a dock's links, or the whole dream-subway overlay. Ride
+// view owns the drawn edges whenever it is up and outranks both.
+function networkIsContext() {
+  return rideView === null && (dockSelected !== null || subwayOn());
 }
 
 // A dock's straight lines are a handful of thin cyan strokes over 21k plasma
-// ones, which is not a comparison so much as a haystack. Ghosting the
-// heatmap the way ride view does keeps the network on screen in outline --
-// where the docks sit against where the bike goes is the whole point of the
-// layer -- and stops it competing for the eye.
+// ones, which is not a comparison so much as a haystack. The subway's chords
+// are worse: five of its colours sit inside the plasma ramp itself. Ghosting
+// the heatmap the way ride view does keeps the network on screen in outline
+// -- where the overlay sits against where the bike goes is the whole point of
+// both layers -- and stops it competing for the eye.
 function ghostEdges() {
-  if (!dockFocus()) return;
+  if (!networkIsContext()) return;
   geoLayer.eachLayer(layer => {
     if (map.hasLayer(layer)) layer.setStyle(EDGE_GHOST);
   });
@@ -2622,6 +2858,7 @@ function closeInspector() {
   clearSelectedEdge();
   if (kind === 'dock') { clearDockLinks(); unghostEdges(); }
   if (kind === 'area') { nbSelected = null; syncNbOutline(); }
+  if (kind === 'subway') { swSelected = null; swFocusLine = null; paintSubway(); }
   // Back to the standing pane the reader had open, at the height they left it:
   // closing a detail is not a request for the map, it is a step back up the
   // list they were working through.
@@ -2864,7 +3101,7 @@ function clearSelectedEdge() {
     layer.setStyle(hasRide(layer.feature.properties.rides || [], rideView)
       ? EDGE_RIDE : EDGE_GHOST);
   } else {
-    layer.setStyle(dockFocus() ? EDGE_GHOST : styleFor(layer._filteredCount || 1));
+    layer.setStyle(networkIsContext() ? EDGE_GHOST : styleFor(layer._filteredCount || 1));
   }
 }
 
@@ -3343,9 +3580,9 @@ function applyFilter(renormalize = true) {
       map.removeLayer(layer);
     } else {
       if (!map.hasLayer(layer)) layer.addTo(map);
-      // Under a focused dock the slider and the time-lapse still move the
-      // network, they just move it in outline.
-      layer.setStyle(dockFocus() ? EDGE_GHOST : styleFor(c));
+      // Under a focused dock or the subway overlay the slider and the
+      // time-lapse still move the network, they just move it in outline.
+      layer.setStyle(networkIsContext() ? EDGE_GHOST : styleFor(c));
     }
   });
   restackLayers();
@@ -3369,9 +3606,14 @@ function restackLayers() {
     dockLayer.eachLayer(l => l.bringToFront());
     if (dockLinks) dockLinks.eachLayer(l => l.bringToFront());
   }
-  // Last, for the same reason: the selected area's outline says which polygon
-  // the panel is describing, and a slider move would otherwise draw the
-  // network back over it.
+  // Same reason again: the subway is an overlay on the network, so a filter
+  // change must not bury it under the streets it was fitted from.
+  if (swLayer && map.hasLayer(swLayer)) {
+    swLayer.eachLayer(l => l.bringToFront());
+  }
+  // Last of all: the selected area's outline says which polygon the panel is
+  // describing, and a slider move would otherwise draw the network back over
+  // it.
   if (nbOutline) nbOutline.bringToFront();
 }
 
@@ -3640,6 +3882,7 @@ fetch('rides.geojson.gz')
     renderCitibike(data.properties?.citibike);
     initDockLayer(data.properties?.citibike);
     initNeighborhoods(data.properties?.neighborhoods);
+    initSubway(data.properties?.subway);
     renderPlaces(data.properties?.neighborhoods);
     restoreSection();
 

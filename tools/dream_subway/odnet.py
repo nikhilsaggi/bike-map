@@ -26,6 +26,20 @@ MIN_STOPS, MAX_STOPS = 5, 15
 DENSITY_MIN = 3.5       # a stop must earn this many rides per km of route it adds
 LAT_M = 111320.0
 
+# Line identity lives here so the diagram, the export and the page all read one
+# source. The names are editorial, applied in the order the builder emits lines;
+# a run that produces more lines than this covers falls back to its terminals.
+META = [
+    ("1", "Broadway - Bushwick", "#d6262b"),
+    ("2", "West Side - Yorkville", "#0a7bc2"),
+    ("3", "East Side - Tribeca", "#159a4e"),
+    ("4", "SoHo - Bushwick", "#e2801a"),
+    ("5", "Broadway Local", "#7d4bb5"),
+    ("6", "Sixth", "#0f9c9c"),
+    ("7", "Seventh", "#b3457f"),
+    ("8", "Eighth", "#6d7a1f"),
+]
+
 
 def metres(p, q):
     """Distance in metres between two [lon, lat] points."""
@@ -250,7 +264,17 @@ def main():
         for s in path:
             print("     %-34s %4d" % (st[s]["near"], st[s]["n"]))
 
-    json.dump({"stations": st, "lines": lines, "score": sc,
+    meta = []
+    for i, path in enumerate(lines):
+        lid, name, colour = (META[i] if i < len(META)
+                             else (str(i + 1), "", "#888888"))
+        if not name:
+            name = "%s - %s" % (st[path[0]]["near"], st[path[-1]]["near"])
+        meta.append({"id": lid, "name": name, "colour": colour,
+                     "stops": path, "km": round(run_km(path, at), 1),
+                     "from": st[path[0]]["near"], "to": st[path[-1]]["near"]})
+
+    json.dump({"stations": st, "lines": lines, "meta": meta, "score": sc,
                "demand": [[a, b, v] for (a, b), v in dem.items()]},
               open(work("od_network.json"), "w"), indent=1)
     print("\nwrote", work("od_network.json"))

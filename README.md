@@ -373,6 +373,9 @@ part of it; `findings/` holds what they found:
 - [Rebuilding the graph without Overpass](findings/graph-rebuild-offline.md) —
   recovering an invalidated graph during an outage from the responses osmnx
   already cached, and why a Geofabrik extract is the wrong tool for it
+- [A subway fitted to the rides](findings/dream-subway.md) —
+  `tools/dream_subway/`, a hypothetical network drawn from where rides begin
+  and end, and why fitting it to the streets they ride instead made it worse
 
 `tools/hmm_matcher_eval.py` compares the two matchers on real rides,
 `tools/traversal_audit.py` checks pass counting against the raw traces,
@@ -397,6 +400,7 @@ bike_routes/        the pipeline, one stage per module
   ingest/           Garmin download, GPX -> CSV, Citibike export (the front)
 docs/               the published Leaflet map + its rides.geojson.gz
 tools/              analysis and recovery run by hand, not part of the pipeline
+  dream_subway/     fits a hypothetical transit network to the ride endpoints
 findings/           write-ups of what that analysis found
 tests/              pytest suite (synthetic grids) + Playwright e2e for docs/
 rides/              ride CSVs (gitignored -- personal GPS traces)
@@ -433,6 +437,9 @@ gitignored):
   `tools/rebuild_graph_from_cache.py` can rebuild the graph while Overpass is
   down; they accumulate across every region ever fetched, so between them they
   cover more than the last fetch did
+- `cache/dream_subway/od_network.json` — the hypothetical network fitted to
+  the ride endpoints (written by `tools/dream_subway/odnet.py`, absent until
+  you run it); the map ships without the subway layer while it is missing
 
 Delete any cache file — or the whole directory — to force a rebuild.
 Changing processing parameters automatically triggers a full reprocess, and
