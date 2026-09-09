@@ -567,6 +567,14 @@ because attribution is not optional.
   layer the slider cannot move: the weights and the lines are both fitted to
   the whole history, so a date-filtered version would resize the markers while
   leaving the network under them unchanged ([why](findings/dream-subway.md)).
+- **Two lines sharing a stretch each get their own track, and the track is
+  measured in pixels.** 5 of the network's 43 segments are carried by two
+  lines, and drawn on one centreline the second simply hides the first. A
+  chord is therefore a *multi*-polyline: an unshared segment is the plain pair
+  of stations, a shared one tapers out to its own track and back so both lines
+  still meet at the stop they share. The offset is screen pixels recomputed on
+  `zoomend`, never a fixed distance on the ground -- a ground offset collapses
+  to a single line at city scale, which is the scale this layer is read at.
 - **`networkIsContext()` is why the streets go to outline, and it has two
   owners.** A dock in focus and the subway overlay both lay thin bright lines
   over 21k plasma ones, which is a haystack rather than a comparison; the

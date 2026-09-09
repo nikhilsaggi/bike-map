@@ -109,7 +109,7 @@ in one polyline and adds a 2.9 km hop across the East River.
 ## On the map
 
 The network ships as `properties.subway` and draws as a fourth layer on
-`docs/index.html`, off until asked for. Three things about it are
+`docs/index.html`, off until asked for. Four things about it are
 load-bearing.
 
 **The chords are straight.** A station's position is real -- the centroid of a
@@ -125,6 +125,13 @@ overlay and the heatmap lose against each other. The layer ghosts the network
 the way a focused dock already did -- the streets stay on screen, and the
 slider still moves them, in outline. The predicate is shared
 (`networkIsContext`), because it is the same judgement twice.
+
+**Two lines on one stretch each get a track.** 5 of the 43 segments are
+carried by two lines; on one centreline the second hides the first. Each chord
+is a multi-polyline, and a shared segment tapers out to its own track and back
+so both lines still meet at the stop they share. The offset is in screen
+pixels, recomputed on zoom: a fixed offset on the ground collapses to one line
+at city scale, which is the scale this layer is read at.
 
 **It cannot follow the slider**, and that is the one thing a reader would
 otherwise assume. Station weights and the lines themselves are fitted to the

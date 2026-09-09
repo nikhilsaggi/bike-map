@@ -39,6 +39,19 @@ export const SUBWAY_BLOCK = {
   rides: 10, direct: 6, one_change: 2, stranded: 1, reachable: 9,
 };
 
+// The same four stations with a third line laid over an existing stretch:
+// line 3 repeats line 1's West End -> Center Station and line 2's
+// Center Station -> South End, so both of those segments carry two lines and
+// have to draw on their own tracks.
+export const SUBWAY_PARALLEL_BLOCK = {
+  ...SUBWAY_BLOCK,
+  lines: [
+    { id: '1', name: 'Cross Line', colour: '#d6262b', stops: [1, 0, 2], km: 2.5 },
+    { id: '2', name: 'South Line', colour: '#0a7bc2', stops: [0, 3], km: 0.6 },
+    { id: '3', name: 'Shared Line', colour: '#159a4e', stops: [1, 0, 3], km: 1.8 },
+  ],
+};
+
 export const SPEED_BLOCK = {
   corridors: [
     {

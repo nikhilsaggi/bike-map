@@ -2497,6 +2497,66 @@ let swSelected = null;     // station index whose panel is open
 let swFocusLine = null;    // line id a panel row has asked to pick out
 
 const SW_DIM = 0.16;
+// Two lines sharing a stretch have to both be visible, so a shared segment is
+// drawn once per line and shifted sideways. The shift is in screen pixels
+// rather than metres, and recomputed on zoom: a fixed ground offset would
+// collapse to one line at city scale, which is the scale this layer is read
+// at. Six is the smallest gap that separates two 4px chords.
+const SW_TRACK = 6;
+
+let swShare = new Map();   // "a|b" -> indices of the lines carrying that segment
+
+function swSegmentKey(a, b) {
+  return a < b ? `${a}|${b}` : `${b}|${a}`;
+}
+
+function swLatLng(i) {
+  const [lon, lat] = swData.stations[i].at;
+  return L.latLng(lat, lon);
+}
+
+// One line's chords, as a multi-polyline: a segment no other line carries is
+// the plain pair of stations, and a shared one tapers out to its own track and
+// back in, so both lines still meet at the stop they share.
+function swGeometry(li) {
+  const stops = swData.lines[li].stops;
+  const zoom = map.getZoom();
+  const out = [];
+  for (let i = 0; i < stops.length - 1; i++) {
+    const a = stops[i];
+    const b = stops[i + 1];
+    const A = swLatLng(a);
+    const B = swLatLng(b);
+    const carriers = swShare.get(swSegmentKey(a, b)) || [li];
+    const shift = (carriers.indexOf(li) - (carriers.length - 1) / 2) * SW_TRACK;
+    if (!shift) { out.push([A, B]); continue; }
+    const pa = map.project(A, zoom);
+    const pb = map.project(B, zoom);
+    const len = pa.distanceTo(pb) || 1;
+    const ux = (pb.x - pa.x) / len;
+    const uy = (pb.y - pa.y) / len;
+    const nx = -uy * shift;
+    const ny = ux * shift;
+    const inset = Math.min(16, len * 0.3);
+    out.push([
+      A,
+      map.unproject(L.point(pa.x + ux * inset + nx, pa.y + uy * inset + ny), zoom),
+      map.unproject(L.point(pb.x - ux * inset + nx, pb.y - uy * inset + ny), zoom),
+      B,
+    ]);
+  }
+  return out;
+}
+
+// The offsets are pixel-sized, so they are wrong the moment the zoom changes.
+function swSyncGeometry() {
+  if (!swLayer) return;
+  swChords.forEach(([casing, chord], li) => {
+    const geom = swGeometry(li);
+    casing.setLatLngs(geom);
+    chord.setLatLngs(geom);
+  });
+}
 
 function subwayOn() {
   return swLayer !== null && map.hasLayer(swLayer);
@@ -2609,11 +2669,21 @@ function selectSubwayStation(si) {
 function buildSubwayLayer() {
   swLayer = L.layerGroup();
   const at = i => [swData.stations[i].at[1], swData.stations[i].at[0]];
+  // Which lines carry each segment, before any of them is drawn: a chord's
+  // own track depends on how many others share it.
+  swShare = new Map();
+  swData.lines.forEach((l, li) => {
+    for (let i = 0; i < l.stops.length - 1; i++) {
+      const key = swSegmentKey(l.stops[i], l.stops[i + 1]);
+      if (!swShare.has(key)) swShare.set(key, []);
+      swShare.get(key).push(li);
+    }
+  });
   // Casings first, then every chord, then the stations: three passes rather
   // than three layers per route, so a line never draws over its neighbour's
   // casing and a marker is never buried by a chord added after it.
-  swChords = swData.lines.map(l => {
-    const pts = l.stops.map(at);
+  swChords = swData.lines.map((l, li) => {
+    const pts = swGeometry(li);
     const casing = L.polyline(pts, {
       color: '#0d0d0d', weight: 7, opacity: 0.85,
       lineJoin: 'round', lineCap: 'round', interactive: false,
@@ -2660,11 +2730,15 @@ function initSubway(sw) {
     'The chords are straight because no street was consulted. All-time: the ' +
     'date slider does not move it.';
   toggle.classList.remove('hidden');
+  map.on('zoomend', () => { if (subwayOn()) swSyncGeometry(); });
   check.addEventListener('change', () => {
     if (check.checked) {
       // On the map before ghosting: subwayOn() reads the map, so the streets
       // would still think they were the subject.
       swLayer.addTo(map);
+      // The zoom may have moved while the layer was off, and the tracks are
+      // measured in pixels.
+      swSyncGeometry();
       paintSubway();
       ghostEdges();
       restackLayers();
