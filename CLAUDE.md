@@ -103,8 +103,8 @@ never to the first toggle -- the dock and neighborhood rows are hidden until
 their payload arrives, so a border hung on a row would come and go with the
 data. `--rail-fixed` is what the open stats section has to leave behind for
 the rest of the right rail, the legend included; it has to grow when the
-legend does, because the mobile rail has no height of its own to shrink
-against and the cap is all that holds the panel off the bottom there.
+legend does. It is a desktop measurement only -- a phone has no rails (see
+the sheet, below).
 
 **A click answers in the docked inspector, never a popup.** A popup opens over
 the feature it describes, which is the one thing a reader clicked it to look
@@ -119,12 +119,13 @@ into the legend. **The legend is pinned by `margin-top: auto`, never
 item in flow, and space-between puts a lone item at the *top* -- which had the
 legend riding at the top of the window until something was clicked. **The
 ride-view bar is in the left rail so that the phone breakpoint can lay it down
-there**, above the sheet: centred at the top of the screen it landed on the
-stats panel, which keeps its 236px on a phone and leaves a 430px screen nothing
-to centre in. Rejoining the rail's flow is the same lever as everything else
-here -- a flex column cannot overlap itself whatever the label wraps to -- so
-on a desktop the bar is `position: fixed` rather than `absolute`, or it would
-centre on the rail's width instead of the map's. `map.panInside` moves the map
+there**, on top of the sheet: centred over the map it would sit in the middle
+of a screen the sheet already owns the bottom of, and the ride it names was
+almost always opened from a row inside the sheet. Rejoining the rail's flow is
+the same lever as everything else here -- a flex column cannot overlap itself
+whatever the label wraps to -- so on a desktop the bar is `position: fixed`
+rather than `absolute`, or it would centre on the rail's width instead of the
+map's. `map.panInside` moves the map
 only when the clicked feature would fall behind the panel (`showArea` frames
 the whole polygon itself instead, so `selectArea` is told not to pan on top of
 the flight). One panel serves all three layers: a source is `{ kind, latlng,
@@ -155,14 +156,63 @@ neighborhood's ~208, so a fixed column spends the difference covering map.
 content wants 434px (705 with the streets section open), and everything in it
 is width-driven -- the hero grid, the right-justified rows, the `flex: 1`
 histogram bars -- so sizing it to content would widen it and sizing it to the
-viewport would stretch those to ~1.7x on a phone. **That holds on a phone
-too**: under 640px the panel moves to the bottom of the screen, but it is
-still sized to its rows and capped at 272px, so the map stays visible beside
-it. It was a full-bleed sheet first, which spent most of a 360px portrait
-screen restating a box whose widest kind measures ~250px. What lies down at
-that breakpoint is the *rail*, not the panel -- the rail keeps the full width
-because `railPadding()` reads its width to tell the bottom layout from the
-side one.
+viewport would stretch those to ~1.7x. Both of those are desktop rules: on a
+phone neither box is on screen at all, only its body, inside the sheet.
+
+**A phone gets one sheet, not two rails.** The rails work because there is
+room beside the map to put them; under 640px there is no beside, and the two
+of them stacked down the right of a 390px screen took the top half of it
+before anything was clicked -- with the busiest street on the map running
+underneath, so a tap on it hit the legend. `#sheet` replaces the pair: one
+surface along the bottom, showing exactly one thing -- the stats, the filters,
+or whatever was last clicked -- and nothing else over the map. The zoom
+buttons go too (pinch is the gesture, and they sat in the corner a reader
+reaches the map through) and `.leaflet-bottom` is lifted by `--sheet-h`,
+because attribution is not optional.
+
+- **The panels are lent to it, never rebuilt for it.** `applyLayout` moves
+  `#stats-body`, `#legend-title`, `#legend-body` and `#inspector-body` between
+  the rails and the sheet's panes as the breakpoint is crossed, so there is
+  one stats panel and one legend on the page rather than a phone copy and a
+  desktop copy, and every listener, open section and scroll position survives
+  the trip. The cost is that a rule hung on the box a body left behind stops
+  matching it: `#stats strong`, `#legend .bar` and their like are scoped to
+  the *body* (`#stats-body strong`, `#legend-body .bar`) for that reason, and
+  the legend's caption had to be given an id to be addressed at all. Anything
+  new inside those bodies has to be scoped the same way.
+- **What is in the sheet is derived, never toggled.** The pane is a function
+  of `inspector` and the standing tab (`syncSheet`), so a click, a second
+  click on another street, Back, Escape and a tap on the map all land in the
+  same place. Its predecessor collapsed `#stats` when a detail opened and
+  reopened it on close, which put two owners on one piece of state: street to
+  street runs a close and then an open, so a reader who reopened the panel had
+  it shut again by their next click, and closing a detail reopened a panel
+  they had deliberately shut. That reads as panels closing and reopening at
+  random, and it is a state bug -- there is no threshold that fixes it, only
+  having one owner. Never store "was it open" here.
+- **How much screen it takes is the reader's.** Three stops -- the grab strip
+  and nav row alone (measured, not written down), 46% and 88% -- dragged
+  between or tapped through. It is the desktop collapse button made
+  continuous and moved to where the thumb is. A tap is show-and-hide and never
+  a third height. The one thing that moves the sheet on the page's own account
+  is a detail opening while it is out of the way, and then only up to the
+  middle stop: opening a detail is a reason to show the sheet, never to take
+  away a map the reader had asked for or shrink one they had dragged up.
+- **The breakpoint asks about height too, and is written once.** `max-width:
+  640px` **or** `max-height: 480px`: a landscape phone is 844x390, which
+  passes any width test comfortably and then has nowhere to put a panel that
+  is most of the screen tall. Both halves are the same question -- is there
+  room beside the map. The media query sets `--layout: phone` and
+  `layoutIsPhone()` reads it back, so the numbers live in the stylesheet --
+  which is what decides there is no room for two rails -- and not also in the
+  script. `railPadding()` measures the sheet's own rect for the same reason,
+  capped at 55% of the view so a sheet dragged to the top cannot ask
+  `panInside` for more room than the map has.
+- The sheet is full-bleed and its *content* is capped (`.sheet-pane`,
+  520px, centred). An earlier attempt at a phone layout made the inspector
+  itself full-bleed, which stretched a box whose widest kind measures ~250px
+  across the screen; capping the column rather than the surface is what
+  answers that without giving a 390px screen a 236px panel again.
 
 ## Invariants
 

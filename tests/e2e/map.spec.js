@@ -95,28 +95,35 @@ test.describe('single-ride view', () => {
     await expect(page.locator('#ride-view-bar')).toBeHidden();
   });
 
-  // The bar used to be centred at the top of the screen on every viewport,
-  // which on a phone is where the stats panel already is: the panel keeps its
-  // 236px and its 12px right margin, so on a 430px screen the two boxes
-  // shared 126px of the top row. Under the breakpoint the bar joins the left
-  // rail's flow instead, above the sheet.
-  test('on a phone the bar clears the stats panel', async ({ page }) => {
+  // Centred at the top of the screen is a desktop answer. On a phone the bar
+  // rides on top of the sheet instead: the ride it names was almost always
+  // opened from a row inside the sheet, and its exit button wants to be under
+  // the same thumb. It has to clear the sheet at whatever height the reader
+  // has left it, which is why the rail is offset by the sheet's own height
+  // rather than by a reserved strip.
+  test('on a phone the bar rides on top of the sheet', async ({ page }) => {
     await page.setViewportSize({ width: 430, height: 932 });
     await gotoMap(page);
     await clickEdge(page, EDGES.center.lat);
-    await page.locator('#inspector .ride-row').first().click();
+    await page.locator('#inspector-body .ride-row').first().click();
     await expect(page.locator('#ride-view-bar')).toBeVisible();
 
     const box = (sel) => page.locator(sel).evaluate((el) => el.getBoundingClientRect().toJSON());
-    const bar = await box('#ride-view-bar');
-    for (const sel of ['#stats', '#legend', '#inspector']) {
-      const other = await box(sel);
-      const overlaps = bar.left < other.right && other.left < bar.right
-        && bar.top < other.bottom && other.top < bar.bottom;
-      expect(overlaps, `${sel} overlaps the ride-view bar`).toBe(false);
-    }
-    // In the rail, not floating over the middle of the map.
-    expect(bar.bottom).toBeGreaterThan(932 * 0.6);
+    const overlaps = async () => {
+      const bar = await box('#ride-view-bar');
+      const sheet = await box('#sheet');
+      return bar.top < sheet.bottom && sheet.top < bar.bottom;
+    };
+    expect(await overlaps(), 'the sheet covers the bar').toBe(false);
+    // Above the sheet, not floating over the middle of the map.
+    expect((await box('#ride-view-bar')).bottom).toBeGreaterThan(932 * 0.5);
+
+    // And it follows the sheet down, rather than staying at one offset.
+    const before = (await box('#ride-view-bar')).top;
+    await page.locator('#sheet-handle').click();  // out of the way
+    await page.waitForTimeout(300);
+    expect((await box('#ride-view-bar')).top).toBeGreaterThan(before);
+    expect(await overlaps(), 'the sheet covers the bar').toBe(false);
 
     // A desktop viewport still gets the centred bar.
     await page.setViewportSize({ width: 1280, height: 800 });
@@ -206,82 +213,6 @@ test.describe('inspector panel', () => {
     const box = await page.locator('#inspector').boundingBox();
     expect(box.width).toBeGreaterThanOrEqual(180);   // the floor
     expect(box.width).toBeLessThan(272);             // ... and under the cap
-  });
-
-  // Same rule on a phone, where it used to be suspended: the panel went
-  // full-bleed under 640px, so a box whose widest kind measures ~250px took
-  // the whole of a 360px portrait screen and none of the map was left beside
-  // it. All three kinds are checked because all three open the one panel.
-  test('a portrait phone keeps the panel sized to its rows', async ({ page }) => {
-    await page.setViewportSize({ width: 360, height: 780 });
-    await gotoMap(page);
-
-    const box = () => page.locator('#inspector').boundingBox();
-    const open = [
-      // Not clickEdge: edgePoint projects at the desktop zoom, and fitBounds
-      // lands a 360px-wide map somewhere else. This is what the click handler
-      // itself calls.
-      ['street', () => page.evaluate(() => {
-        const layer = geoLayer.getLayers().find((l) => l._filteredCount > 0);
-        selectEdge(layer, layer.feature.properties.rides, layer.getBounds().getCenter());
-      })],
-      ['dock', async () => {
-        await page.locator('#cb-check').check();
-        await page.evaluate(() => selectDock(0));
-      }],
-      ['area', async () => {
-        await page.locator('#nb-check').check();
-        await page.evaluate(() => selectArea(0));
-      }],
-    ];
-
-    for (const [kind, show] of open) {
-      await show();
-      await expect(page.locator('#inspector')).toBeVisible();
-      // The panel slides in, so its box is 8px off until the transition ends.
-      await page.locator('#inspector')
-        .evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)));
-      const b = await box();
-      expect(b.width, `${kind} is under the cap`).toBeLessThanOrEqual(272);
-      expect(b.width, `${kind} leaves map beside it`).toBeLessThan(360 - 24);
-      expect(b.x, `${kind} keeps its left margin`).toBe(12);
-      // Anchored to the bottom, clear of the attribution, and never more than
-      // 45vh of a screen that has to show the feature as well.
-      expect(b.height).toBeLessThanOrEqual(780 * 0.45);
-      expect(b.y + b.height).toBeLessThanOrEqual(780 - 28);
-      await page.locator('#inspector-close').click();
-    }
-  });
-
-  // On a phone the two rails stack into one column, so #stats staying at full
-  // height while the inspector opens crowds the map exactly as much as its
-  // width would suggest -- the same "one thing open" #stats-sections already
-  // does between its own sections.
-  test('on a phone the inspector collapses stats and restores it on close', async ({ page }) => {
-    await page.setViewportSize({ width: 430, height: 932 });
-    await gotoMap(page);
-    const stats = page.locator('#stats');
-    await expect(stats).not.toHaveClass(/collapsed/);
-
-    await clickEdge(page, EDGES.center.lat);
-    await expect(stats).toHaveClass(/collapsed/);
-    await page.locator('#inspector-close').click();
-    await expect(stats).not.toHaveClass(/collapsed/);
-
-    // A reader's own collapse is a different thing and outlives the panel.
-    await page.locator('#stats-toggle').click();
-    await expect(stats).toHaveClass(/collapsed/);
-    await clickEdge(page, EDGES.center.lat);
-    await expect(stats).toHaveClass(/collapsed/);
-    await page.locator('#inspector-close').click();
-    await expect(stats).toHaveClass(/collapsed/);
-    await page.locator('#stats-toggle').click();  // back open, for the next case
-
-    // Never happens on a desktop viewport: the two rails have their own
-    // columns and neither needs to give way to the other.
-    await page.setViewportSize({ width: 1280, height: 800 });
-    await clickEdge(page, EDGES.center.lat);
-    await expect(stats).not.toHaveClass(/collapsed/);
   });
 
   test('the close button, Escape and a click on empty map each close it', async ({ page }) => {
