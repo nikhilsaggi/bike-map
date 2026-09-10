@@ -2503,6 +2503,18 @@ const SW_DIM = 0.16;
 // collapse to one line at city scale, which is the scale this layer is read
 // at. Six is the smallest gap that separates two 4px chords.
 const SW_TRACK = 6;
+// A subway map has no pointy bends: a line changes direction through a corner
+// of fixed radius. Twelve pixels is small enough that a station at the apex is
+// still covered by its own marker -- the line pulls away from the vertex by
+// `t * sin(deflection / 2) / 2`, which at the 62 degrees the builder allows is
+// 3.6px against a 4.5px marker -- and large enough to read as a curve.
+const SW_CURVE = 12;
+// An arc is sampled so no facet turns much more than this. Fixing the angle
+// rather than the number of samples is what keeps a gentle bend from being cut
+// into sub-pixel steps and a right angle from being cut into too few: at a
+// 12px radius even a 20-degree facet sits 0.2px off the true arc, which is
+// less than the renderer's own rounding to whole pixels.
+const SW_ARC_DEG = 12;
 
 let swShare = new Map();   // "a|b" -> indices of the lines carrying that segment
 
@@ -2515,40 +2527,85 @@ function swLatLng(i) {
   return L.latLng(lat, lon);
 }
 
-// One line's chords, as a multi-polyline: a segment no other line carries is
-// the plain pair of stations, and a shared one tapers out to its own track and
-// back in, so both lines still meet at the stop they share.
-function swGeometry(li) {
+// One line as a single chain of screen-space points: station to station, with
+// a shared stretch stepping out to its own track and back so both lines still
+// meet at the stop they share. Pixels rather than degrees, because both the
+// track offset and the corner radius have to hold their size as the map zooms.
+function swPixelPath(li, zoom) {
   const stops = swData.lines[li].stops;
-  const zoom = map.getZoom();
-  const out = [];
+  const at = i => map.project(swLatLng(i), zoom);
+  const pts = [];
   for (let i = 0; i < stops.length - 1; i++) {
     const a = stops[i];
     const b = stops[i + 1];
-    const A = swLatLng(a);
-    const B = swLatLng(b);
+    const pa = at(a);
+    const pb = at(b);
+    if (i === 0) pts.push(pa);
     const carriers = swShare.get(swSegmentKey(a, b)) || [li];
     const shift = (carriers.indexOf(li) - (carriers.length - 1) / 2) * SW_TRACK;
-    if (!shift) { out.push([A, B]); continue; }
-    const pa = map.project(A, zoom);
-    const pb = map.project(B, zoom);
-    const len = pa.distanceTo(pb) || 1;
-    const ux = (pb.x - pa.x) / len;
-    const uy = (pb.y - pa.y) / len;
-    const nx = -uy * shift;
-    const ny = ux * shift;
-    const inset = Math.min(16, len * 0.3);
-    out.push([
-      A,
-      map.unproject(L.point(pa.x + ux * inset + nx, pa.y + uy * inset + ny), zoom),
-      map.unproject(L.point(pb.x - ux * inset + nx, pb.y - uy * inset + ny), zoom),
-      B,
-    ]);
+    if (shift) {
+      const len = pa.distanceTo(pb) || 1;
+      const ux = (pb.x - pa.x) / len;
+      const uy = (pb.y - pa.y) / len;
+      const nx = -uy * shift;
+      const ny = ux * shift;
+      const inset = Math.min(18, len * 0.3);
+      pts.push(L.point(pa.x + ux * inset + nx, pa.y + uy * inset + ny));
+      pts.push(L.point(pb.x - ux * inset + nx, pb.y - uy * inset + ny));
+    }
+    pts.push(pb);
   }
+  return pts;
+}
+
+// Replace every interior corner with an arc. The canvas renderer strokes
+// polylines and nothing else, so the arc is a quadratic Bezier sampled into
+// points rather than a curve command -- the vertex it rounds is its own
+// control point, which is what makes the tangents match the straight runs on
+// either side. The radius shrinks on a short segment so two corners can never
+// eat into each other.
+function swRoundCorners(pts, radius) {
+  if (pts.length < 3) return pts;
+  const out = [pts[0]];
+  for (let i = 1; i < pts.length - 1; i++) {
+    const A = pts[i - 1];
+    const B = pts[i];
+    const C = pts[i + 1];
+    const d1 = B.distanceTo(A);
+    const d2 = B.distanceTo(C);
+    if (d1 < 1e-6 || d2 < 1e-6) continue;
+    const u1 = L.point((A.x - B.x) / d1, (A.y - B.y) / d1);
+    const u2 = L.point((C.x - B.x) / d2, (C.y - B.y) / d2);
+    // Already straight through: there is no corner to round, and rounding it
+    // would only add points.
+    if (u1.x * u2.x + u1.y * u2.y < -0.9999) { out.push(B); continue; }
+    const t = Math.min(radius, d1 / 2, d2 / 2);
+    const p1 = L.point(B.x + u1.x * t, B.y + u1.y * t);
+    const p2 = L.point(B.x + u2.x * t, B.y + u2.y * t);
+    const deflect = 180 - (Math.acos(
+      Math.max(-1, Math.min(1, u1.x * u2.x + u1.y * u2.y))) * 180) / Math.PI;
+    const steps = Math.max(2, Math.min(10, Math.ceil(deflect / SW_ARC_DEG)));
+    out.push(p1);
+    for (let s = 1; s < steps; s++) {
+      const q = s / steps;
+      const m = 1 - q;
+      out.push(L.point(m * m * p1.x + 2 * m * q * B.x + q * q * p2.x,
+                       m * m * p1.y + 2 * m * q * B.y + q * q * p2.y));
+    }
+    out.push(p2);
+  }
+  out.push(pts[pts.length - 1]);
   return out;
 }
 
-// The offsets are pixel-sized, so they are wrong the moment the zoom changes.
+function swGeometry(li) {
+  const zoom = map.getZoom();
+  return swRoundCorners(swPixelPath(li, zoom), SW_CURVE)
+    .map(p => map.unproject(p, zoom));
+}
+
+// The offsets and the corner radius are pixel-sized, so both are wrong the
+// moment the zoom changes.
 function swSyncGeometry() {
   if (!swLayer) return;
   swChords.forEach(([casing, chord], li) => {

@@ -575,6 +575,20 @@ because attribution is not optional.
   still meet at the stop they share. The offset is screen pixels recomputed on
   `zoomend`, never a fixed distance on the ground -- a ground offset collapses
   to a single line at city scale, which is the scale this layer is read at.
+- **Every bend is a corner of fixed radius, because a subway map has no
+  pointy ones.** `swRoundCorners` replaces each interior vertex with a
+  quadratic Bezier whose control point *is* that vertex, sampled into points
+  because the canvas renderer strokes polylines and nothing else. The radius
+  is 12px and the vertex stays where it is: a fillet pulls the line off the
+  vertex by `t * sin(deflection / 2) / 2`, which at the 62 degrees the builder
+  allows is 3.6px against a 4.5px station marker, so the marker still covers
+  it. **Don't spline through the stations instead** -- that bows the chord
+  between two of them, and a curved chord claims a route this network has
+  never measured. Sampling is capped by *angle* (`SW_ARC_DEG`), not by a fixed
+  step count: a fixed count cuts a gentle bend into sub-pixel steps, which is
+  how a test measuring angles off `latLngToLayerPoint` came to read 45 degrees
+  on a smooth curve -- that method rounds to whole pixels, so use
+  `map.project` whenever geometry is being measured rather than drawn.
 - **`networkIsContext()` is why the streets go to outline, and it has two
   owners.** A dock in focus and the subway overlay both lay thin bright lines
   over 21k plasma ones, which is a haystack rather than a comparison; the

@@ -17,6 +17,22 @@ const strokes = (page) =>
     return out;
   });
 
+/**
+ * How far apart lines 1 and 3 run along the stretch they share, in pixels.
+ * Measured at the midpoint of West End -> Center Station, on whichever drawn
+ * point of each line comes nearest it.
+ */
+const trackGap = (page) =>
+  page.evaluate(() => {
+    const target = map.latLngToLayerPoint(L.latLng(40.7375, -73.9675));
+    const nearest = (chord) =>
+      chord
+        .getLatLngs()
+        .map((ll) => map.latLngToLayerPoint(ll))
+        .reduce((best, p) => (p.distanceTo(target) < best.distanceTo(target) ? p : best));
+    return nearest(swChords[0][1]).distanceTo(nearest(swChords[2][1]));
+  });
+
 const CENTER_STN = { lat: 40.7375, lng: -73.96 };
 const SOUTH_STN = { lat: 40.7325, lng: -73.96 };
 
@@ -103,37 +119,47 @@ test.describe('dream subway layer', () => {
     async ({ page }) => {
       await gotoMap(page, buildFixture({ subway: SUBWAY_PARALLEL_BLOCK }));
       await page.locator('#sw-check').check();
-
-      // Line 1 runs West End -> Center Station (shared with line 3) and then
-      // Center Station -> East End (its own). A shared segment tapers out to
-      // its track and back, so it carries four points rather than two.
-      const shape = await page.evaluate(() =>
-        swChords.map(([, chord]) => chord.getLatLngs().map((seg) => seg.length)));
-      expect(shape[0]).toEqual([4, 2]);   // line 1: shared, then alone
-      expect(shape[1]).toEqual([4]);      // line 2: its one segment is shared
-      expect(shape[2]).toEqual([4, 4]);   // line 3: both of its segments are
-
-      // The two lines on a shared segment sit on opposite sides of it, so
-      // their tapered points are never the same place.
-      const apart = await page.evaluate(() => {
-        const a = swChords[0][1].getLatLngs()[0][1];
-        const b = swChords[2][1].getLatLngs()[0][1];
-        return map.latLngToLayerPoint(a).distanceTo(map.latLngToLayerPoint(b));
-      });
-      expect(apart).toBeGreaterThan(4);
+      // Lines 1 and 3 both run West End -> Center Station, so along that
+      // stretch they sit either side of the centreline rather than on top of
+      // each other.
+      const gap = await trackGap(page);
+      expect(gap).toBeGreaterThan(4);
+      expect(gap).toBeLessThan(10);
     });
 
   test('the tracks keep their width when the map zooms', async ({ page }) => {
     await gotoMap(page, buildFixture({ subway: SUBWAY_PARALLEL_BLOCK }));
     await page.locator('#sw-check').check();
-    const gap = () => page.evaluate(() => {
-      const a = swChords[0][1].getLatLngs()[0][1];
-      const b = swChords[2][1].getLatLngs()[0][1];
-      return map.latLngToLayerPoint(a).distanceTo(map.latLngToLayerPoint(b));
-    });
-    const before = await gap();
+    const before = await trackGap(page);
     await page.evaluate(() => map.setZoom(map.getZoom() + 2));
-    await expect.poll(gap).toBeCloseTo(before, 0);
+    await expect.poll(() => trackGap(page)).toBeCloseTo(before, 0);
+  });
+
+  test('a line bends through a curve, never a point', async ({ page }) => {
+    await gotoMap(page, buildFixture({ subway: SUBWAY_PARALLEL_BLOCK }));
+    await page.locator('#sw-check').check();
+    // Line 3 turns a right angle at Center Station. Drawn as a corner it
+    // would show one 90-degree deflection; drawn as an arc no single step
+    // turns far.
+    // map.project, not latLngToLayerPoint: the latter rounds to whole pixels,
+    // and on samples a couple of pixels apart that quantises every angle to a
+    // multiple of 45 degrees whatever the real geometry does.
+    const worst = await page.evaluate(() => {
+      const z = map.getZoom();
+      const pts = swChords[2][1].getLatLngs().map((ll) => map.project(ll, z));
+      let out = 0;
+      for (let i = 1; i < pts.length - 1; i++) {
+        const v1 = [pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y];
+        const v2 = [pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y];
+        const m1 = Math.hypot(v1[0], v1[1]);
+        const m2 = Math.hypot(v2[0], v2[1]);
+        if (m1 < 0.01 || m2 < 0.01) continue;
+        const cos = (v1[0] * v2[0] + v1[1] * v2[1]) / (m1 * m2);
+        out = Math.max(out, (Math.acos(Math.max(-1, Math.min(1, cos))) * 180) / Math.PI);
+      }
+      return out;
+    });
+    expect(worst).toBeLessThan(20);
   });
 
   test('switching the layer off closes its panel but leaves another kind alone',

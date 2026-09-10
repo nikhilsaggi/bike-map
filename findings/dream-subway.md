@@ -109,7 +109,7 @@ in one polyline and adds a 2.9 km hop across the East River.
 ## On the map
 
 The network ships as `properties.subway` and draws as a fourth layer on
-`docs/index.html`, off until asked for. Four things about it are
+`docs/index.html`, off until asked for. Five things about it are
 load-bearing.
 
 **The chords are straight.** A station's position is real -- the centroid of a
@@ -132,6 +132,14 @@ is a multi-polyline, and a shared segment tapers out to its own track and back
 so both lines still meet at the stop they share. The offset is in screen
 pixels, recomputed on zoom: a fixed offset on the ground collapses to one line
 at city scale, which is the scale this layer is read at.
+
+**Bends are corners, not points.** Each interior vertex is replaced by a
+12px-radius arc -- a quadratic Bezier whose control point is the vertex,
+sampled into points because Leaflet's canvas renderer strokes polylines and
+nothing else. The station stays exactly where it is; the line pulls off the
+vertex by at most 3.6px, which its own marker covers. Splining *through* the
+stations would keep them dead centre but bow the chord between them, and a
+curved chord claims a route that was never measured.
 
 **It cannot follow the slider**, and that is the one thing a reader would
 otherwise assume. Station weights and the lines themselves are fitted to the
