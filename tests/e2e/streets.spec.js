@@ -47,11 +47,11 @@ test.describe('streets', () => {
     await expect(rows.nth(0)).toContainText('62 mi'); // 100 km
     await expect(rows.nth(1)).toContainText('Segments');
     await expect(rows.nth(1)).toContainText('3');
-    // Both denominators, narrower first: the city, then the graph that runs
+    // Both denominators, narrower first: the city, then the box that runs
     // past it. 6,600 of 30,000 m against coverage.pct's 12.3%.
     await expect(rows.nth(2)).toContainText('Of rideable NYC');
     await expect(rows.nth(2)).toContainText('22.0%');
-    await expect(rows.nth(3)).toContainText('Of the whole graph');
+    await expect(rows.nth(3)).toContainText('Of the whole box');
     await expect(rows.nth(3)).toContainText('12.3%');
     await expect(rows.nth(4)).toContainText('Most-ridden segment');
     await expect(rows.nth(4)).toContainText('4×');

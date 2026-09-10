@@ -12,6 +12,14 @@ SAMPLE_SIZE = None  # set to e.g. 100 for quick preview, None for all rides
 RIDE_FILES = None  # set to e.g. ["2024-06-19_13-35-52_-0400.csv"] to process specific rides
 RESAMPLE_SPACING_M = 20
 NETWORK_TYPES = ["bike", "drive", "walk"]
+# Overpass endpoint, or None for osmnx's own default (overpass-api.de).
+# Worth knowing before you need it: overpass-api.de round-robins between two
+# machines (gall and lambert .openstreetmap.de), and osmnx pins the whole run
+# to whichever ONE of them socket.gethostbyname returns, with no fallback --
+# so if that machine is down, every fetch dies on "Connection refused" while
+# curl and every other client still work.  graph._overpass_diagnosis() prints
+# which server answers; name it here.
+OVERPASS_URL = None
 SNAP_TOLERANCE_M = 80
 MAX_ROUTING_DISTANCE_M = 2500
 MAX_ROUTE_DETOUR = 3.0  # reject routes longer than this multiple of straight-line distance
@@ -98,7 +106,26 @@ COVERAGE_EXCLUDE = {
     "construction",
     "proposed",
 }
+# The city box.  It does three jobs: a ride counts as a NYC ride if any of it
+# falls in here (gps._is_nyc_ride), the OSM fetch covers all of it the rides
+# reach, and coverage is measured over the part of the graph inside it.  What
+# a ride does outside the box is drawn but never counted -- see
+# CORRIDOR_BUFFER_M.
 NYC_BBOX = (40.49, -74.30, 41.0, -73.60)  # (lat_min, lon_min, lat_max, lon_max)
+# Rides that leave the box (9W, the Empire State Trail, Jones Beach) are kept
+# whole, so the graph has to reach them or the matcher has no edges under
+# their far end.  Fetching the whole extent as a box would be ~4,200 km2 of
+# mostly unridden Hudson Valley; the fetch region is the city box plus a
+# corridor this wide around whatever was ridden outside it, which is ~300.
+# The corridor only has to beat HMM_MAX_DIST plus GPS error to give the
+# matcher its candidates.
+CORRIDOR_BUFFER_M = 500.0
+# The region becomes an Overpass query, and the raw union of a few hundred
+# kilometres of track carries tens of thousands of vertices.  The corridor is
+# buffered this much wider and then simplified back by the same amount, so
+# simplification -- which can only cut inwards -- cannot take it below
+# CORRIDOR_BUFFER_M.
+CORRIDOR_SIMPLIFY_M = 100.0
 FIG_SIZE = (14, 18)
 COLORMAP = "plasma"
 LINE_WIDTH_MIN = 0.4

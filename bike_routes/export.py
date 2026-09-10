@@ -10,9 +10,25 @@ from . import config
 from .citibike import SOURCE_UNKNOWN, _citibike_summary, ride_sources
 from .edge_speed import _speed_summary, ride_pass_dirs
 from .merge import _audit_merge, _geom_len_m, _merge_parallel_features
-from .neighborhoods import _neighborhood_summary, load_areas
+from .neighborhoods import _midpoint, _neighborhood_summary, load_areas
 from .ride_stats import _riding_summary
 from .weather import _weather_summary
+
+
+def _in_city_box(coords: list[tuple[float, float]]) -> bool:
+    """Return whether an edge counts towards coverage, by its midpoint.
+
+    The graph now reaches past the box -- a corridor follows each ride that
+    leaves it, up the Hudson and out to Jones Beach -- and those roads are
+    drawn but never counted.  Neither side of the fraction is the place to
+    put them: in the denominator a hundred miles of Route 9W would dilute a
+    city percentage with roads nobody was measuring against, and in the
+    numerator alone it would be an inflated one.  Placement is by midpoint,
+    the rule neighborhoods.py uses.
+    """
+    lon, lat = _midpoint(coords)
+    lat_min, lon_min, lat_max, lon_max = config.NYC_BBOX
+    return lat_min <= lat <= lat_max and lon_min <= lon <= lon_max
 
 
 def _coverage_summary(
@@ -22,10 +38,11 @@ def _coverage_summary(
 ) -> dict[str, Any] | None:
     """Fraction of the mapped rideable street network that has been ridden.
 
-    The denominator is every graph edge whose highway tag is plausibly
-    rideable (config.COVERAGE_EXCLUDE filters footways, steps, motorways, service
-    ways, ...); the numerator is the ridden subset.  new_km_by_year
-    attributes each ridden edge to the year of its first traversal.
+    The denominator is every graph edge inside config.NYC_BBOX whose highway
+    tag is plausibly rideable (config.COVERAGE_EXCLUDE filters footways, steps,
+    motorways, service ways, ...); the numerator is the ridden subset.
+    new_km_by_year attributes each ridden edge to the year of its first
+    traversal.
     """
     if not edge_hw:
         return None
@@ -36,6 +53,8 @@ def _coverage_summary(
     new_by_year: dict[str, float] = {}
     excluded_m: dict[str, float] = {}
     for key, coords in edge_geom.items():
+        if not _in_city_box(coords):
+            continue
         hw = edge_hw.get(key, "")
         if hw in config.COVERAGE_EXCLUDE:
             excluded_m[hw] = excluded_m.get(hw, 0.0) + _geom_len_m(coords)

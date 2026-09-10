@@ -31,8 +31,17 @@ problem at all, and summing the areas gives the citywide figure the label was
 always claiming.
 
 That is now what the hero tile shows. Both numbers ship — the streets panel
-carries "Of rideable NYC 11.8%" over "Of the whole graph 6.5%, which reaches
+carries "Of rideable NYC 11.8%" over "Of the whole box 6.6%, which reaches
 past the city" — because the gap between them is itself the finding.
+
+**Since this was measured**, the wider denominator narrowed slightly and
+stopped following the graph. The graph now runs past `NYC_BBOX`, out along a
+corridor around each ride that leaves the box, and coverage is measured over
+the box alone (`export._in_city_box`): riding to Poughkeepsie is drawn, and
+counted on neither side of the fraction. On the same state that took the
+denominator from 19,247 km to 19,002 and the figure from 6.5% to 6.6% — the
+difference is the sliver the old fetch bought with its 0.005° buffer, not
+anything ridden.
 
 One caveat the page does not try to state: 10,062 km is the NYC street network
 *within the graph's box*, not the whole city's. Staten Island contributes

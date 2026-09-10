@@ -237,10 +237,10 @@ test.describe('Neighborhood layer', () => {
     await expect(page.locator('.nb-detail .nb-row').nth(0)).toContainText('0.8 of 12.4 mi');
   });
 
-  test('the coverage tile reports NYC, not the whole graph', async ({ page }) => {
+  test('the coverage tile reports NYC, not the whole box', async ({ page }) => {
     await gotoMap(page);
     // The block's own totals: 6,600 of 30,000 m = 22.0%, against the 12.3%
-    // the graph-wide coverage figure gives for a denominator half of which is
+    // the box-wide coverage figure gives for a denominator half of which is
     // not in the city.
     await expect(page.locator('#stat-coverage')).toHaveText('22.0%');
     await openSection(page, 'stat-streets');
