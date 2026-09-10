@@ -35,8 +35,9 @@ interactive Leaflet map (`docs/`, served via GitHub Pages) plus static PNGs.
   change, `python tools/neighborhood_audit.py` before touching the
   per-neighborhood block, `python tools/speed_consistency.py` for the
   fastest/slowest stretch ranking (it re-measures the passes instead of
-  reading `edge_speed`, which stores no pass-to-pass spread). All read
-  state; none writes it.
+  reading `edge_speed`, which stores no pass-to-pass spread). Those all read
+  state and none writes it; `tools/rebuild_graph_from_cache.py` is the one
+  exception and writes the graph cache, but only with `--write`.
 
 ## Architecture
 
@@ -52,7 +53,12 @@ interactive Leaflet map (`docs/`, served via GitHub Pages) plus static PNGs.
    the run to that one IP, so a hostname round-robining between a live
    server and a dead one fails every time while curl walks past it.
    `_overpass_diagnosis` prints which address answers and
-   `config.OVERPASS_URL` names it
+   `config.OVERPASS_URL` names it. When Overpass is down outright rather than
+   pinned to a dead server, `tools/rebuild_graph_from_cache.py` rebuilds the
+   graph offline from the Overpass responses osmnx has already cached --
+   those are the output of osmnx's own network filters, so a rebuild yields
+   the same post-simplification node ids and does **not** invalidate the
+   matching in `edge_rides`
 3. `hmm.py` / `matching.py` -- map-match rides to edges. `MATCHER = "hmm"`
    (leuvenmapmatching Viterbi) is the default; the "heuristic" snap+route
    matcher is kept for comparison. Parallel matching via worker processes
@@ -87,7 +93,11 @@ part of the pipeline at all (`hmm_matcher_eval.py`, `weather_correlation.py`,
 `traversal_audit.py`, `neighborhood_audit.py`, `bike_reencounters.py` -- which
 alone among them imports nothing from `bike_routes`, so it runs from the trips
 JSON on a checkout with no pipeline deps), plus `render_readme_map.py`,
-which crops the README's image out of the same caches; all are run from the
+which crops the README's image out of the same caches, and
+`rebuild_graph_from_cache.py`, which is not analysis at all but a recovery
+path for a graph that is gone or wrong (it reproduces `graph_from_polygon`
+step for step against cached responses, so it is coupled to osmnx internals
+and needs rechecking when that function changes shape); all are run from the
 repo root. `findings/`
 holds the write-ups of what that analysis found (moved out of the README to
 keep it about running the pipeline).
