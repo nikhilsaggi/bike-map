@@ -232,6 +232,12 @@ whole run to whichever one the resolver names first, with no fallback — so
 one server being down refuses every fetch while `curl` still works. The run
 prints which address answers; put that server in `OVERPASS_URL`.
 
+If Overpass is down outright rather than round-robining onto a dead server,
+`python tools/rebuild_graph_from_cache.py` rebuilds the graph from the
+Overpass responses osmnx has already cached, with no network at all. That is
+the way out of an invalidated graph during an outage; it cannot see OSM edits
+newer than the cache, and it can only cover ground some past fetch asked for.
+
 ## Map-Matching
 
 Raw GPS traces are noisy — points drift to sidewalks, parallel service roads,
@@ -364,6 +370,9 @@ part of it; `findings/` holds what they found:
 - [Rides by neighborhood](findings/neighborhoods.md) — half the coverage
   denominator was not New York City, what the per-area cut says instead, and
   where assigning an edge by its midpoint goes wrong
+- [Rebuilding the graph without Overpass](findings/graph-rebuild-offline.md) —
+  recovering an invalidated graph during an outage from the responses osmnx
+  already cached, and why a Geofabrik extract is the wrong tool for it
 
 `tools/hmm_matcher_eval.py` compares the two matchers on real rides,
 `tools/traversal_audit.py` checks pass counting against the raw traces,
@@ -377,6 +386,9 @@ re-encounter list from `cache/citibike_trips.json` alone, and tests it against
 chance — the two permutation tests the panel does not draw.
 `tools/render_readme_map.py` re-renders the image at the top of this file
 from the caches, when it should catch up with the rides.
+`tools/rebuild_graph_from_cache.py` is the exception to all of the above: it
+writes rather than reads, rebuilding `cache/osm_graph_cache.pkl` offline from
+the cached Overpass responses, and it needs `--write` to do so.
 
 ## Repository Layout
 
@@ -384,7 +396,7 @@ from the caches, when it should catch up with the rides.
 bike_routes/        the pipeline, one stage per module
   ingest/           Garmin download, GPX -> CSV, Citibike export (the front)
 docs/               the published Leaflet map + its rides.geojson.gz
-tools/              standalone analysis run by hand, not part of the pipeline
+tools/              analysis and recovery run by hand, not part of the pipeline
 findings/           write-ups of what that analysis found
 tests/              pytest suite (synthetic grids) + Playwright e2e for docs/
 rides/              ride CSVs (gitignored -- personal GPS traces)
@@ -416,6 +428,11 @@ gitignored):
 - `cache/nta_boundaries.geojson` — NYC neighborhood boundaries, downloaded
   once from NYC Open Data on the first run and never refreshed; delete it and
   the map ships without the neighborhood layer until the next run
+- `cache/<40 hex>.json` — osmnx's own Overpass response cache, one file per
+  query. Not written by this pipeline, and the only reason
+  `tools/rebuild_graph_from_cache.py` can rebuild the graph while Overpass is
+  down; they accumulate across every region ever fetched, so between them they
+  cover more than the last fetch did
 
 Delete any cache file — or the whole directory — to force a rebuild.
 Changing processing parameters automatically triggers a full reprocess, and
