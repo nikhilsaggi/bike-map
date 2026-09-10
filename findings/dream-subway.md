@@ -133,13 +133,21 @@ so both lines still meet at the stop they share. The offset is in screen
 pixels, recomputed on zoom: a fixed offset on the ground collapses to one line
 at city scale, which is the scale this layer is read at.
 
-**Bends are corners, not points.** Each interior vertex is replaced by a
-12px-radius arc -- a quadratic Bezier whose control point is the vertex,
-sampled into points because Leaflet's canvas renderer strokes polylines and
-nothing else. The station stays exactly where it is; the line pulls off the
-vertex by at most 3.6px, which its own marker covers. Splining *through* the
-stations would keep them dead centre but bow the chord between them, and a
-curved chord claims a route that was never measured.
+**Bends are corners, not points.** Each interior vertex is replaced by an arc
+-- a quadratic Bezier whose control point is the vertex, sampled into points
+because Leaflet's canvas renderer strokes polylines and nothing else. The
+station stays exactly where it is: the line pulls off the vertex by
+`t * sin(deflection / 2) / 2`, and the radius is capped so that stays inside
+the station's own marker. Splining *through* the stations would keep them dead
+centre but bow the chord between them, and a curved chord claims a route that
+was never measured.
+
+The first cut fixed the radius at 12px, sized against the 62-degree turn the
+line builder permits. It read as a mitre rather than a curve. The bends these
+lines actually make top out at 57 degrees over legs of 38-80px, which affords
+19 -- so the radius is now the smallest of a 20px cap, half the shorter leg,
+and what the marker can cover, and it is the geometry rather than a constant
+that decides.
 
 **It cannot follow the slider**, and that is the one thing a reader would
 otherwise assume. Station weights and the lines themselves are fitted to the

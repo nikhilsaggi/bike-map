@@ -2501,14 +2501,22 @@ const SW_DIM = 0.16;
 // drawn once per line and shifted sideways. The shift is in screen pixels
 // rather than metres, and recomputed on zoom: a fixed ground offset would
 // collapse to one line at city scale, which is the scale this layer is read
-// at. Six is the smallest gap that separates two 4px chords.
-const SW_TRACK = 6;
-// A subway map has no pointy bends: a line changes direction through a corner
-// of fixed radius. Twelve pixels is small enough that a station at the apex is
-// still covered by its own marker -- the line pulls away from the vertex by
-// `t * sin(deflection / 2) / 2`, which at the 62 degrees the builder allows is
-// 3.6px against a 4.5px marker -- and large enough to read as a curve.
-const SW_CURVE = 12;
+// at. Eight is the smallest gap that separates two 5px chords.
+const SW_TRACK = 8;
+// A subway map has no pointy bends: a line changes direction through a corner,
+// and the corner wants to be as generous as the geometry allows. Three things
+// bound it, and the smallest wins: this cap, half the shorter leg (so two
+// corners never eat into each other), and how far the station's own marker can
+// cover. A fillet pulls the line off the vertex by `t * sin(deflection / 2)/2`,
+// so a marker of radius R still touches the line while `t <= 2R / sin(d/2)` --
+// at the sharpest bend these lines actually make, 57 degrees, that is 19px
+// against a 5px marker. A flat 12 was set by the worst case the line builder
+// permits rather than the worst case it produces, and read as a mitre.
+const SW_CURVE = 20;
+// Station markers, unselected: selection only ever grows one, so these are
+// what a corner is allowed to assume is covering it.
+const SW_R_LOCAL = 5;
+const SW_R_XFER = 6.5;
 // An arc is sampled so no facet turns much more than this. Fixing the angle
 // rather than the number of samples is what keeps a gentle bend from being cut
 // into sub-pixel steps and a right angle from being cut into too few: at a
@@ -2534,13 +2542,20 @@ function swLatLng(i) {
 function swPixelPath(li, zoom) {
   const stops = swData.lines[li].stops;
   const at = i => map.project(swLatLng(i), zoom);
+  // Each point carries what is drawn on top of it: a station's marker radius,
+  // or Infinity where nothing covers the vertex and only geometry limits the
+  // corner.
+  const stop = i => ({
+    p: at(i), cover: swData.stations[i].xf ? SW_R_XFER : SW_R_LOCAL,
+  });
+  const bend = p => ({ p, cover: Infinity });
   const pts = [];
   for (let i = 0; i < stops.length - 1; i++) {
     const a = stops[i];
     const b = stops[i + 1];
     const pa = at(a);
     const pb = at(b);
-    if (i === 0) pts.push(pa);
+    if (i === 0) pts.push(stop(a));
     const carriers = swShare.get(swSegmentKey(a, b)) || [li];
     const shift = (carriers.indexOf(li) - (carriers.length - 1) / 2) * SW_TRACK;
     if (shift) {
@@ -2549,11 +2564,11 @@ function swPixelPath(li, zoom) {
       const uy = (pb.y - pa.y) / len;
       const nx = -uy * shift;
       const ny = ux * shift;
-      const inset = Math.min(18, len * 0.3);
-      pts.push(L.point(pa.x + ux * inset + nx, pa.y + uy * inset + ny));
-      pts.push(L.point(pb.x - ux * inset + nx, pb.y - uy * inset + ny));
+      const inset = Math.min(22, len * 0.32);
+      pts.push(bend(L.point(pa.x + ux * inset + nx, pa.y + uy * inset + ny)));
+      pts.push(bend(L.point(pb.x - ux * inset + nx, pb.y - uy * inset + ny)));
     }
-    pts.push(pb);
+    pts.push(stop(b));
   }
   return pts;
 }
@@ -2565,25 +2580,29 @@ function swPixelPath(li, zoom) {
 // either side. The radius shrinks on a short segment so two corners can never
 // eat into each other.
 function swRoundCorners(pts, radius) {
-  if (pts.length < 3) return pts;
-  const out = [pts[0]];
+  // A two-stop line with nothing to share has no interior vertex at all, and
+  // still has to come back as points rather than the {p, cover} pairs the
+  // path is built from.
+  if (pts.length < 3) return pts.map(q => q.p);
+  const out = [pts[0].p];
   for (let i = 1; i < pts.length - 1; i++) {
-    const A = pts[i - 1];
-    const B = pts[i];
-    const C = pts[i + 1];
+    const A = pts[i - 1].p;
+    const B = pts[i].p;
+    const C = pts[i + 1].p;
     const d1 = B.distanceTo(A);
     const d2 = B.distanceTo(C);
     if (d1 < 1e-6 || d2 < 1e-6) continue;
     const u1 = L.point((A.x - B.x) / d1, (A.y - B.y) / d1);
     const u2 = L.point((C.x - B.x) / d2, (C.y - B.y) / d2);
+    const dot = Math.max(-1, Math.min(1, u1.x * u2.x + u1.y * u2.y));
     // Already straight through: there is no corner to round, and rounding it
     // would only add points.
-    if (u1.x * u2.x + u1.y * u2.y < -0.9999) { out.push(B); continue; }
-    const t = Math.min(radius, d1 / 2, d2 / 2);
+    if (dot < -0.9999) { out.push(B); continue; }
+    const deflect = 180 - (Math.acos(dot) * 180) / Math.PI;
+    const half = Math.sin((deflect / 2) * (Math.PI / 180)) || 1e-6;
+    const t = Math.min(radius, d1 / 2, d2 / 2, (2 * pts[i].cover) / half);
     const p1 = L.point(B.x + u1.x * t, B.y + u1.y * t);
     const p2 = L.point(B.x + u2.x * t, B.y + u2.y * t);
-    const deflect = 180 - (Math.acos(
-      Math.max(-1, Math.min(1, u1.x * u2.x + u1.y * u2.y))) * 180) / Math.PI;
     const steps = Math.max(2, Math.min(10, Math.ceil(deflect / SW_ARC_DEG)));
     out.push(p1);
     for (let s = 1; s < steps; s++) {
@@ -2594,7 +2613,7 @@ function swRoundCorners(pts, radius) {
     }
     out.push(p2);
   }
-  out.push(pts[pts.length - 1]);
+  out.push(pts[pts.length - 1].p);
   return out;
 }
 
@@ -2632,7 +2651,7 @@ function swMarkerStyle(i) {
   const lit = swFocusLine === null || s.lines.includes(swFocusLine);
   const sel = swSelected === i;
   return {
-    radius: sel ? (s.xf ? 8 : 7) : (s.xf ? 6 : 4.5),
+    radius: (s.xf ? SW_R_XFER : SW_R_LOCAL) + (sel ? 2 : 0),
     fillColor: own, fillOpacity: lit ? 0.95 : SW_DIM,
     // White is what a click means everywhere else on this map, so a selected
     // stop wears it as a ring rather than a fill -- an interchange is already
@@ -2742,11 +2761,11 @@ function buildSubwayLayer() {
   swChords = swData.lines.map((l, li) => {
     const pts = swGeometry(li);
     const casing = L.polyline(pts, {
-      color: '#0d0d0d', weight: 7, opacity: 0.85,
+      color: '#0d0d0d', weight: 9, opacity: 0.85,
       lineJoin: 'round', lineCap: 'round', interactive: false,
     });
     const chord = L.polyline(pts, {
-      color: l.colour, weight: 4, opacity: 0.9,
+      color: l.colour, weight: 5, opacity: 0.9,
       lineJoin: 'round', lineCap: 'round',
       // The streets are what a click on this map has always been about, and
       // 21k of them lie under these chords. The route is not clickable, so a

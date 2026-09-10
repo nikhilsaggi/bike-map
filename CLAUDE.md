@@ -579,10 +579,14 @@ because attribution is not optional.
   pointy ones.** `swRoundCorners` replaces each interior vertex with a
   quadratic Bezier whose control point *is* that vertex, sampled into points
   because the canvas renderer strokes polylines and nothing else. The radius
-  is 12px and the vertex stays where it is: a fillet pulls the line off the
-  vertex by `t * sin(deflection / 2) / 2`, which at the 62 degrees the builder
-  allows is 3.6px against a 4.5px station marker, so the marker still covers
-  it. **Don't spline through the stations instead** -- that bows the chord
+  radius is the *smallest* of three bounds -- a 20px cap, half the shorter leg,
+  and `2R / sin(deflection / 2)`, where R is the station marker's radius -- so
+  a corner is as generous as the marker covering it allows. A fillet pulls the
+  line off the vertex by `t * sin(deflection / 2) / 2`, and the vertex stays
+  where it is. **Size that bound on the bends the lines actually make, not the
+  ones the builder permits**: a flat 12px set by the 62-degree limit read as a
+  mitre, because the sharpest bend in the real network is 57 degrees and the
+  legs are 38-80px, which affords 19. **Don't spline through the stations instead** -- that bows the chord
   between two of them, and a curved chord claims a route this network has
   never measured. Sampling is capped by *angle* (`SW_ARC_DEG`), not by a fixed
   step count: a fixed count cuts a gentle bend into sub-pixel steps, which is
