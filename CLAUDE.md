@@ -83,6 +83,9 @@ interactive Leaflet map (`docs/`, served via GitHub Pages) plus static PNGs.
    the merge. The boundary file is fetched once by `cli.main`, never by the
    export: keeping the network out of `_export_geojson` is what keeps the
    export tests offline
+11. `subway.py` -- the Desire Lines overlay, same shape once more. It reshapes
+   `cache/dream_subway/od_network.json`, which `tools/dream_subway/` writes by
+   hand like the Citibike export; `None` when that file is absent
 
 `bike_routes/ingest/` is the front of the pipeline (`garmin_sync`, `gpx_to_csv`,
 `citibike`), run as `python -m bike_routes.ingest.<mod>`; it fills `rides/`
@@ -110,7 +113,7 @@ owned what; don't reintroduce that.
 `docs/index.html` is a single self-contained Leaflet page (no build step); it
 reads everything from `rides.geojson.gz` top-level `properties`.
 
-**The three drawn layers share one switcher (`#layers`), and only the network
+**The four drawn layers share one switcher (`#layers`), and only the network
 starts on.** Switching the network off is the same lever the date filter
 already pulls -- `routesOn` gates `applyFilter`'s add/remove, so the children
 leave the map and keep their counts, and the switch always renormalizes so
@@ -120,7 +123,11 @@ the date filter for that reason, so `viewRide` draws the ride and drops the
 ghosts rather than refusing. The rule above the group belongs to `#layers`,
 never to the first toggle -- the dock and neighborhood rows are hidden until
 their payload arrives, so a border hung on a row would come and go with the
-data. `--rail-fixed` is what the open stats section has to leave behind for
+data. **The switcher is a grid of chips, not a column of checkboxes**: each
+chip is a real checkbox laid over a `.seg-btn`-shaped label, tinted in its
+layer's own colour when on (never the source row's purple fill, which means
+pick-one), and `auto-fit` puts two to a row in the legend and all of them in
+one on the sheet. `--rail-fixed` is what the open stats section has to leave behind for
 the rest of the right rail, the legend included; it has to grow when the
 legend does. It is a desktop measurement only -- a phone has no rails (see
 the sheet, below).
@@ -147,7 +154,7 @@ rather than `absolute`, or it would centre on the rail's width instead of the
 map's. `map.panInside` moves the map
 only when the clicked feature would fall behind the panel (`showArea` frames
 the whole polygon itself instead, so `selectArea` is told not to pan on top of
-the flight). One panel serves all three layers: a source is `{ kind, latlng,
+the flight). One panel serves every layer: a source is `{ kind, latlng,
 render }`, and `render()` returns `{ title, body }`. Because it covers nothing
 it can also outlive the click: `applyFilter` re-renders it, gated on
 `renormalize` so playback frames do not rebuild a 141-row dock, and
@@ -295,7 +302,7 @@ because attribution is not optional.
   `EDGE_GHOST` style, because a busy dock's straight lines are the same cyan
   as 21k plasma edges and lose against them. The network stays on screen in
   outline -- reading the docks against where the bike goes is the point of
-  the layer -- and the slider still moves it, in outline (`dockFocus()` gates
+  the layer -- and the slider still moves it, in outline (`networkIsContext()` gates
   `applyFilter`'s restyle).
 - **The one route a dock row can draw is a recorded one.** `trip_rides` names
   the GPS ride running over each trip and ships it as the 4th element of each
@@ -553,6 +560,51 @@ because attribution is not optional.
   covers 95% of the track by construction). If a chart is ever reinstated
   here, read [why each failed](findings/bike-reencounters.md) first, and note
   that the working one still lost to a list you can click.
+- **Desire Lines measures nothing, and the page must never let it
+  look as though it does.** `properties.subway` is a hypothetical fitted to
+  where rides begin and end, so it stays out of `edge_counts`, `coverage` and
+  `features[]` the same way Citibike trips do. A station's position is real --
+  the centroid of a cluster of ride endpoints -- but **the chord between two
+  stations is drawn straight**, because `odnet.py` never opens the geometry:
+  routing it along streets would make a guess look like a trace, which is the
+  argument that keeps a dock's links straight too. It is also the one drawn
+  layer the slider cannot move: the weights and the lines are both fitted to
+  the whole history, so a date-filtered version would resize the markers while
+  leaving the network under them unchanged ([why](findings/dream-subway.md)).
+- **Two lines sharing a stretch each get their own track, and the track is
+  measured in pixels.** 5 of the network's 43 segments are carried by two
+  lines, and drawn on one centreline the second simply hides the first. A
+  chord is therefore a *multi*-polyline: an unshared segment is the plain pair
+  of stations, a shared one tapers out to its own track and back so both lines
+  still meet at the stop they share. The offset is screen pixels recomputed on
+  `zoomend`, never a fixed distance on the ground -- a ground offset collapses
+  to a single line at city scale, which is the scale this layer is read at.
+- **Every bend is a corner of fixed radius, because a subway map has no
+  pointy ones.** `swRoundCorners` replaces each interior vertex with a
+  quadratic Bezier whose control point *is* that vertex, sampled into points
+  because the canvas renderer strokes polylines and nothing else. The radius
+  radius is the *smallest* of three bounds -- a 20px cap, half the shorter leg,
+  and `2R / sin(deflection / 2)`, where R is the station marker's radius -- so
+  a corner is as generous as the marker covering it allows. A fillet pulls the
+  line off the vertex by `t * sin(deflection / 2) / 2`, and the vertex stays
+  where it is. **Size that bound on the bends the lines actually make, not the
+  ones the builder permits**: a flat 12px set by the 62-degree limit read as a
+  mitre, because the sharpest bend in the real network is 57 degrees and the
+  legs are 38-80px, which affords 19. **Don't spline through the stations instead** -- that bows the chord
+  between two of them, and a curved chord claims a route this network has
+  never measured. Sampling is capped by *angle* (`SW_ARC_DEG`), not by a fixed
+  step count: a fixed count cuts a gentle bend into sub-pixel steps, which is
+  how a test measuring angles off `latLngToLayerPoint` came to read 45 degrees
+  on a smooth curve -- that method rounds to whole pixels, so use
+  `map.project` whenever geometry is being measured rather than drawn.
+- **`networkIsContext()` is why the streets go to outline, and it has two
+  owners.** A dock in focus and the subway overlay both lay thin bright lines
+  over 21k plasma ones, which is a haystack rather than a comparison; the
+  subway is the worse case, because five of its line colours sit inside the
+  plasma ramp itself. Both ghost the network with ride view's own `EDGE_GHOST`
+  and leave it on screen in outline -- reading the overlay against where the
+  bike goes is the point of both layers -- and the slider still moves it, in
+  outline. Ride view outranks both: it owns the drawn edges whenever it is up.
 - **The dock layer is meant to be explored, not read.** Markers resize with
   the same `filterLo`/`filterHi` range that filters the edges (`applyFilter`
   calls `applyDockFilter`), so the slider and time-lapse move them too. The

@@ -1,5 +1,7 @@
 import { test, expect, gotoMap, hoverEdge, clickEdge } from './helpers.js';
-import { buildFixture, EDGES, CITIBIKE_BLOCK, NEIGHBORHOOD_BLOCK } from './fixture.js';
+import {
+  buildFixture, EDGES, CITIBIKE_BLOCK, NEIGHBORHOOD_BLOCK, SUBWAY_BLOCK,
+} from './fixture.js';
 
 /**
  * How many of the drawn network's streets are currently on the map.
@@ -20,6 +22,23 @@ const expectDrawn = (page, n) =>
       }),
     )
     .toBe(n);
+
+const EVERY_LAYER = {
+  citibike: CITIBIKE_BLOCK,
+  neighborhoods: NEIGHBORHOOD_BLOCK,
+  subway: SUBWAY_BLOCK,
+};
+
+/** How many rows the visible chips wrap onto. */
+const chipRows = (page) =>
+  page.evaluate(() => new Set(
+    [...document.querySelectorAll('#layers label:not(.hidden)')]
+      .map((l) => Math.round(l.getBoundingClientRect().top)),
+  ).size);
+
+/** The border colour of one chip. */
+const chipBorder = (page, id) =>
+  page.locator(id).evaluate((el) => getComputedStyle(el).borderTopColor);
 
 /** The stroke colour of each street that is on the map, in layer order. */
 const strokes = (page) =>
@@ -153,4 +172,35 @@ test.describe('layer switcher', () => {
         expect(clears, `the switcher clears the panel with #${section} open`).toBe(true);
       }
     });
+
+  // Four rows of checkboxes took most of the legend. As chips, the grid puts
+  // two to a row in the desktop legend and all four in one on the sheet,
+  // whose pane is twice as wide.
+  test('four chips take two rows in the legend and one on a phone', async ({ page }) => {
+    await gotoMap(page, buildFixture(EVERY_LAYER));
+    await expect(page.locator('#layers label:not(.hidden)')).toHaveCount(4);
+    expect(await chipRows(page)).toBe(2);
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.locator('.sheet-tab[data-pane="legend"]').click();
+    await expect(page.locator('#layers')).toBeVisible();
+    expect(await chipRows(page)).toBe(1);
+  });
+
+  test('a chip on wears its own layer\'s colour, and off goes back to grey', async ({ page }) => {
+    await gotoMap(page, buildFixture(EVERY_LAYER));
+    const grey = await chipBorder(page, '#cb-toggle');
+    // The network starts on, in the bright end of its own ramp.
+    expect(await chipBorder(page, '#rf-toggle')).toBe('rgb(240, 160, 42)');
+
+    await page.locator('#cb-check').check();
+    expect(await chipBorder(page, '#cb-toggle')).toBe('rgb(168, 216, 232)');
+    await page.locator('#sw-check').check();
+    expect(await chipBorder(page, '#sw-toggle')).toBe('rgb(185, 169, 232)');
+
+    await page.locator('#cb-check').uncheck();
+    // Off the chip first, or it reads the hover border instead of the rest one.
+    await page.mouse.move(5, 5);
+    expect(await chipBorder(page, '#cb-toggle')).toBe(grey);
+  });
 });

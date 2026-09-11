@@ -21,6 +21,37 @@ export const EDGES = {
 // Direction-split speed corridors, ranked by the pipeline. Speeds are km/h
 // (the page converts to mph): 24.14 km/h = 15.0 mph, 8.05 = 5.0, so the
 // first row reads "15.0 vs 5.0" with a 10.0 mph gap -- all hand-computable.
+// The dream-subway overlay. Four stations on two lines, one of them the
+// interchange, placed between the fixture's streets so a station click cannot
+// land on one. Station 0 reaches every other station without a change, which
+// is what the panel's "direct to" line counts.
+export const SUBWAY_BLOCK = {
+  lines: [
+    { id: '1', name: 'Cross Line', colour: '#d6262b', stops: [1, 0, 2], km: 2.5 },
+    { id: '2', name: 'South Line', colour: '#0a7bc2', stops: [0, 3], km: 0.6 },
+  ],
+  stations: [
+    { name: 'Center Station', at: [-73.96, 40.7375], ends: 40, lines: ['1', '2'], xf: true },
+    { name: 'West End', at: [-73.975, 40.7375], ends: 12, lines: ['1'], xf: false },
+    { name: 'East End', at: [-73.945, 40.7375], ends: 9, lines: ['1'], xf: false },
+    { name: 'South End', at: [-73.96, 40.7325], ends: 6, lines: ['2'], xf: false },
+  ],
+  rides: 10, direct: 6, one_change: 2, stranded: 1, reachable: 9,
+};
+
+// The same four stations with a third line laid over an existing stretch:
+// line 3 repeats line 1's West End -> Center Station and line 2's
+// Center Station -> South End, so both of those segments carry two lines and
+// have to draw on their own tracks.
+export const SUBWAY_PARALLEL_BLOCK = {
+  ...SUBWAY_BLOCK,
+  lines: [
+    { id: '1', name: 'Cross Line', colour: '#d6262b', stops: [1, 0, 2], km: 2.5 },
+    { id: '2', name: 'South Line', colour: '#0a7bc2', stops: [0, 3], km: 0.6 },
+    { id: '3', name: 'Shared Line', colour: '#159a4e', stops: [1, 0, 3], km: 1.8 },
+  ],
+};
+
 export const SPEED_BLOCK = {
   corridors: [
     {
