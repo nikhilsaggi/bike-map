@@ -334,7 +334,7 @@
   #cb-range:empty { display: none; }
   .dock-sub { color: #666; font-size: 10px; line-height: 1.5; margin-bottom: 4px; }
 
-  /* -- Dream subway ------------------------------------------------------
+  /* -- Desire Lines ------------------------------------------------------
      A station's rows are its lines, and each one is a control: it picks that
      line out of the network. Same row shape as the dock panel's, so the two
      read as the same kind of list. */
@@ -935,7 +935,7 @@
           <input type="checkbox" id="nb-check"> Neighborhoods
         </label>
         <label id="sw-toggle" class="hidden">
-          <input type="checkbox" id="sw-check"> Dream subway
+          <input type="checkbox" id="sw-check"> Desire Lines
         </label>
       </div>
     </div>
@@ -2495,7 +2495,7 @@ function initNeighborhoods(nb) {
   });
 }
 
-// -- Dream subway ------------------------------------------------------------
+// -- Desire Lines ------------------------------------------------------------
 // A hypothetical network fitted to where the rides begin and end, drawn over
 // the streets they were fitted from. It is the one drawn layer that measures
 // nothing: the stations are real places -- the centroids of clustered ride
@@ -2818,13 +2818,10 @@ function initSubway(sw) {
   const check = document.getElementById('sw-check');
   const pct = sw.rides ? Math.round((100 * (sw.direct + sw.one_change)) / sw.rides) : 0;
   // On the control rather than under it, like the neighborhoods row: what the
-  // layer is, and the one thing about it a reader would otherwise assume
-  // wrong -- that the slider moves it.
+  // layer is and how much of the riding it would carry, in one sentence.
   toggle.title =
-    `${sw.stations.length} stations and ${sw.lines.length} lines fitted to where ` +
-    `rides begin and end, carrying ${pct}% of them with at most one change. ` +
-    'The chords are straight because no street was consulted. All-time: the ' +
-    'date slider does not move it.';
+    'Theoretical subway lines fitted to where rides begin and end, carrying ' +
+    `${pct}% of them with at most one change.`;
   toggle.classList.remove('hidden');
   map.on('zoomend', () => { if (subwayOn()) swSyncGeometry(); });
   check.addEventListener('change', () => {

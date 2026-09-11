@@ -1,4 +1,4 @@
-# A subway fitted to the rides
+# Desire Lines: a subway fitted to the rides
 
 An exercise, not a pipeline stage: what network of rapid-transit lines would
 serve the trips these rides actually make? Everything below is measured from

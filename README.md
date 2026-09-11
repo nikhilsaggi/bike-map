@@ -373,7 +373,7 @@ part of it; `findings/` holds what they found:
 - [Rebuilding the graph without Overpass](findings/graph-rebuild-offline.md) —
   recovering an invalidated graph during an outage from the responses osmnx
   already cached, and why a Geofabrik extract is the wrong tool for it
-- [A subway fitted to the rides](findings/dream-subway.md) —
+- [Desire Lines: a subway fitted to the rides](findings/dream-subway.md) —
   `tools/dream_subway/`, a hypothetical network drawn from where rides begin
   and end, and why fitting it to the streets they ride instead made it worse
 
@@ -437,9 +437,11 @@ gitignored):
   `tools/rebuild_graph_from_cache.py` can rebuild the graph while Overpass is
   down; they accumulate across every region ever fetched, so between them they
   cover more than the last fetch did
-- `cache/dream_subway/od_network.json` — the hypothetical network fitted to
+- `cache/dream_subway/od_network.json` — the Desire Lines network fitted to
   the ride endpoints (written by `tools/dream_subway/odnet.py`, absent until
-  you run it); the map ships without the subway layer while it is missing
+  you run it); the map ships without the layer while it is missing. A run
+  re-embeds this file but never refits it: after new rides, rerun `od.py`,
+  `odpairs.py` and `odnet.py` in that order
 
 Delete any cache file — or the whole directory — to force a rebuild.
 Changing processing parameters automatically triggers a full reprocess, and

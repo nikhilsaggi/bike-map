@@ -36,7 +36,7 @@ const trackGap = (page) =>
 const CENTER_STN = { lat: 40.7375, lng: -73.96 };
 const SOUTH_STN = { lat: 40.7325, lng: -73.96 };
 
-test.describe('dream subway layer', () => {
+test.describe('Desire Lines layer', () => {
   test('the row stays hidden until the payload carries the block', async ({ page }) => {
     await gotoMap(page);
     await expect(page.locator('#sw-toggle')).toHaveClass(/hidden/);
@@ -46,6 +46,11 @@ test.describe('dream subway layer', () => {
     await gotoMap(page, buildFixture({ subway: SUBWAY_BLOCK }));
     await expect(page.locator('#sw-toggle')).not.toHaveClass(/hidden/);
     await expect(page.locator('#sw-check')).not.toBeChecked();
+    await expect(page.locator('#sw-toggle')).toHaveText('Desire Lines');
+    // 6 direct + 2 with one change, of 10 rides.
+    await expect(page.locator('#sw-toggle')).toHaveAttribute('title',
+      'Theoretical subway lines fitted to where rides begin and end, ' +
+      'carrying 80% of them with at most one change.');
     // Off means off: nothing of the layer is on the map yet.
     expect(await page.evaluate(() => swLayer !== null && map.hasLayer(swLayer))).toBe(false);
   });

@@ -1,4 +1,4 @@
-"""Dream-subway overlay for the interactive map.
+"""Desire Lines, the subway overlay for the interactive map.
 
 Reads the network ``tools/dream_subway/odnet.py`` writes and reshapes it into
 the ``properties.subway`` block. Pure reshaping: no network, no state, no

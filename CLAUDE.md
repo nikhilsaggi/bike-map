@@ -83,7 +83,7 @@ interactive Leaflet map (`docs/`, served via GitHub Pages) plus static PNGs.
    the merge. The boundary file is fetched once by `cli.main`, never by the
    export: keeping the network out of `_export_geojson` is what keeps the
    export tests offline
-11. `subway.py` -- the dream-subway overlay, same shape once more. It reshapes
+11. `subway.py` -- the Desire Lines overlay, same shape once more. It reshapes
    `cache/dream_subway/od_network.json`, which `tools/dream_subway/` writes by
    hand like the Citibike export; `None` when that file is absent
 
@@ -560,7 +560,7 @@ because attribution is not optional.
   covers 95% of the track by construction). If a chart is ever reinstated
   here, read [why each failed](findings/bike-reencounters.md) first, and note
   that the working one still lost to a list you can click.
-- **The dream subway measures nothing, and the page must never let it
+- **Desire Lines measures nothing, and the page must never let it
   look as though it does.** `properties.subway` is a hypothetical fitted to
   where rides begin and end, so it stays out of `edge_counts`, `coverage` and
   `features[]` the same way Citibike trips do. A station's position is real --
