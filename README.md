@@ -317,6 +317,24 @@ git push                 # GitHub Pages serves docs/ straight from main
 
 It leaves the commit unpushed on purpose, so you can look at the map first.
 
+`update.py` refreshes the rides. The rest of what the map is built from
+refreshes on its own schedule:
+
+| Source | Refreshed by |
+|---|---|
+| GPS rides | `update.py` |
+| Weather | every pipeline run, automatically |
+| Street graph | every run, extending itself when a ride leaves the area it covers |
+| Citibike trips and dock locations | a manual export, then `python -m bike_routes.ingest.citibike <file>` ([Usage](#usage), step 4) |
+| Neighborhood boundaries | nothing — fetched once; delete `cache/nta_boundaries.geojson` to fetch again |
+| Desire Lines | `od.py`, `odpairs.py`, `odnet.py` in [`tools/dream_subway/`](tools/dream_subway/README.md); check the line names after |
+| The image at the top of this file | `python tools/render_readme_map.py` |
+
+So a full refresh is: ingest a Citibike export, refit Desire Lines, run
+`update.py`, re-render the README image, look at the map, push. `update.py`
+rebuilds the export even when there are no new rides, so the first two reach
+the map on a quiet week too.
+
 This runs locally rather than in CI, deliberately. The ride CSVs and the
 ~260 MB OSM graph cache already live on this machine, and Garmin's login
 sits behind Cloudflare TLS fingerprinting that tends to block datacenter IPs
