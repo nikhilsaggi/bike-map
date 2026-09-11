@@ -123,7 +123,11 @@ the date filter for that reason, so `viewRide` draws the ride and drops the
 ghosts rather than refusing. The rule above the group belongs to `#layers`,
 never to the first toggle -- the dock and neighborhood rows are hidden until
 their payload arrives, so a border hung on a row would come and go with the
-data. `--rail-fixed` is what the open stats section has to leave behind for
+data. **The switcher is a grid of chips, not a column of checkboxes**: each
+chip is a real checkbox laid over a `.seg-btn`-shaped label, tinted in its
+layer's own colour when on (never the source row's purple fill, which means
+pick-one), and `auto-fit` puts two to a row in the legend and all of them in
+one on the sheet. `--rail-fixed` is what the open stats section has to leave behind for
 the rest of the right rail, the legend included; it has to grow when the
 legend does. It is a desktop measurement only -- a phone has no rails (see
 the sheet, below).
@@ -298,7 +302,7 @@ because attribution is not optional.
   `EDGE_GHOST` style, because a busy dock's straight lines are the same cyan
   as 21k plasma edges and lose against them. The network stays on screen in
   outline -- reading the docks against where the bike goes is the point of
-  the layer -- and the slider still moves it, in outline (`dockFocus()` gates
+  the layer -- and the slider still moves it, in outline (`networkIsContext()` gates
   `applyFilter`'s restyle).
 - **The one route a dock row can draw is a recorded one.** `trip_rides` names
   the GPS ride running over each trip and ships it as the 4th element of each

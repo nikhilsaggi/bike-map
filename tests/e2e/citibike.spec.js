@@ -450,7 +450,7 @@ test.describe('Citibike dock layer', () => {
     await gotoMap(page, buildFixture({
       citibike: { ...buildFixture().properties.citibike, from: '2024-05-01' },
     }));
-    await expect(page.locator('#cb-range')).toHaveText('(May 2024 on)');
+    await expect(page.locator('#cb-range')).toHaveText('from May 2024');
   });
 
   test('and says nothing when they cover the whole ride history', async ({ page }) => {

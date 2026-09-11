@@ -276,31 +276,50 @@
   .src-tag.own { color: #888; }
 
   /* -- Layer switcher ----------------------------------------------------
-     The three drawn layers, one row each rather than one wrapped row: the
-     labels are long and each carries a note. One box owns the rule above the
-     group and the spacing inside it, rather than whichever toggle happens to
-     be first -- the two optional ones stay hidden until their payload
-     arrives, so a rule hung on the first row would come and go with the
-     data. Each checkbox wears its own layer's colour, which is the same job
-     the inspector's heading does. */
+     The drawn layers as a grid of chips rather than a column of checkboxes:
+     four labelled rows took 84px of a legend whose bar and slider need
+     less. The chips share .seg-btn's box so the two rows read as one
+     family, but not its fill -- the source buttons above pick one of three,
+     and a filled chip here would claim the same. A layer on is tinted in its
+     own colour instead, the job the inspector's heading does too. auto-fit
+     puts two to a row in the desktop legend and all of them in one on the
+     sheet, where the pane is twice as wide. The input is still a real
+     checkbox laid over the whole chip, so a click, the keyboard and a
+     screen reader all reach the same control. One box owns the rule above
+     the group and the spacing inside it, rather than whichever chip happens
+     to be first -- the optional ones stay hidden until their payload
+     arrives, so a rule hung on the first would come and go with the data. */
   #layers {
     margin-top: 8px; padding-top: 8px; border-top: 1px solid #333;
-    display: flex; flex-direction: column; gap: 5px;
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(84px, 1fr));
+    gap: 3px;
   }
   #layers label {
-    color: #888; font-size: 11px; cursor: pointer; user-select: none;
+    position: relative; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; text-align: center;
+    background: #1a1a1a; color: #888; border: 1px solid #333;
+    border-radius: 4px; padding: 3px 4px; font-size: 10px; line-height: 1.3;
+    cursor: pointer; user-select: none; white-space: nowrap;
   }
-  #layers label:hover { color: #ccc; }
+  #layers label:hover { color: #ccc; border-color: #555; }
   #layers label.hidden { display: none; }
-  #layers input { vertical-align: -1px; margin-right: 3px; }
+  #layers input {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    margin: 0; opacity: 0; cursor: pointer;
+  }
+  #layers label:has(:checked) {
+    color: var(--tint); border-color: var(--tint);
+    background: color-mix(in srgb, var(--tint) 16%, #1a1a1a);
+  }
+  #layers label:has(:focus-visible) { outline: 1px solid var(--tint); outline-offset: 1px; }
   /* The bright end of the plasma ramp the bar above is drawn in. */
-  #rf-check { accent-color: #f0a02a; }
-  #cb-check { accent-color: #a8d8e8; }
-  #nb-check { accent-color: #cfc3a8; }
+  #rf-toggle { --tint: #f0a02a; }
+  #cb-toggle { --tint: #a8d8e8; }
+  #nb-toggle { --tint: #cfc3a8; }
   /* The subway carries five line colours and so is none of them; a pale
      violet sits outside the plasma ramp, ride view's cyan, the dock blue and
-     the neighborhood tan, which is all the identity the row needs. */
-  #sw-check { accent-color: #b9a9e8; }
+     the neighborhood tan, which is all the identity the chip needs. */
+  #sw-toggle { --tint: #b9a9e8; }
 
   /* -- Neighborhoods ---------------------------------------------------- */
   .nb-detail { min-width: 150px; }
@@ -311,7 +330,8 @@
   /* The ride history starts in 2021 and the dock trips in 2025, so most of
      the slider's range has no docks in it at all. Saying so here is the
      difference between "nothing to show" and "this is broken". */
-  #cb-range { color: #555; font-size: 9px; }
+  #cb-range { color: #666; font-size: 9px; line-height: 1.1; }
+  #cb-range:empty { display: none; }
   .dock-sub { color: #666; font-size: 10px; line-height: 1.5; margin-bottom: 4px; }
 
   /* -- Dream subway ------------------------------------------------------
@@ -901,7 +921,7 @@
       <div id="src-note"></div>
       <!-- The layer switcher. The drawn network leads it and is the one that
            starts on: it is what the box above describes and what the map has
-           always opened as. The two below it are revealed only when the payload
+           always opened as. The others are revealed only when the payload
            carries their block, and stay off until asked for. -->
       <div id="layers">
         <label id="rf-toggle">
@@ -1782,7 +1802,7 @@ function initDockLayer(cb) {
   // the whole history there is no stretch of empty slider to explain.
   const startsLate = cb.from && dateList.length && cb.from > dateList[0];
   document.getElementById('cb-range').textContent =
-    startsLate ? `(${month(cb.from)} on)` : '';
+    startsLate ? `from ${month(cb.from)}` : '';
   toggle.classList.remove('hidden');
   check.addEventListener('change', () => {
     if (check.checked) {
