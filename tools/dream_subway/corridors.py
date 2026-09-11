@@ -1,58 +1,61 @@
-import gzip
-import json
-import math
-import os
-import sys
+"""Rank streets by pass-metres -- the first, street-aligned cut's input.
+
+Sums every drawn feature's length times its pass count per street name.
+Superseded: see the README. Writes ``streets.json``.
+"""
+
+from __future__ import annotations
+
 from collections import defaultdict
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from paths import GEO, work
+from paths import load_geo, seglen, write_json
 
-LAT = 111320.0
-
-d = json.load(gzip.open(GEO))
+d = load_geo()
 names = d["properties"]["street_names"]
 feats = d["features"]
 
 
-def seglen(coords):
-    t = 0.0
-    for (x1, y1), (x2, y2) in zip(coords, coords[1:]):
-        la = (y1 + y2) / 2
-        t += math.hypot((x2 - x1) * 111320.0 * math.cos(math.radians(la)), (y2 - y1) * LAT)
-    return t
-
-
-agg = defaultdict(lambda: [0.0, 0.0, 0, 0.0, 0.0, 0])  # passm, m, feats, clon, clat, maxn
+# per street: pass-metres, metres, features, lon*m, lat*m, most passes on one feature
+agg: dict[str, list[float]] = defaultdict(lambda: [0.0, 0.0, 0, 0.0, 0.0, 0])
 for f in feats:
     p = f["properties"]
     sn = p.get("sn")
     nm = names[sn] if sn is not None else "(unnamed)"
     c = f["geometry"]["coordinates"]
-    L = seglen(c)
+    length = seglen(c)
     n = len(p["rides"])
     a = agg[nm]
-    a[0] += n * L
-    a[1] += L
+    a[0] += n * length
+    a[1] += length
     a[2] += 1
     mid = c[len(c) // 2]
-    a[3] += mid[0] * L
-    a[4] += mid[1] * L
+    a[3] += mid[0] * length
+    a[4] += mid[1] * length
     a[5] = max(a[5], n)
 
-rows = []
-for nm, a in agg.items():
-    rows.append({"name": nm, "passm": a[0], "m": a[1], "feats": a[2],
-                 "avg_n": a[0] / a[1] if a[1] else 0, "max_n": a[5],
-                 "at": [round(a[3] / a[1], 5), round(a[4] / a[1], 5)] if a[1] else None})
+rows = [
+    {
+        "name": nm,
+        "passm": a[0],
+        "m": a[1],
+        "feats": a[2],
+        "avg_n": a[0] / a[1] if a[1] else 0,
+        "max_n": a[5],
+        "at": [round(a[3] / a[1], 5), round(a[4] / a[1], 5)] if a[1] else None,
+    }
+    for nm, a in agg.items()
+]
 rows.sort(key=lambda r: -r["passm"])
 
-print("%-38s %9s %7s %6s %6s  %s" % ("street", "pass-km", "km", "avg", "max", "centroid"))
+print(f"{'street':<38} {'pass-km':>9} {'km':>7} {'avg':>6} {'max':>6}  centroid")
 for r in rows[:50]:
-    print("%-38s %9.1f %7.2f %6.1f %6d  %s" % (r["name"], r["passm"] / 1000, r["m"] / 1000,
-                                               r["avg_n"], r["max_n"], r["at"]))
-json.dump(rows, open(work("streets.json"), "w"))
+    print(
+        f"{r['name']:<38} {r['passm'] / 1000:9.1f} {r['m'] / 1000:7.2f} "
+        f"{r['avg_n']:6.1f} {r['max_n']:6d}  {r['at']}"
+    )
+write_json("streets.json", rows)
 
 tot = sum(r["passm"] for r in rows)
 print()
-print("total pass-km %.0f ; top20 share %.1f%%" % (tot / 1000, 100 * sum(r["passm"] for r in rows[:20]) / tot))
+top20 = 100 * sum(r["passm"] for r in rows[:20]) / tot
+print(f"total pass-km {tot / 1000:.0f} ; top20 share {top20:.1f}%")

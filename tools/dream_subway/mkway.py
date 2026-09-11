@@ -1,19 +1,21 @@
-"""Build a corridor polyline from the ridden geometry of named streets."""
-import gzip
-import json
+"""Build each corridor's polyline from the ridden geometry of named streets.
+
+Superseded: see the README. Writes ``corridors_def.json``.
+"""
+
+from __future__ import annotations
+
 import math
-import os
-import sys
 from collections import defaultdict
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from paths import GEO, work
+from paths import LAT, load_geo, write_json
 
-LAT = 111320.0
-d = json.load(gzip.open(GEO))
+Point = list[float]
+
+d = load_geo()
 names = d["properties"]["street_names"]
 
-byname = defaultdict(list)
+byname: dict[str, list[tuple[float, float, int]]] = defaultdict(list)
 for f in d["features"]:
     sn = f["properties"].get("sn")
     if sn is None:
@@ -23,8 +25,22 @@ for f in d["features"]:
         byname[names[sn]].append((p[0], p[1], n))
 
 
-def way(street, axis, lo, hi, olo=-180.0, ohi=180.0, bin_=0.0016):
-    b = defaultdict(lambda: [0.0, 0.0])
+def way(
+    street: str,
+    axis: str,
+    lo: float,
+    hi: float,
+    olo: float = -180.0,
+    ohi: float = 180.0,
+    bin_: float = 0.0016,
+) -> list[Point]:
+    """Trace one street as pass-weighted centres of bins along its axis.
+
+    ``lo``/``hi`` window the street along ``axis`` and ``olo``/``ohi`` across
+    it -- street names repeat across boroughs, so an unwindowed Broadway
+    chains Manhattan to Bushwick.
+    """
+    b: dict[float, list[float]] = defaultdict(lambda: [0.0, 0.0])
     for x, y, n in byname.get(street, []):
         k, o = (y, x) if axis == "ns" else (x, y)
         if not (lo <= k <= hi) or not (olo <= o <= ohi):
@@ -42,17 +58,16 @@ def way(street, axis, lo, hi, olo=-180.0, ohi=180.0, bin_=0.0016):
     return out
 
 
-def chain(*segs):
+def chain(*segs: list[Point]) -> list[Point]:
     """Append segments, flipping each to start nearest the running end."""
-    out = []
-    for s in segs:
-        s = [p for p in s if p]
-        if not s:
+    out: list[Point] = []
+    for seg in segs:
+        pts = [p for p in seg if p]
+        if not pts:
             continue
-        if out and len(s) > 1:
-            if math.dist(out[-1], s[0]) > math.dist(out[-1], s[-1]):
-                s = s[::-1]
-        out.extend(s)
+        if out and len(pts) > 1 and math.dist(out[-1], pts[0]) > math.dist(out[-1], pts[-1]):
+            pts.reverse()
+        out.extend(pts)
     return out
 
 
@@ -133,13 +148,13 @@ FORCE = {
 for k, pts in FORCE.items():
     SPEC[k]["force"] = pts
 
-json.dump(SPEC, open(work("corridors_def.json"), "w"), indent=1)
+write_json("corridors_def.json", SPEC, indent=1)
 for k, v in SPEC.items():
     w = v["way"]
-    L, jump = 0.0, 0.0
+    length, jump = 0.0, 0.0
     for a, b in zip(w, w[1:]):
         la = (a[1] + b[1]) / 2
         s = math.hypot((b[0] - a[0]) * 111320 * math.cos(math.radians(la)), (b[1] - a[1]) * LAT)
-        L += s
+        length += s
         jump = max(jump, s)
-    print("%-26s %3d pts  %5.2f km   max hop %4.0fm" % (k, len(w), L / 1000, jump))
+    print(f"{k:<26} {len(w):3d} pts  {length / 1000:5.2f} km   max hop {jump:4.0f}m")

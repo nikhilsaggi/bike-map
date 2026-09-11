@@ -1,32 +1,33 @@
-import gzip
-import json
-import math
-import os
-import sys
+"""Print which streets the rides between each busy pair of places actually use.
+
+Joins ``od_pairs.json`` back to the export's ride index by start date and
+time, then sums each pair's ridden metres per street. A diagnostic for the
+superseded street-aligned cut: it showed no two pairs share much street.
+"""
+
+from __future__ import annotations
+
 from collections import defaultdict
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from paths import GEO, work
+from paths import load_geo, read_json, seglen
 
-LAT = 111320.0
-
-d = json.load(gzip.open(GEO))
+d = load_geo()
 P = d["properties"]
 names = P["street_names"]
 dates = P["dates"]
 meta = P["rides"]
 
-key2idx = {}
-for i, (di, hm, mi, src) in enumerate(meta):
+key2idx: dict[tuple[str, str], list[int]] = {}
+for i, (di, hm, _mi, _src) in enumerate(meta):
     key2idx.setdefault((dates[di], hm), []).append(i)
 
-od = json.load(open(work("od_pairs.json")))
-clusters = {r["id"]: r for r in json.load(open(work("od_clusters.json")))}
+od = read_json("od_pairs.json")
+clusters = {r["id"]: r for r in read_json("od_clusters.json")}
 
 # filename -> ride index
 fn2ride = {}
 miss = 0
-for fn, ca, cb in od["trips"]:
+for fn, _ca, _cb in od["trips"]:
     date = fn[:10]
     hm = fn[11:16].replace("-", ":")
     cand = key2idx.get((date, hm))
@@ -35,7 +36,7 @@ for fn, ca, cb in od["trips"]:
         for dm in (1, -1, 2, -2):
             mm = m + dm
             hh = h + (mm // 60)
-            cand = key2idx.get((date, "%02d:%02d" % (hh % 24, mm % 60)))
+            cand = key2idx.get((date, f"{hh % 24:02d}:{mm % 60:02d}"))
             if cand:
                 break
     if not cand:
@@ -49,34 +50,25 @@ for fn, ca, cb in od["trips"]:
     if fn in fn2ride:
         ride2pair[fn2ride[fn]] = (min(ca, cb), max(ca, cb))
 
-
-def seglen(c):
-    t = 0.0
-    for (x1, y1), (x2, y2) in zip(c, c[1:]):
-        la = (y1 + y2) / 2
-        t += math.hypot((x2 - x1) * 111320.0 * math.cos(math.radians(la)), (y2 - y1) * LAT)
-    return t
-
-
-pairstreet = defaultdict(lambda: defaultdict(float))
+pairstreet: dict[tuple[int, int], dict[str, float]] = defaultdict(lambda: defaultdict(float))
 for f in d["features"]:
     p = f["properties"]
     sn = p.get("sn")
     nm = names[sn] if sn is not None else "(unnamed)"
-    L = seglen(f["geometry"]["coordinates"])
+    length = seglen(f["geometry"]["coordinates"])
     for r in p["rides"]:
         pr = ride2pair.get(r)
         if pr:
-            pairstreet[pr][nm] += L
+            pairstreet[pr][nm] += length
 
-counts = defaultdict(int)
+counts: dict[tuple[int, int], int] = defaultdict(int)
 for pr in ride2pair.values():
     counts[pr] += 1
 
 for pr, n in sorted(counts.items(), key=lambda kv: -kv[1])[:12]:
     a, b = clusters[pr[0]]["near"], clusters[pr[1]]["near"]
-    print("\n=== %d rides  %s <-> %s" % (n, a, b))
+    print(f"\n=== {n} rides  {a} <-> {b}")
     st = sorted(pairstreet[pr].items(), key=lambda kv: -kv[1])
     tot = sum(v for _, v in st)
     for nm, v in st[:14]:
-        print("      %6.1f km/ride  %5.1f%%  %s" % (v / 1000 / n, 100 * v / tot, nm))
+        print(f"      {v / 1000 / n:6.1f} km/ride  {100 * v / tot:5.1f}%  {nm}")

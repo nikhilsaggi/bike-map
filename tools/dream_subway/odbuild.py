@@ -1,14 +1,12 @@
 """Inject the diagram payload into odpage.html and write the publishable page."""
-import os
-import sys
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from paths import HERE, work  # noqa: E402
+from __future__ import annotations
 
-tpl = open(os.path.join(HERE, "odpage.html")).read()
-data = open(work("od_map_data.json")).read()
+from paths import HERE, work
+
+tpl = (HERE / "odpage.html").read_text()
+data = work("od_map_data.json").read_text()
 assert "__DATA__" in tpl
-out = tpl.replace("__DATA__", data)
 p = work("dream-subway-od.html")
-open(p, "w").write(out)
-print("wrote", p, os.path.getsize(p), "bytes")
+p.write_text(tpl.replace("__DATA__", data))
+print("wrote", p, p.stat().st_size, "bytes")

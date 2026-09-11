@@ -1,50 +1,36 @@
-import csv
-import glob
-import gzip
-import json
+"""Cluster ride endpoints into candidate stations.
+
+Each ride contributes its first and last fix. Endpoints are clustered by
+density at a 300 m radius, densest first, and the 45 busiest clusters are
+named after their nearest Citi Bike dock. Writes ``od_clusters.json``.
+"""
+
+from __future__ import annotations
+
 import math
-import os
-import sys
 from collections import defaultdict
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from paths import GEO, RIDES, work
+from paths import LAT, geo_docks, lonm, ride_ends, write_json
 
-pts = []
-for f in sorted(glob.glob(os.path.join(RIDES, "*.csv"))):
-    with open(f, newline="") as fh:
-        r = list(csv.reader(fh))
-    if len(r) < 3:
-        continue
-    body = r[1:]
-    try:
-        a = (float(body[0][0]), float(body[0][1]))
-        b = (float(body[-1][0]), float(body[-1][1]))
-    except ValueError:
-        continue
-    base = os.path.basename(f)
-    pts.append((a[0], a[1], "start", base))
-    pts.append((b[0], b[1], "end", base))
+R = 300.0
+CELL = 0.005
+
+pts: list[tuple[float, float, str, str]] = []
+for name, a, b in ride_ends():
+    pts.append((a[0], a[1], "start", name))
+    pts.append((b[0], b[1], "end", name))
 
 print("rides", len(pts) // 2, "endpoints", len(pts))
 
-R = 300.0
-LAT = 111320.0
-
-
-def lonm(lat):
-    return 111320.0 * math.cos(math.radians(lat))
-
-
-cell = 0.005
-grid = defaultdict(list)
+grid: dict[tuple[int, int], list[int]] = defaultdict(list)
 for i, p in enumerate(pts):
-    grid[(int(p[0] / cell), int(p[1] / cell))].append(i)
+    grid[(int(p[0] / CELL), int(p[1] / CELL))].append(i)
 
 
-def neigh(i):
+def neigh(i: int) -> list[int]:
+    """Return every endpoint within ``R`` of endpoint ``i``, itself included."""
     lo, la = pts[i][0], pts[i][1]
-    gx, gy = int(lo / cell), int(la / cell)
+    gx, gy = int(lo / CELL), int(la / CELL)
     out = []
     for dx in (-1, 0, 1):
         for dy in (-1, 0, 1):
@@ -58,7 +44,7 @@ def neigh(i):
 
 order = list(range(len(pts)))
 assigned = [-1] * len(pts)
-clusters = []
+clusters: list[list[int]] = []
 dens = {i: len(neigh(i)) for i in order}
 for i in sorted(order, key=lambda i: -dens[i]):
     if assigned[i] >= 0:
@@ -76,14 +62,22 @@ for cid, mem in enumerate(clusters):
     lo = sum(pts[j][0] for j in mem) / len(mem)
     la = sum(pts[j][1] for j in mem) / len(mem)
     s = sum(1 for j in mem if pts[j][2] == "start")
-    recs.append({"id": cid, "at": [round(lo, 5), round(la, 5)], "n": len(mem),
-                 "start": s, "end": len(mem) - s})
+    recs.append(
+        {
+            "id": cid,
+            "at": [round(lo, 5), round(la, 5)],
+            "n": len(mem),
+            "start": s,
+            "end": len(mem) - s,
+        }
+    )
 recs.sort(key=lambda r: -r["n"])
 
-docks = [d for d in json.load(gzip.open(GEO))["properties"]["citibike"]["docks"] if d.get("at")]
+docks = geo_docks()
 
 
-def nearest(lo, la):
+def nearest(lo: float, la: float) -> tuple[str, float]:
+    """Return the name of the dock nearest ``(lo, la)`` and its distance in metres."""
     best, bd = None, 1e18
     for d in docks:
         dlo = (d["at"][0] - lo) * lonm(la)
@@ -98,7 +92,8 @@ for r in recs[:45]:
     nm, dist = nearest(*r["at"])
     r["near"] = nm
     r["near_m"] = round(dist)
-    print("%5d  s%4d/e%4d  %s  %s (%dm)" % (r["n"], r["start"], r["end"], r["at"], nm, round(dist)))
+    print(f"{r['n']:5d}  s{r['start']:4d}/e{r['end']:4d}  {r['at']}  {nm} ({round(dist)}m)")
 
-json.dump(recs, open(work("od_clusters.json"), "w"))
-print("clusters", len(recs), "top20 share", round(100 * sum(r["n"] for r in recs[:20]) / len(pts), 1))
+write_json("od_clusters.json", recs)
+top20 = round(100 * sum(r["n"] for r in recs[:20]) / len(pts), 1)
+print("clusters", len(recs), "top20 share", top20)
