@@ -1,15 +1,37 @@
-# Dream subway
+# Desire Lines
 
-A hypothetical eight-line rapid-transit network fitted to the rides in `rides/`
-and the published `docs/rides.geojson.gz`. Nothing here is part of the pipeline:
-every script reads state and writes only to `cache/dream_subway/`.
+A hypothetical rapid-transit network fitted to the rides in `rides/` and the
+published `docs/rides.geojson.gz`, drawn on the map as the Desire Lines layer.
+Nothing here is part of the pipeline: every script reads state and writes only
+to `cache/dream_subway/`.
 
-Run from the repo root, in order:
+### Refitting the map layer
+
+`python update.py` re-embeds `cache/dream_subway/od_network.json` on every run
+but never refits it, so new rides change nothing until these three are rerun,
+from the repo root, in order:
 
 ```
 python tools/dream_subway/od.py        # cluster ride endpoints -> candidate stations
 python tools/dream_subway/odpairs.py   # which pairs of clusters rides actually connect
-python tools/dream_subway/odnet.py     # stations + lines from the demand matrix alone
+python tools/dream_subway/odnet.py     # stations + lines -> cache/dream_subway/od_network.json
+```
+
+Then run the pipeline (`python update.py`, or `python -m bike_routes --no-png`
+to rebuild the export alone) to put the new network into
+`docs/rides.geojson.gz`. `od.py` needs the ride CSVs, so this only runs where
+`rides/` is.
+
+**Check the line names after a refit.** They are hand-written in `odnet.py`'s
+`META` and handed out by build order, so a refit that reshapes or reorders the
+lines leaves a name on a line that no longer runs there (bm-b5r).
+
+### The standalone proposal page
+
+Two more scripts turn the same network into the schematic proposal page; the
+map does not need them:
+
+```
 python tools/dream_subway/oddiagram.py # octolinear layout
 python tools/dream_subway/odbuild.py   # inject the data into odpage.html
 ```
