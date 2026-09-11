@@ -224,6 +224,25 @@ because attribution is not optional.
   is a detail opening while it is out of the way, and then only up to the
   middle stop: opening a detail is a reason to show the sheet, never to take
   away a map the reader had asked for or shrink one they had dragged up.
+- **The grab surface is the whole header plus a band of map, because a miss
+  lands on Leaflet and pans.** The strip is a couple of dozen pixels of chrome
+  at the sheet's top edge and a thumb is nearer 45px across, so a drag aimed
+  at it lands as often just above -- where the same vertical gesture drags the
+  map, which reads as the sheet refusing to move rather than as a miss. Three
+  answers, all of them the one miss: the strip's target runs `--sheet-grab`
+  past the sheet's own top edge (the sheet is over the map, so the overshoot
+  is simply caught); the nav row drags too, everywhere but on its own buttons;
+  and the body pulls the sheet down once it is scrolled to the top. Anything
+  that sits just above the sheet -- the attribution, the ride-view bar --
+  clears the *band*, not the sheet, or the band swallows its taps.
+- **The body's pull is claimed on the first move and held for the gesture.**
+  It is the one place the page listens for touch events rather than pointer
+  ones: once the browser has claimed a touch for scrolling, the pointer stream
+  is a `pointercancel` and `preventDefault` is too late, so the choice between
+  the list and the sheet has to be made on the first `touchmove` and then not
+  revisited. Downward, from `scrollTop` 0, past a few pixels of slop -- every
+  other gesture is the list's for the rest of the touch, and a gesture that
+  changed owner mid-pull would be the two of them fighting over one thumb.
 - **The breakpoint asks about height too, and is written once.** `max-width:
   640px` **or** `max-height: 480px`: a landscape phone is 844x390, which
   passes any width test comfortably and then has nowhere to put a panel that

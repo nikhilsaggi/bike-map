@@ -23,8 +23,12 @@
      written once, in the media query at the foot of this stylesheet: it is
      the stylesheet that decides there is no room for two rails, and a second
      copy of 640px in the script is the kind of number that goes stale
-     silently. */
-  :root { --rail-fixed: 320px; --layout: wide; --sheet-h: 0px; }
+     silently. `--sheet-grab` is how far the grab strip's target runs past the
+     sheet's own top edge; everything that sits just above the sheet clears
+     that band rather than the sheet. */
+  :root {
+    --rail-fixed: 320px; --layout: wide; --sheet-h: 0px; --sheet-grab: 14px;
+  }
   body { background: #0d0d0d; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
   #map { width: 100vw; height: 100vh; }
 
@@ -724,15 +728,30 @@
   /* The grab strip: the drag target, and a tap target that shows and hides.
      touch-action: none because the gesture it wants -- a vertical drag -- is
      exactly the one the browser would otherwise spend on scrolling the page.
-     It is generously tall for a 4px grip: the bar is the affordance, the
-     strip around it is the target. */
+     It is generously tall for a 5px grip: the bar is the affordance, the
+     strip around it is the target.
+
+     And the target runs `--sheet-grab` past the sheet's own top edge. A thumb
+     is nearer 45px across than the strip is tall, so a drag aimed at it lands
+     as often just above it -- on the map, where the same gesture pans Leaflet
+     instead, which reads as the sheet refusing to move. The sheet is over the
+     map, so the overshoot can simply be caught: the band is invisible, takes
+     a strip of map that was never a good tap target anyway, and is what the
+     attribution and the ride-view bar are lifted clear of below. */
   #sheet-handle {
-    flex: none; display: flex; align-items: center; justify-content: center;
-    height: 22px; cursor: grab; touch-action: none;
+    position: relative; flex: none;
+    display: flex; align-items: center; justify-content: center;
+    height: 26px; cursor: grab; touch-action: none;
+  }
+  #sheet-handle::before {
+    content: ''; position: absolute; left: 0; right: 0;
+    top: calc(-1 * var(--sheet-grab)); bottom: 0;
   }
   #sheet-handle:active { cursor: grabbing; }
-  #sheet-grip { width: 36px; height: 4px; border-radius: 2px; background: #555; }
-  #sheet-handle:hover #sheet-grip { background: #777; }
+  #sheet-grip { width: 44px; height: 5px; border-radius: 3px; background: #666; }
+  #sheet-handle:hover #sheet-grip, #sheet-handle:active #sheet-grip {
+    background: #999;
+  }
 
   /* One row that is either the switcher or a detail's heading, never both:
      what is in the sheet is either one of the two standing panes or the thing
@@ -743,11 +762,18 @@
      are simply full width; it is the wider end of the breakpoint, a landscape
      phone, where a left-pinned switcher over a centred pane reads as two
      different boxes. */
+  /* It is a drag surface as well, everywhere but on its own controls: a
+     strip alone is a target a thumb has to aim at, and the header is the
+     whole of what a reader reads as "the top of the sheet". Same
+     touch-action, for the same reason. */
   #sheet-nav {
     flex: none; display: flex; align-items: center; gap: 8px;
     width: 100%; max-width: 548px; margin: 0 auto;
     padding: 0 14px 10px; min-height: 30px;
+    cursor: grab; touch-action: none;
   }
+  #sheet-nav:active { cursor: grabbing; }
+  #sheet-nav button, #sheet-nav .sheet-tab { cursor: pointer; }
   #sheet-tabs { display: flex; gap: 6px; }
   #sheet-tabs[hidden], #sheet-title[hidden], #sheet-back[hidden] { display: none; }
   .sheet-tab {
@@ -776,7 +802,7 @@
      scroll boxes are unwrapped below: a list that scrolls inside a sheet that
      scrolls is two gestures a thumb cannot tell apart. */
   #sheet-body {
-    flex: 1 1 auto; min-height: 0; overflow-y: auto;
+    flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch; padding: 0 14px 20px;
   }
   /* Capped and centred, not full-bleed: a phone in landscape or a small
@@ -804,7 +830,7 @@
     /* Attribution is not optional, so it rides above the sheet rather than
        under it -- the one thing on the map that has to clear the chrome
        whatever height the reader has dragged it to. */
-    .leaflet-bottom { bottom: var(--sheet-h); }
+    .leaflet-bottom { bottom: calc(var(--sheet-h) + var(--sheet-grab)); }
     /* Wider tap targets and larger type throughout the sheet: the same rows
        are being read at arm's length by a thumb rather than a cursor. */
     #sheet-body .chip {
@@ -837,7 +863,7 @@
        names was almost always opened from a row inside the sheet, and the
        bar's exit button wants to be under the same thumb. */
     #left-rail {
-      left: 0; right: 0; top: auto; bottom: calc(var(--sheet-h) + 8px);
+      left: 0; right: 0; top: auto; bottom: calc(var(--sheet-h) + var(--sheet-grab));
       padding: 0 12px; align-items: stretch;
     }
     /* Centred over the map is a desktop answer: on a phone the bar is as wide
@@ -3066,6 +3092,7 @@ const sheetNavEl = document.getElementById('sheet-nav');
 const sheetBackEl = document.getElementById('sheet-back');
 const sheetTabsEl = document.getElementById('sheet-tabs');
 const sheetTitleEl = document.getElementById('sheet-title');
+const sheetBodyEl = document.getElementById('sheet-body');
 const sheetTabs = [...sheetTabsEl.querySelectorAll('.sheet-tab')];
 
 // Each pane is one of the rails' own bodies, on loan. The box it came out of
@@ -3214,21 +3241,74 @@ function finishSheetDrag(tapped) {
   setSheetStop(best);
 }
 
-sheetHandleEl.addEventListener('pointerdown', e => {
-  sheetDrag = { y: e.clientY, h: sheetEl.getBoundingClientRect().height, moved: false };
+function beginSheetDrag(clientY) {
+  sheetDrag = { y: clientY, h: sheetEl.getBoundingClientRect().height, moved: false };
   sheetEl.classList.remove('animating');
-  sheetHandleEl.setPointerCapture(e.pointerId);
-});
-sheetHandleEl.addEventListener('pointermove', e => {
-  if (!sheetDrag) return;
-  const dy = sheetDrag.y - e.clientY;
+}
+
+/** Follow the finger, bounded by the outer two stops. */
+function dragSheetTo(clientY) {
+  const dy = sheetDrag.y - clientY;
   // A few pixels of slop, so a tap that shifts under the thumb is still a tap.
   if (Math.abs(dy) > 4) sheetDrag.moved = true;
   const stops = sheetStops();
   setSheetHeight(Math.max(stops[0], Math.min(stops[2], sheetDrag.h + dy)));
-});
-sheetHandleEl.addEventListener('pointerup', () => finishSheetDrag(true));
-sheetHandleEl.addEventListener('pointercancel', () => finishSheetDrag(false));
+}
+
+// The grab surface is the whole header, not the strip alone. A thumb is
+// nearer 45px across than the strip is tall, so a drag aimed at it lands as
+// often on the nav row below or the map above -- and the map answers a
+// vertical drag by panning, which reads as the sheet refusing to move. The
+// strip's own target already runs past the sheet's top edge (`--sheet-grab`);
+// this is the other side of the same miss.
+for (const el of [sheetHandleEl, sheetNavEl]) {
+  el.addEventListener('pointerdown', e => {
+    // The nav row carries the tabs, Back and the detail's heading: a press on
+    // one of those belongs to that control.
+    if (e.target.closest('button')) return;
+    beginSheetDrag(e.clientY);
+    el.setPointerCapture(e.pointerId);
+  });
+  el.addEventListener('pointermove', e => { if (sheetDrag) dragSheetTo(e.clientY); });
+  // Tap-to-toggle is the strip's alone. On the nav row a tap lands on the
+  // title of whatever the reader just opened, and folding the sheet away is
+  // not what they meant by touching its name.
+  el.addEventListener('pointerup', () => finishSheetDrag(el === sheetHandleEl));
+  el.addEventListener('pointercancel', () => finishSheetDrag(false));
+}
+
+// And the sheet can be pulled down out of its own content: a header is ~66px
+// of a surface that may own 88% of the screen, and a reader already at the
+// top of a pane who keeps pulling means the sheet, not the list. Touch events
+// rather than pointer ones, because the choice between the two has to be made
+// on the gesture's first move -- once the browser has claimed a touch for
+// scrolling, the pointer stream is a pointercancel and preventDefault is too
+// late. Claimed once and held: a gesture that changed owner mid-pull would be
+// the list and the sheet fighting over one thumb.
+let sheetPull = null;
+sheetBodyEl.addEventListener('touchstart', e => {
+  sheetPull = e.touches.length === 1 && sheetBodyEl.scrollTop <= 0
+    && !e.target.closest('input') ? { y: e.touches[0].clientY, on: false } : null;
+}, { passive: true });
+sheetBodyEl.addEventListener('touchmove', e => {
+  if (!sheetPull) return;
+  const y = e.touches[0].clientY;
+  if (!sheetPull.on) {
+    // Downward and past the slop, or it is the list's for good.
+    if (y - sheetPull.y < 8) { if (y < sheetPull.y) sheetPull = null; return; }
+    sheetPull.on = true;
+    beginSheetDrag(y);   // anchored where it was claimed, so it does not jump
+    sheetDrag.moved = true;
+  }
+  e.preventDefault();
+  dragSheetTo(y);
+}, { passive: false });
+for (const ev of ['touchend', 'touchcancel']) {
+  sheetBodyEl.addEventListener(ev, () => {
+    if (sheetPull && sheetPull.on) finishSheetDrag(false);
+    sheetPull = null;
+  });
+}
 sheetHandleEl.addEventListener('keydown', e => {
   if (e.key !== 'Enter' && e.key !== ' ') return;
   e.preventDefault();
