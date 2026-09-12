@@ -22,6 +22,31 @@ async function stops(page) {
 const sheetHeight = (page) =>
   page.locator('#sheet').evaluate((el) => Math.round(el.getBoundingClientRect().height));
 
+/** A one-finger vertical drag inside the sheet's scrolling body. Synthetic
+ *  touch events, because that gesture is the one place the page listens for
+ *  touches rather than pointers: the choice between scrolling the list and
+ *  pulling the sheet has to be made on the first move. */
+async function pullBody(page, dy, steps = 6) {
+  return page.evaluate(([dy, steps]) => {
+    const body = document.getElementById('sheet-body');
+    const r = body.getBoundingClientRect();
+    const x = Math.round(r.left + r.width / 2);
+    const y0 = Math.round(r.top + 12);
+    const at = (cy) => {
+      const t = new Touch({ identifier: 1, target: body, clientX: x, clientY: cy });
+      return { touches: [t], changedTouches: [t] };
+    };
+    const fire = (type, cy) => body.dispatchEvent(new TouchEvent(type, {
+      bubbles: true, cancelable: true,
+      ...(type === 'touchend' ? { touches: [], changedTouches: at(cy).changedTouches }
+        : at(cy)),
+    }));
+    fire('touchstart', y0);
+    for (let i = 1; i <= steps; i++) fire('touchmove', Math.round(y0 + (dy * i) / steps));
+    fire('touchend', y0 + dy);
+  }, [dy, steps]);
+}
+
 /** Wait out the 220ms height transition. */
 async function settled(page) {
   await page.locator('#sheet').evaluate((el) =>
@@ -155,6 +180,108 @@ test.describe('phone sheet', () => {
     await page.locator('#sheet-handle').click();
     await settled(page);
     expect(await sheetHeight(page)).toBe(peek);
+  });
+
+  // The complaint this answers: the strip is a few pixels of chrome at the
+  // top edge of the sheet, and a thumb aiming at it lands as often just above
+  // -- on the map, where the same vertical drag pans Leaflet instead. The
+  // sheet is over the map, so the overshoot is caught rather than lost.
+  test('a grab that overshoots onto the map still moves the sheet',
+    async ({ page }) => {
+      await page.setViewportSize(PHONE);
+      await gotoMap(page);
+      const [, , full] = await stops(page);
+      const before = await page.evaluate(() => map.getCenter().lat);
+
+      const top = await page.locator('#sheet')
+        .evaluate((el) => Math.round(el.getBoundingClientRect().top));
+      const x = PHONE.width / 2;
+      await page.mouse.move(x, top - 7);   // above the sheet, over the map
+      await page.mouse.down();
+      await page.mouse.move(x, 60, { steps: 8 });
+      await page.mouse.up();
+      await settled(page);
+      expect(await sheetHeight(page)).toBe(full);
+      // ... and the map stayed where it was, rather than panning under it.
+      expect(await page.evaluate(() => map.getCenter().lat)).toBe(before);
+    });
+
+  // The other side of the same miss: the nav row is the rest of what a reader
+  // reads as the top of the sheet, so it drags too -- but a tap there is not
+  // the strip's show-and-hide. A reader touching the name of what they just
+  // opened did not mean "fold this away".
+  test('the nav row drags but does not tap', async ({ page }) => {
+    await page.setViewportSize(PHONE);
+    await gotoMap(page);
+    const [peek, , full] = await stops(page);
+    // Clear of the tabs, which are the row's own controls.
+    const nav = await page.locator('#sheet-nav').boundingBox();
+    const x = nav.x + nav.width - 20;
+    const y = nav.y + nav.height / 2;
+
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.move(x, 60, { steps: 8 });
+    await page.mouse.up();
+    await settled(page);
+    expect(await sheetHeight(page)).toBe(full);
+
+    const raised = await page.locator('#sheet-nav').boundingBox();
+    await page.mouse.click(raised.x + raised.width - 20, raised.y + raised.height / 2);
+    await settled(page);
+    expect(await sheetHeight(page), 'a tap on the row folded the sheet').toBe(full);
+
+    // The tabs inside it are still buttons, not drag handles: the first tap
+    // switches the pane and leaves the height alone, and the second is the
+    // show-and-hide it has always been.
+    await page.locator('.sheet-tab[data-pane="legend"]').click();
+    await settled(page);
+    await expect(page.locator('#pane-legend')).toBeVisible();
+    expect(await sheetHeight(page)).toBe(full);
+    await page.locator('.sheet-tab[data-pane="legend"]').click();
+    await settled(page);
+    expect(await sheetHeight(page)).toBe(peek);
+  });
+
+  // And the sheet can be pulled down out of its own content. A header is a
+  // small target on a surface that may own most of the screen, and a reader
+  // already at the top of a pane who keeps pulling means the sheet.
+  test('pulling down from the top of a pane lowers the sheet', async ({ page }) => {
+    await page.setViewportSize(PHONE);
+    await gotoMap(page);
+    const [peek, half] = await stops(page);
+    expect(await sheetHeight(page)).toBe(half);
+
+    await pullBody(page, 260);
+    await settled(page);
+    expect(await sheetHeight(page)).toBe(peek);
+  });
+
+  // Claimed on the first move and held: upward is the list's, and so is
+  // everything below the top of it, or the two would fight over one thumb.
+  test('a pull that is the list\'s stays the list\'s', async ({ page }) => {
+    await page.setViewportSize(PHONE);
+    await gotoMap(page);
+    const [, half] = await stops(page);
+
+    // Upward, from the top: there is nothing above, and the sheet does not
+    // take it as a reason to grow.
+    await pullBody(page, -200);
+    await settled(page);
+    expect(await sheetHeight(page)).toBe(half);
+
+    // And downward from anywhere but the top is a scroll, whatever it is
+    // scrolling back towards. An open section is what makes the pane long
+    // enough for "not at the top" to be a state it can be in.
+    await page.locator('#stat-chips .chip[data-section="stat-riding"]').click();
+    const scrolled = await page.locator('#sheet-body').evaluate((el) => {
+      el.scrollTop = 60;
+      return el.scrollTop;
+    });
+    expect(scrolled, 'the pane is too short to scroll').toBeGreaterThan(0);
+    await pullBody(page, 260);
+    await settled(page);
+    expect(await sheetHeight(page)).toBe(half);
   });
 
   test('a clicked feature takes the sheet over, and Back gives it up',
@@ -296,7 +423,9 @@ test.describe('phone sheet', () => {
   });
 
   // Attribution is not optional, so it clears the sheet at every height rather
-  // than sitting under it.
+  // than sitting under it -- and it clears the grab strip's target too, which
+  // runs past the sheet's top edge. Asked as "what does a tap there hit",
+  // since the band is invisible and has no rect of its own.
   test('the map attribution stays clear of the sheet', async ({ page }) => {
     await page.setViewportSize(PHONE);
     await gotoMap(page);
@@ -305,7 +434,11 @@ test.describe('phone sheet', () => {
         .evaluate((el) => el.getBoundingClientRect().toJSON());
       const s = await page.locator('#sheet')
         .evaluate((el) => el.getBoundingClientRect().toJSON());
-      return a.bottom <= s.top + 1;
+      const hit = await page.evaluate(
+        ([x, y]) => document.elementFromPoint(x, y).closest('#sheet') === null,
+        [Math.round(a.right - 6), Math.round(a.top + a.height / 2)],
+      );
+      return a.bottom <= s.top + 1 && hit;
     };
     expect(await clear(), 'covered at the middle stop').toBe(true);
     await page.locator('#sheet-handle').click();
