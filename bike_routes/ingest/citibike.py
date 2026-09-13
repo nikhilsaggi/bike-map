@@ -24,7 +24,17 @@ year before it without a word. Each ingest folds its file into what is
 already cached, keyed by Lyft's own ``rideId``, and reports how much of it
 was new. That makes a default one-year pull a safe top-up.
 
+**The fetch can start from the cache.** ``--script`` prints the console
+script with the newest cached start time baked in, so it pages back only as
+far as the cache already reaches instead of across a year. Most of a pull's
+time is the per-ride detail request, one a second, so a top-up that re-reads
+a year of known trips spends minutes restating them. The cutoff is inclusive:
+the newest cached trip is fetched again, which is what lets the ingest's
+``already known`` count prove the two meet. With no cache there is no cutoff
+at all, and the script walks the whole history.
+
 Usage:
+    python -m bike_routes.ingest.citibike --script > citibike_fetch.js
     python -m bike_routes.ingest.citibike ~/citibikenyc_history_2026-09-04.json
 """
 
@@ -52,6 +62,129 @@ TRIPS_FORMAT = 2
 # Every key a station entry must carry for the summary to use it. Fails
 # closed the same way weather's cache guard does.
 STATION_KEYS = ("lat", "lon")
+
+# The console script ``--script`` prints, run on
+# account.citibikenyc.com/ride-history while logged in. It is the fhoffa
+# baywheels script with its one-year cutoff replaced by ``__SINCE_MS__``:
+# the list pages back from now until a page reaches that start time, and
+# only rides at or after it are sent for details. Rides are deduped on
+# ``rideId`` before the detail phase, because the cursor is inclusive and
+# every page restates the last ride of the one before it.
+FETCH_SCRIPT = """\
+const SINCE_MS = __SINCE_MS__;  // newest cached start; 0 walks the whole history
+const DELAY_MS = 1000;
+
+const QUERY_LIST = `query GetCurrentUserRides($startTimeMs: String, $memberId: String) {
+  member(id: $memberId) {
+    id
+    rideHistory(startTimeMs: $startTimeMs) {
+      limit
+      hasMore
+      rideHistoryList {
+        rideId
+        startTimeMs
+        endTimeMs
+        price { formatted }
+        duration
+        rideableName
+      }
+    }
+  }
+}`;
+
+const QUERY_DETAILS = `query GetCurrentUserRideDetails($rideId: String!) {
+  me {
+    rideDetails(rideId: $rideId) {
+      rideId
+      startAddressStr
+      endAddressStr
+      paymentBreakdownMap {
+        lineItems {
+          title
+          amount { formatted }
+        }
+      }
+    }
+  }
+}`;
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function fetchGQL(payload) {
+  const response = await fetch(window.location.origin + "/bikesharefe-gql", {
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+    method: "POST",
+  });
+  return await response.json();
+}
+
+async function fetchSince() {
+  const since = SINCE_MS ? new Date(SINCE_MS).toLocaleString() : "the beginning";
+  console.log(`Fetching rides back to ${since}`);
+
+  const byId = new Map();
+  let cursor = String(Date.now());
+  for (;;) {
+    const res = await fetchGQL({
+      operationName: "GetCurrentUserRides",
+      query: QUERY_LIST,
+      variables: { startTimeMs: cursor },
+    });
+    if (res.errors || !res.data || !res.data.member) {
+      console.error("Stopped: unexpected response, nothing downloaded", res);
+      return;
+    }
+    const history = res.data.member.rideHistory;
+    const rides = history.rideHistoryList || [];
+    for (const ride of rides) {
+      if (Number(ride.startTimeMs) >= SINCE_MS) byId.set(ride.rideId, ride);
+    }
+    console.log(`Page ending ${new Date(Number(cursor)).toLocaleString()}: ${byId.size} rides so far`);
+    if (rides.length === 0) break;
+    const last = rides[rides.length - 1].startTimeMs;
+    if (Number(last) <= SINCE_MS || !history.hasMore || last === cursor) break;
+    cursor = last;
+    await sleep(DELAY_MS);
+  }
+
+  const list = [...byId.values()];
+  console.log(`${list.length} rides to detail`);
+  const detailed = [];
+  for (let i = 0; i < list.length; i++) {
+    const ride = list[i];
+    if (i % 5 === 0) console.log(`Details ${i} of ${list.length}`);
+    try {
+      const res = await fetchGQL({
+        operationName: "GetCurrentUserRideDetails",
+        query: QUERY_DETAILS,
+        variables: { rideId: ride.rideId },
+      });
+      const d = res.data && res.data.me && res.data.me.rideDetails;
+      detailed.push(d ? {
+        ...ride,
+        startAddress: d.startAddressStr,
+        endAddress: d.endAddressStr,
+        lineItems: (d.paymentBreakdownMap && d.paymentBreakdownMap.lineItems) || [],
+      } : ride);
+    } catch (e) {
+      console.warn(`No details for ${ride.rideId}`, e);
+      detailed.push(ride);
+    }
+    await sleep(DELAY_MS);
+  }
+
+  const system = window.location.hostname.split(".")[1] || "lyft";
+  const blob = new Blob([JSON.stringify(detailed, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `${system}_history_${new Date().toISOString().split("T")[0]}.json`;
+  a.click();
+  console.log(`Downloaded ${detailed.length} rides`);
+}
+
+fetchSince();
+"""
 
 
 def _norm_name(name: str) -> str:
@@ -285,6 +418,18 @@ def _span(trips: list[dict[str, Any]]) -> str:
     return f"{first.strftime(fmt)} to {last.strftime(fmt)}"
 
 
+def fetch_script() -> str:
+    """Build the console fetch script, cut off at the newest trip already cached.
+
+    Raises ``CacheUnreadableError`` rather than printing a from-scratch
+    script for a cache that cannot be read: that script is correct, but the
+    ingest would refuse its output anyway.
+    """
+    cached, _, _ = _load_existing()
+    since = max((t["t"] for t in cached), default=0)
+    return FETCH_SCRIPT.replace("__SINCE_MS__", str(since))
+
+
 def ingest(export_path: Path, *, replace: bool = False) -> dict[str, Any]:
     """Read a Lyft export and fold it into the normalised trips cache.
 
@@ -320,6 +465,11 @@ def ingest(export_path: Path, *, replace: bool = False) -> dict[str, Any]:
             f"  Merged into {len(cached)} cached trips: "
             f"{added} new, {len(fresh) - added} already known"
         )
+        if fresh and added == len(fresh):
+            print(
+                "  WARNING: nothing in the export was already cached, so there may be a "
+                "gap between the two. Re-fetch with a script from --script."
+            )
     if export_path.name not in sources:
         sources = [*sources, export_path.name]
 
@@ -364,7 +514,13 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Normalise a Citibike account export into the pipeline cache."
     )
-    parser.add_argument("export", type=Path, help="citibikenyc_history_*.json from Lyft")
+    parser.add_argument("export", type=Path, nargs="?", help="citibikenyc_history_*.json from Lyft")
+    parser.add_argument(
+        "--script",
+        action="store_true",
+        help="print the browser console script that fetches only trips since the "
+        "newest one cached, and exit",
+    )
     parser.add_argument(
         "--replace",
         action="store_true",
@@ -373,6 +529,17 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    if args.script:
+        try:
+            script = fetch_script()
+        except CacheUnreadableError as exc:
+            print(f"Cannot read the cutoff: {exc}", file=sys.stderr)
+            return 1
+        # The script alone goes to stdout, so it can be redirected to a file.
+        print(script, end="")
+        return 0
+    if args.export is None:
+        parser.error("name an export to ingest, or pass --script")
     if not args.export.exists():
         print(f"No such file: {args.export}")
         return 1

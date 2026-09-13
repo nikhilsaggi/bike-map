@@ -133,32 +133,40 @@ Requires Python 3.9+.
    --workers N              worker processes for map matching (1 = sequential)
    ```
 
-4. Optional — add Citibike trips. Export them from
-   `account.citibikenyc.com` with the
-   [baywheels console script](https://github.com/fhoffa/code_snippets/blob/master/baywheels/readme.md),
-   then:
+4. Optional — add Citibike trips. Print the fetch script, paste it into the
+   browser console on `account.citibikenyc.com/ride-history` while logged in,
+   and ingest the file it downloads:
 
    ```bash
+   python -m bike_routes.ingest.citibike --script > citibike_fetch.js
    python -m bike_routes.ingest.citibike ~/citibikenyc_history_YYYY-MM-DD.json
    ```
+
+   The script is the
+   [baywheels console script](https://github.com/fhoffa/code_snippets/blob/master/baywheels/readme.md)
+   with its cutoff set to the newest trip already cached, so a top-up fetches
+   only trips since the last ingest, plus that newest one again as the
+   overlap. With no cache it fetches the whole history. Regenerate it for
+   each pull, since the cutoff is fixed when the script is printed.
 
    These are dock-to-dock records with no GPS trace, so they never join the
    drawn edges or the coverage figure — they become their own toggleable dock
    layer plus a stats section. Once the cache exists, every later
    `python -m bike_routes` picks it up with no flag.
 
-   That script stops at a **one-year** cutoff, so an ordinary pull is a
-   window rather than a history. The ingest **merges** into the cache on
-   Lyft's own ride id, which makes a default pull a safe top-up rather than
-   a truncation — re-run it as often as you like. Three lines it prints are
+   Any export is a window rather than a history (the upstream script stops
+   at a **one-year** cutoff). The ingest **merges** into the cache on Lyft's
+   own ride id, which makes a pull a safe top-up rather than a truncation —
+   re-run it as often as you like. Three lines it prints are
    worth reading, each catching a different failure:
 
    - the **span of the merged result** should still start where your history
      does. Starting a year ago means the merge did not happen and you are
      looking at a truncated cache.
-   - **`N already known` should be large.** A top-up mostly restates trips
-     you have. Zero means the export did not overlap the cache at all, so
-     there is a gap between them: pull a wider window.
+   - **`N already known` should not be zero.** A `--script` pull restates
+     exactly one trip, and a one-year pull many. Zero means the export did not
+     overlap the cache at all, so there may be a gap between them; the ingest
+     warns, and a fresh `--script` pull closes it.
    - **the docks `placed by GBFS`** should hold roughly steady. A sharp drop
      is the feed's naming changing rather than docks vanishing; the ingest
      names every dock it could not place.

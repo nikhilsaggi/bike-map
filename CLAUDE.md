@@ -827,9 +827,11 @@ times one ride crossed one edge, in the stored vertex order of
 - Personal data (`rides/*.csv` and everything in `cache/`) is gitignored --
   never commit ride files or force-add ignored paths.
 - Citibike trips come from a manual export (a JavaScript payload pasted into
-  the browser console on `account.citibikenyc.com`, per
-  [fhoffa/code_snippets](https://github.com/fhoffa/code_snippets/blob/master/baywheels/readme.md)),
-  then `python -m bike_routes.ingest.citibike <file>`. Not from `update.py`.
+  the browser console on `account.citibikenyc.com`, adapted from
+  [fhoffa/code_snippets](https://github.com/fhoffa/code_snippets/blob/master/baywheels/readme.md)
+  and printed by `python -m bike_routes.ingest.citibike --script` with its
+  cutoff set to the newest cached start, inclusive), then
+  `python -m bike_routes.ingest.citibike <file>`. Not from `update.py`.
   There *is* an API behind it -- a GraphQL endpoint authenticated by the
   browser session cookie -- but nothing automates it today
   ([issue #23](https://github.com/nikhilsaggi/bike-map/issues/23)). The
@@ -851,7 +853,8 @@ times one ride crossed one edge, in the stored vertex order of
 - **Check a fresh Citibike export for silent truncation before trusting it.**
   The fetch is cursor-paginated in tens and stops at a one-year cutoff, so an
   export can look like a plausible complete history that merely starts a year
-  ago. A pull that ran to exhaustion ends on a short page
+  ago. A pull that ran to exhaustion ends on a short page; a `--script` pull
+  instead ends on the cached trip it restates, so `already known` is 1
   ([details](findings/citibike-trips.md)).
 
 ## Documentation

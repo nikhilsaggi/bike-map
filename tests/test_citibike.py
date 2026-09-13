@@ -23,6 +23,7 @@ from bike_routes.ingest.citibike import (
     _money,
     _normalise,
     _save_station_cache,
+    fetch_script,
     ingest,
 )
 
@@ -402,6 +403,34 @@ def test_merge_recognises_a_cache_written_before_ids(trips_path, two_exports):
     assert len(payload["trips"]) == 3
     assert [t["t"] for t in payload["trips"]] == sorted(t["t"] for t in payload["trips"])
     assert [t.get("id") for t in payload["trips"]] == [None, "r2", "r3"]
+
+
+@pytest.mark.usefixtures("trips_path")
+def test_fetch_script_starts_at_the_newest_cached_trip(two_exports):
+    """A top-up fetches back to the cache and no further, the newest trip included.
+
+    Inclusive is what makes the ingest's ``already known`` count non-zero, which
+    is the only evidence that the fetch and the cache meet.
+    """
+    assert "const SINCE_MS = 0;" in fetch_script()
+
+    first, _ = two_exports
+    ingest(first)
+    assert f"const SINCE_MS = {1_000_000 + YEAR_MS};" in fetch_script()
+    assert "__SINCE_MS__" not in fetch_script()
+
+
+@pytest.mark.usefixtures("trips_path")
+def test_ingest_warns_when_an_export_does_not_meet_the_cache(tmp_path, capsys):
+    a, b = "A St & 1 Ave", "B St & 2 Ave"
+    ingest(_write_export(tmp_path, [_record("r1", 1_000, a, b)]))
+    capsys.readouterr()
+
+    ingest(_write_export(tmp_path, [_record("r1", 1_000, a, b), _record("r2", 2_000, b, a)]))
+    assert "WARNING" not in capsys.readouterr().out
+
+    ingest(_write_export(tmp_path, [_record("r3", 3_000, a, b)]))
+    assert "WARNING: nothing in the export was already cached" in capsys.readouterr().out
 
 
 @pytest.mark.usefixtures("trips_path")
