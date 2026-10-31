@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "nyc-bike-map"
 version = "1.0.0"
 description = "Visualize personal bike ride data on the NYC street network"
-requires-python = ">=3.9"
+requires-python = ">=3.12"
 dependencies = [
     "osmnx>=2.0",
     "networkx>=3.0",
