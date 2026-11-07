@@ -262,8 +262,9 @@ test.describe('inspector panel', () => {
     await expect(page.locator('#inspector')).toBeVisible();
 
     // Panned west, which walks the street back out from behind the panel.
-    const after = await page.evaluate(() => map.getCenter().lng);
-    expect(after).toBeLessThan(before);
+    // Polled: panInside animates, and the panel can be visible a frame before
+    // the pan has moved the centre.
+    await expect.poll(() => page.evaluate(() => map.getCenter().lng)).toBeLessThan(before);
   });
 
   test('a street already in the clear is not panned', async ({ page }) => {
@@ -316,5 +317,22 @@ test.describe('inspector panel', () => {
     await expect(page.locator('#inspector-title')).toHaveText('North Street');
     await expect(page.locator('#inspector .edge-sub')).toHaveText('No passes in range');
     await expect(page.locator('#inspector .inspector-empty')).toBeVisible();
+  });
+});
+
+test.describe('basemap', () => {
+  // The tiles are dimmed behind the data and requested under a cache key, so
+  // a CARTO restyle cannot leave a patchwork of old and new tiles (#38).
+  test('tiles are dimmed and carry the cache key; the network is not dimmed', async ({ page }) => {
+    const tiles = [];
+    page.on('request', (r) => { if (r.url().includes('basemaps.cartocdn.com')) tiles.push(r.url()); });
+    await gotoMap(page);
+    await expect.poll(() => tiles.length).toBeGreaterThan(0);
+    expect(tiles.every((u) => /[?&]v=\d{8}\b/.test(u))).toBe(true);
+    const filters = await page.evaluate(() => [
+      getComputedStyle(document.querySelector('.leaflet-tile-pane')).filter,
+      getComputedStyle(document.querySelector('.leaflet-overlay-pane')).filter,
+    ]);
+    expect(filters).toEqual(['brightness(0.45)', 'none']);
   });
 });

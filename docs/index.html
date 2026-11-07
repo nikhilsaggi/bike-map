@@ -39,6 +39,12 @@
   @media (pointer: coarse) { :root { --hit-slop: 16; } }
   body { background: #0d0d0d; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
   #map { width: 100vw; height: 100vh; }
+  /* CARTO's renderer change of 2026-10-26 drew roads several times brighter
+     than the Dark Matter style the plasma ramp was chosen against, and the
+     ramp's dark end -- most of the network, ridden once -- came out darker
+     than the road under it. Dimming the tiles puts the basemap back behind
+     the data. Only the tile pane: the network is drawn in the overlay pane. */
+  .leaflet-tile-pane { filter: brightness(0.45); }
 
   /* The stats panel is an ambient header plus a chip strip that opens exactly
      one detail section at a time.  Stacking every section at once ran to ~32
@@ -1100,7 +1106,12 @@ const map = L.map('map', {
 // back stamped "API KEY REQUIRED". This is a free non-commercial basemap key
 // (5M tiles/month). It is public by necessity: the browser sends it with every
 // tile request. It reads public tiles only, and is rotatable if ever abused.
-L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?key=cb1_2ew0_1_6d89edc1e55c801eab9bf900', {
+//
+// `v` is a cache key, not an API parameter: CARTO serves tiles for 30 days,
+// so when its style changes a browser shows old tiles where it has been and
+// new ones where it has not, split along tile edges. Bump it to the date of
+// CARTO's next restyle (the tiles' etag names the build) to refetch them all.
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?key=cb1_2ew0_1_6d89edc1e55c801eab9bf900&v=20261026', {
   attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
   subdomains: 'abcd',
   maxZoom: 19,
