@@ -161,6 +161,17 @@ it can also outlive the click: `applyFilter` re-renders it, gated on
 `selectedEdge` is re-painted by every bulk restyle that would otherwise wipe
 it. Escape unwinds one layer at a time -- the ride on screen, then the panel.
 
+**A click picks the nearest line, not the last one drawn.** A once-ridden
+street is 1.5px wide, so the canvas renderer (`HitCanvas`) answers
+`--hit-slop` past every stroke -- 6px for a mouse, 16 for a coarse pointer,
+set in the stylesheet by `pointer`, not by the layout breakpoint. Leaflet's
+own pick is "last drawn among everything in reach", which with a slop hands a
+tap to whichever neighbour was drawn later; `_pick` keeps draw order only for
+a stroke actually under the pointer (so a dock still beats its street), takes
+the nearest stroke otherwise, and falls back to a filled neighborhood only
+when no line or marker answered. Any new canvas layer goes through the same
+renderer.
+
 **A street's panel is headed by its name, and not every street has one.** The
 export ships `properties.street_names` with an `sn` index per feature -- a
 table, because the same few hundred names repeat over ~15k features. Roughly

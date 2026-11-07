@@ -25,10 +25,18 @@
      copy of 640px in the script is the kind of number that goes stale
      silently. `--sheet-grab` is how far the grab strip's target runs past the
      sheet's own top edge; everything that sits just above the sheet clears
-     that band rather than the sheet. */
+     that band rather than the sheet.
+
+     `--hit-slop` is how far past its own stroke a drawn line answers a click
+     or a hover. A once-ridden street is 1.5px wide, which is no target for a
+     mouse and none at all for a thumb, so the slop follows the pointer rather
+     than the layout: a touch laptop is wide and coarse, a phone with a mouse
+     is neither. The script reads it back the way it reads `--layout`. */
   :root {
     --rail-fixed: 320px; --layout: wide; --sheet-h: 0px; --sheet-grab: 14px;
+    --hit-slop: 6;
   }
+  @media (pointer: coarse) { :root { --hit-slop: 16; } }
   body { background: #0d0d0d; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
   #map { width: 100vw; height: 100vh; }
 
@@ -1006,13 +1014,86 @@
 </div>
 
 <script>
+// -- Hit-testing -------------------------------------------------------------
+// Leaflet's canvas answers a click only on the stroke itself, and among the
+// shapes under the pointer it picks whichever was drawn last. With a slop
+// added, the second rule would hand a tap that lands on one street to a
+// neighbour drawn after it, so the pick becomes: a stroke actually under the
+// pointer wins as before (draw order, so a dock marker still beats the street
+// beneath it); otherwise the nearest stroke within the slop; and a filled
+// polygon -- a neighborhood, which contains every point inside it -- only when
+// no line or marker answered at all.
+function hitSlop() {
+  return parseFloat(getComputedStyle(document.documentElement)
+    .getPropertyValue('--hit-slop')) || 0;
+}
+
+// Pixels from p to the shape's painted edge; zero or less means on it.
+function strokeDistance(layer, p) {
+  if (layer instanceof L.CircleMarker) {
+    return p.distanceTo(layer._point) - layer._radius -
+      (layer.options.stroke ? layer.options.weight / 2 : 0);
+  }
+  let d = Infinity;
+  for (const part of layer._parts || []) {
+    for (let j = 1; j < part.length; j++) {
+      d = Math.min(d, L.LineUtil.pointToSegmentDistance(p, part[j - 1], part[j]));
+    }
+  }
+  return d - (layer.options.stroke ? layer.options.weight / 2 : 0);
+}
+
+const HitCanvas = L.Canvas.extend({
+  _pick(point, e) {
+    const isClick = e && (e.type === 'click' || e.type === 'preclick');
+    let onStroke = null, nearest = null, nearestD = Infinity, area = null;
+    for (let o = this._drawFirst; o; o = o.next) {
+      const layer = o.layer;
+      if (!layer.options.interactive || !layer._containsPoint(point)) continue;
+      if (isClick && this._map._draggableMoved(layer)) continue;
+      if (layer instanceof L.Polygon && layer.options.fill) { area = layer; continue; }
+      const d = strokeDistance(layer, point);
+      if (d <= 0) onStroke = layer;
+      else if (d < nearestD) { nearestD = d; nearest = layer; }
+    }
+    return onStroke || nearest || area;
+  },
+  _onClick(e) {
+    const layer = this._pick(this._map.mouseEventToLayerPoint(e), e);
+    this._fireEvent(layer ? [layer] : false, e);
+  },
+  _handleMouseHover(e, point) {
+    if (this._mouseHoverThrottled) return;
+    const layer = this._pick(point, null);
+    if (layer !== this._hoveredLayer) {
+      this._handleMouseOut(e);
+      if (layer) {
+        L.DomUtil.addClass(this._container, 'leaflet-interactive');
+        this._fireEvent([layer], e, 'mouseover');
+        this._hoveredLayer = layer;
+      }
+    }
+    this._fireEvent(this._hoveredLayer ? [this._hoveredLayer] : false, e);
+    this._mouseHoverThrottled = true;
+    setTimeout(() => { this._mouseHoverThrottled = false; }, 32);
+  },
+});
+
+const renderer = new HitCanvas({ tolerance: hitSlop() });
+// A tablet that gains or loses a mouse mid-session. Bounds are padded by the
+// tolerance when a shape is projected, so re-project them.
+matchMedia('(pointer: coarse)').addEventListener('change', () => {
+  renderer.options.tolerance = hitSlop();
+  if (renderer._map) renderer._reset();
+});
+
 const map = L.map('map', {
   center: [40.735, -73.96],
   zoom: 13,
   zoomControl: true,
   attributionControl: true,
   preferCanvas: true,
-  renderer: L.canvas(),
+  renderer,
 });
 
 // CARTO basemaps require a key as of Aug 2026 -- unauthenticated tiles come
