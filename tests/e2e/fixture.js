@@ -207,6 +207,38 @@ export const NEIGHBORHOOD_BLOCK = {
   ],
 };
 
+// NYC DOT bike lanes: two streets north of the drawn network, clear of every
+// street and station so a click on one cannot land on anything else. Grand
+// Street has three records -- a signed route retired before the first ride
+// (kept, undrawn, as history), a painted lane replaced on 2024-05-01 (date
+// index 2), and the protected lane that replaced it -- so the slider swaps
+// one for the other. Kent Avenue is ridden by date 1, the protected Grand
+// Street by date 3, the painted one never.
+//
+// Each line is 0.01 degrees of longitude at 40.7425, which Leaflet measures
+// at 842.65 m = 0.52 mi, so the key's totals are hand-computable.
+export const LANE_LAT = 40.7425;
+export const LANES = { kent: -73.97, grand: -73.95 };
+const laneCoords = (lng) => [[lng - 0.005, LANE_LAT], [lng + 0.005, LANE_LAT]];
+export const BIKE_LANE_BLOCK = {
+  source: 'NYC DOT New York City Bike Routes (mzxg-pwib)',
+  facilities: ['Protected', '', 'Conventional', 'Signed Route'],
+  streets: ['Kent Avenue', 'Grand Street'],
+  // [class, facility one way, facility the other, built, retired, street, previous]
+  versions: [
+    ['I', 0, 0, '2020-01-01', null, 0, -1],
+    ['III', 3, 3, '1999-05-01', '2010-06-01', 1, -1],
+    ['II', 2, 1, '2010-06-01', '2024-05-01', 1, 1],
+    ['I', 0, 1, '2024-05-01', null, 1, 2],
+  ],
+  // [version, date index half of it was first ridden by (-1 never), coords]
+  lines: [
+    [0, 1, laneCoords(LANES.kent)],
+    [2, -1, laneCoords(LANES.grand)],
+    [3, 3, laneCoords(LANES.grand)],
+  ],
+};
+
 const line = (lat) => ({
   type: 'LineString',
   coordinates: [

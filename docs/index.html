@@ -338,6 +338,22 @@
      violet sits outside the plasma ramp, ride view's cyan, the dock blue and
      the neighborhood tan, which is all the identity the chip needs. */
   #sw-toggle { --tint: #b9a9e8; }
+  /* DOT's own protected-lane green, which is also the layer's class I. */
+  #bl-toggle { --tint: #4ade80; }
+
+  /* -- Bike lanes ------------------------------------------------------ */
+  #legend-body #bl-key { margin-top: 6px; font-size: 10px; color: #888; }
+  #legend-body #bl-key.hidden { display: none; }
+  #legend-body .bl-swatches { display: flex; flex-wrap: wrap; gap: 2px 10px; }
+  #legend-body .bl-swatch { display: inline-flex; align-items: center; gap: 4px; }
+  #legend-body .bl-swatch i { display: inline-block; width: 12px; height: 0; border-top: 2px solid; }
+  #legend-body .bl-swatch i.dashed { border-top-style: dashed; }
+  #legend-body #bl-ridden { margin-top: 3px; color: #aaa; }
+  .bl-detail { min-width: 170px; }
+  .bl-row { display: flex; justify-content: space-between; gap: 14px; font-size: 12px; }
+  .bl-row .v { text-align: right; }
+  .bl-hist { margin-top: 6px; padding-top: 5px; border-top: 1px solid #333; }
+  .bl-hist .bl-row { color: #888; font-size: 11px; }
 
   /* -- Neighborhoods ---------------------------------------------------- */
   .nb-detail { min-width: 150px; }
@@ -691,6 +707,7 @@
   #inspector.kind-dock #inspector-title { color: #a8d8e8; }
   #inspector.kind-area #inspector-title { color: #e8dcc0; }
   #inspector.kind-subway #inspector-title { color: #cfc0f2; }
+  #inspector.kind-lane #inspector-title { color: #b7ecc9; }
   #inspector-close {
     flex: none; background: none; border: none; color: #888; font-size: 15px;
     line-height: 1; cursor: pointer; padding: 0 2px;
@@ -811,6 +828,7 @@
   }
   #sheet.kind-dock #sheet-title { color: #a8d8e8; }
   #sheet.kind-area #sheet-title { color: #e8dcc0; }
+  #sheet.kind-lane #sheet-title { color: #b7ecc9; }
 
   /* One scrolling surface for whatever pane is showing. The panes' own inner
      scroll boxes are unwrapped below: a list that scrolls inside a sheet that
@@ -977,6 +995,14 @@
         <label id="sw-toggle" class="hidden">
           <input type="checkbox" id="sw-check"> Desire Lines
         </label>
+        <label id="bl-toggle" class="hidden">
+          <input type="checkbox" id="bl-check"> Bike lanes
+        </label>
+      </div>
+      <!-- What the lane colours mean, shown only while the layer is on. -->
+      <div id="bl-key" class="hidden">
+        <div class="bl-swatches"></div>
+        <div id="bl-ridden"></div>
       </div>
     </div>
   </div>
@@ -2964,6 +2990,246 @@ function initSubway(sw) {
   });
 }
 
+// -- Bike lanes --------------------------------------------------------------
+// NYC DOT's bike network, laid under the question of which of it was ridden.
+// The dataset keeps every lane's history -- an upgrade retires the old record
+// and starts a new one that names it -- so the network on any day is the
+// records installed by then and not yet retired, and the slider moves this
+// layer the way it moves the streets: a lane appears on the day it was built.
+//
+// A lane is bright from the day half of it had been ridden *while it was
+// there* (the export's `first`), so a street ridden before it was painted
+// reads dim until the lane itself is ridden. Like the neighborhood fill this
+// is a running total and follows the slider's later handle alone.
+//
+// It describes the city, not the riding, so it never counts towards anything
+// the rest of the page measures; it ghosts the network the way the dock and
+// subway overlays do, because green and blue strokes over 21k plasma ones are
+// a haystack rather than a comparison.
+
+const BL_COLOURS = { I: '#4ade80', II: '#38bdf8', III: '#f5b342', L: '#9ca3af' };
+const BL_LABELS = {
+  I: 'Protected or off-street', II: 'Painted lane', III: 'Shared or signed route',
+  L: 'Connector',
+};
+
+let blData = null;
+let blLayer = null;
+let blLines = [];     // polylines, index-aligned with blData.lines
+let blLen = [];       // metres per line, for the key's ridden total
+let blShown = [];     // per line: 0 off the map, 1 drawn dim, 2 drawn ridden
+let blSelected = null;
+
+function bikeLanesOn() {
+  return blLayer !== null && map.hasLayer(blLayer);
+}
+
+// The day the layer is drawn for: the slider's later handle.
+function blHi() {
+  return filterHi === Infinity ? dateList.length - 1 : filterHi;
+}
+
+function blAlive(v, day) {
+  return v[3] <= day && (v[4] === null || v[4] > day);
+}
+
+function blStyle(li, ridden) {
+  const v = blData.versions[blData.lines[li][0]];
+  const sel = li === blSelected;
+  return {
+    color: BL_COLOURS[v[0]] || BL_COLOURS.L,
+    weight: sel ? 5 : (ridden ? 2.8 : 1.3),
+    opacity: sel ? 1 : (ridden ? 0.95 : 0.22),
+    dashArray: v[0] === 'III' ? '4 4' : null,
+    lineCap: 'butt',
+  };
+}
+
+// Restyles only the lines whose state changed, so a playback frame costs a
+// walk of a few thousand integers rather than a restyle of every lane.
+function applyLaneFilter(force = false) {
+  if (!bikeLanesOn()) return;
+  const hi = blHi();
+  const day = dateList[hi];
+  let aliveM = 0, riddenM = 0;
+  for (let i = 0; i < blLines.length; i++) {
+    const [vi, first] = blData.lines[i];
+    const alive = blAlive(blData.versions[vi], day);
+    const ridden = alive && first >= 0 && first <= hi;
+    const code = alive ? (ridden ? 2 : 1) : 0;
+    if (alive) { aliveM += blLen[i]; if (ridden) riddenM += blLen[i]; }
+    if (!force && code === blShown[i]) continue;
+    blShown[i] = code;
+    const line = blLines[i];
+    if (!code) { blLayer.removeLayer(line); continue; }
+    if (!blLayer.hasLayer(line)) blLayer.addLayer(line);
+    line.setStyle(blStyle(i, ridden));
+  }
+  // A decimal only while the network is small enough to need one.
+  const total = mi(aliveM / 1000);
+  const fmt = x => (total < 10 ? x.toFixed(1) : Math.round(x).toLocaleString());
+  document.getElementById('bl-ridden').textContent =
+    `${fmt(mi(riddenM / 1000))} of ${fmt(total)} mi ridden by ${day}`;
+}
+
+// Dim under bright, so a ridden lane is never painted over by the unridden
+// one beside it.
+function restackLanes() {
+  if (!bikeLanesOn()) return;
+  for (const code of [1, 2]) {
+    for (let i = 0; i < blLines.length; i++) if (blShown[i] === code) blLines[i].bringToFront();
+  }
+  if (blSelected !== null && blShown[blSelected]) blLines[blSelected].bringToFront();
+}
+
+function blMonth(iso) {
+  return iso ? `${MONTHS[+iso.slice(5, 7) - 1].slice(0, 3)} ${iso.slice(0, 4)}` : '';
+}
+
+// One way, both ways, or one thing each way. DOT records a facility per
+// direction of its own segment, and leaves the other blank on a one-way lane.
+function blFacility(v) {
+  const f = blData.facilities;
+  const a = f[v[1]] || '', b = f[v[2]] || '';
+  if (a && b) return a === b ? `${a}, both ways` : `${a} one way, ${b} the other`;
+  return `${a || b || 'Unspecified'}, one way`;
+}
+
+function laneDetail(li) {
+  const [vi, first] = blData.lines[li];
+  const v = blData.versions[vi];
+  const hi = blHi();
+  const box = document.createElement('div');
+  box.className = 'bl-detail';
+  const sub = document.createElement('div');
+  sub.className = 'nb-sub';
+  sub.style.color = BL_COLOURS[v[0]];
+  sub.textContent = BL_LABELS[v[0]] || v[0];
+  box.appendChild(sub);
+  const replaced = blData.versions.some(w => w[6] === vi);
+  const rows = [
+    ['Lane', blFacility(v), 'As NYC DOT records it, per direction of the street'],
+    ['Built', blMonth(v[3]), 'Installed or last modified, per NYC DOT'],
+  ];
+  if (v[4]) rows.push([replaced ? 'Replaced' : 'Removed', blMonth(v[4]), '']);
+  rows.push(['Ridden',
+    first >= 0 && first <= hi ? `by ${blMonth(dateList[first])}` : 'Not yet',
+    'When half of this stretch had been ridden while the lane was there, ' +
+    'up to the later date on the slider']);
+  for (const [k, val, title] of rows) {
+    const row = document.createElement('div');
+    row.className = 'bl-row';
+    row.title = title;
+    const kk = document.createElement('span');
+    kk.className = 'label';
+    kk.textContent = k;
+    const vv = document.createElement('span');
+    vv.className = 'v';
+    vv.textContent = val;
+    row.append(kk, vv);
+    box.appendChild(row);
+  }
+  // What was there before, newest first, by following each record back to the
+  // one it superseded.
+  const hist = document.createElement('div');
+  hist.className = 'bl-hist';
+  const seen = new Set([vi]);
+  for (let p = v[6]; p >= 0 && !seen.has(p); p = blData.versions[p][6]) {
+    seen.add(p);
+    const w = blData.versions[p];
+    const row = document.createElement('div');
+    row.className = 'bl-row';
+    const kk = document.createElement('span');
+    kk.textContent = blData.facilities[w[1]] || blData.facilities[w[2]] || BL_LABELS[w[0]];
+    const vv = document.createElement('span');
+    vv.className = 'v';
+    vv.textContent = `${w[3].slice(0, 4)}–${w[4] ? w[4].slice(0, 4) : ''}`;
+    row.append(kk, vv);
+    hist.appendChild(row);
+  }
+  if (hist.childElementCount) {
+    const head = document.createElement('div');
+    head.className = 'nb-sub';
+    head.textContent = 'Before';
+    hist.prepend(head);
+    box.appendChild(hist);
+  }
+  // textContent throughout: the street name is city open data.
+  return { title: blData.streets[v[5]] || 'Unnamed lane', body: box };
+}
+
+function paintLanes() {
+  if (!bikeLanesOn()) return;
+  applyLaneFilter(true);
+  restackLanes();
+}
+
+function selectLane(li, latlng) {
+  if (inspector?.kind !== 'lane') closeInspector();
+  blSelected = li;
+  openInspector({ kind: 'lane', latlng, render: () => laneDetail(li) });
+  paintLanes();
+}
+
+function initBikeLanes(bl) {
+  if (!bl || !bl.lines?.length || !bl.versions?.length || dateList.length === 0) return;
+  blData = bl;
+  blLayer = L.layerGroup();
+  blShown = bl.lines.map(() => 0);
+  blLines = bl.lines.map(([vi, , coords], i) => {
+    const latlngs = coords.map(([lon, lat]) => L.latLng(lat, lon));
+    let m = 0;
+    for (let j = 1; j < latlngs.length; j++) m += latlngs[j - 1].distanceTo(latlngs[j]);
+    blLen.push(m);
+    const line = L.polyline(latlngs, { interactive: true });
+    line.bindTooltip(() => {
+      const v = blData.versions[vi];
+      const el = document.createElement('span');
+      el.textContent = `${blData.streets[v[5]] || 'Unnamed lane'} · ` +
+        (BL_LABELS[v[0]] || v[0]);
+      return el;
+    }, { sticky: true, className: 'ride-tooltip' });
+    // Stopped, or the map's own click handler would close the panel this
+    // click just opened.
+    line.on('click', e => { L.DomEvent.stopPropagation(e); selectLane(i, e.latlng); });
+    return line;
+  });
+  const key = document.getElementById('bl-key');
+  const sw = key.querySelector('.bl-swatches');
+  for (const cls of ['I', 'II', 'III']) {
+    const s = document.createElement('span');
+    s.className = 'bl-swatch';
+    const i = document.createElement('i');
+    i.style.color = BL_COLOURS[cls];
+    if (cls === 'III') i.className = 'dashed';
+    s.append(i, document.createTextNode(BL_LABELS[cls]));
+    sw.appendChild(s);
+  }
+  const toggle = document.getElementById('bl-toggle');
+  const check = document.getElementById('bl-check');
+  toggle.title =
+    'NYC DOT bike lanes as built by the later date on the slider, ' +
+    'bright once half of a lane had been ridden while it was there';
+  toggle.classList.remove('hidden');
+  check.addEventListener('change', () => {
+    if (check.checked) {
+      // On the map before ghosting: bikeLanesOn() reads the map.
+      blLayer.addTo(map);
+      key.classList.remove('hidden');
+      paintLanes();
+      ghostEdges();
+      restackLayers();
+    } else {
+      // Only a lane's own panel goes with the layer.
+      if (inspector?.kind === 'lane') closeInspector();
+      map.removeLayer(blLayer);
+      key.classList.add('hidden');
+      blSelected = null;
+      unghostEdges();
+    }
+  });
+}
+
 // What an edge looks like when something else is the subject: ride view's
 // unselected streets, and the whole network while a dock is in focus. One
 // style, because they mean the same thing -- the network is context now.
@@ -2973,10 +3239,11 @@ const EDGE_RIDE = {
 };
 
 // The network stops being the subject whenever something is laid over it to
-// be read against it: a dock's links, or the whole dream-subway overlay. Ride
-// view owns the drawn edges whenever it is up and outranks both.
+// be read against it: a dock's links, the whole dream-subway overlay, or the
+// bike lanes. Ride view owns the drawn edges whenever it is up and outranks
+// all three.
 function networkIsContext() {
-  return rideView === null && (dockSelected !== null || subwayOn());
+  return rideView === null && (dockSelected !== null || subwayOn() || bikeLanesOn());
 }
 
 // A dock's straight lines are a handful of thin cyan strokes over 21k plasma
@@ -3144,6 +3411,7 @@ function closeInspector() {
   if (kind === 'dock') { clearDockLinks(); unghostEdges(); }
   if (kind === 'area') { nbSelected = null; syncNbOutline(); }
   if (kind === 'subway') { swSelected = null; swFocusLine = null; paintSubway(); }
+  if (kind === 'lane') { blSelected = null; paintLanes(); }
   // Back to the standing pane the reader had open, at the height they left it:
   // closing a detail is not a request for the map, it is a step back up the
   // list they were working through.
@@ -3258,7 +3526,7 @@ function syncSheet() {
   // The heading takes the clicked layer's colour here for the same reason it
   // does in the rail's panel: it says which of the three is being described
   // before it is read.
-  sheetEl.classList.remove('kind-edge', 'kind-dock', 'kind-area');
+  sheetEl.classList.remove('kind-edge', 'kind-dock', 'kind-area', 'kind-subway', 'kind-lane');
   if (detail) sheetEl.classList.add(`kind-${inspector.kind}`);
 }
 
@@ -3901,6 +4169,7 @@ function applyFilter(renormalize = true) {
   }
   applyDockFilter(renormalize);
   applyNbFilter();
+  applyLaneFilter();
   // The panel now outlives the click that opened it, so it follows the filter
   // instead of freezing at whatever was true then. Gated on renormalize for
   // the same reason applyDockFilter is: playback passes false, so a dock
@@ -3939,6 +4208,9 @@ function restackLayers() {
   if (routesOn) geoLayer.eachLayer(l => { if (l._filteredCount > 0) visible.push(l); });
   visible.sort((a, b) => a._filteredCount - b._filteredCount);
   for (const l of visible) l.bringToFront();
+  // The lanes over the streets they are read against, and under the dock
+  // markers and the subway, which are smaller and sit on top of both.
+  restackLanes();
   // The edges above draw into the same canvas as the dock markers, so a
   // filter change would otherwise bury the dock layer under them.
   if (dockLayer && map.hasLayer(dockLayer)) {
@@ -4222,6 +4494,7 @@ fetch('rides.geojson.gz')
     initDockLayer(data.properties?.citibike);
     initNeighborhoods(data.properties?.neighborhoods);
     initSubway(data.properties?.subway);
+    initBikeLanes(data.properties?.bike_lanes);
     renderPlaces(data.properties?.neighborhoods);
     restoreSection();
 

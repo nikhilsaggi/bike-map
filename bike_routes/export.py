@@ -7,6 +7,7 @@ import json
 from typing import Any
 
 from . import config
+from .bikelanes import _bike_lane_summary
 from .citibike import SOURCE_UNKNOWN, _citibike_summary, ride_sources
 from .edge_speed import _speed_summary, ride_pass_dirs
 from .merge import _audit_merge, _geom_len_m, _merge_parallel_features
@@ -213,6 +214,7 @@ def _export_geojson(
             "weather": _weather_summary(state.get("ride_stats", {})),
             "citibike": _citibike_summary(state.get("ride_stats", {}), ride_id),
             "subway": _subway_summary(),
+            "bike_lanes": _bike_lane_summary(edge_geom, state, all_dates),
             "speed": _speed_summary(state.get("edge_speed", {}), edge_geom, edge_name or {}),
             "dates": all_dates,
             "rides": rides_meta,

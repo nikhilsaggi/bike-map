@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from . import config
+from .bikelanes import ensure_lanes
 from .cache import (
     _load_route_cache,
     _load_state,
@@ -138,8 +139,10 @@ def main(argv: list[str] | None = None) -> None:
     # 1. Load state (relocating any caches left over from the flat layout).
     # The neighborhood boundaries are fetched here rather than at export
     # time: it is a one-off 4.6 MB download, and the export stays offline.
+    # The bike lanes are fetched here for the same reason.
     _migrate_legacy_caches()
     ensure_boundaries()
+    ensure_lanes()
     state = _load_state()
 
     # 2. Find new rides (exclude already-processed and already-skipped files)

@@ -86,6 +86,10 @@ interactive Leaflet map (`docs/`, served via GitHub Pages) plus static PNGs.
 11. `subway.py` -- the Desire Lines overlay, same shape once more. It reshapes
    `cache/dream_subway/od_network.json`, which `tools/dream_subway/` writes by
    hand like the Citibike export; `None` when that file is absent
+12. `bikelanes.py` -- NYC DOT's bike lanes, the same shape again. `cli.main`
+   fetches `cache/nyc_bike_routes.geojson` (`ensure_lanes`, refetched at 90
+   days, kept if the refetch fails, refused if it fills the request limit) and
+   the export reshapes it; `None` when the file is absent
 
 `bike_routes/ingest/` is the front of the pipeline (`garmin_sync`, `gpx_to_csv`,
 `citibike`), run as `python -m bike_routes.ingest.<mod>`; it fills `rides/`
@@ -113,7 +117,7 @@ owned what; don't reintroduce that.
 `docs/index.html` is a single self-contained Leaflet page (no build step); it
 reads everything from `rides.geojson.gz` top-level `properties`.
 
-**The four drawn layers share one switcher (`#layers`), and only the network
+**The five drawn layers share one switcher (`#layers`), and only the network
 starts on.** Switching the network off is the same lever the date filter
 already pulls -- `routesOn` gates `applyFilter`'s add/remove, so the children
 leave the map and keep their counts, and the switch always renormalizes so
@@ -126,8 +130,8 @@ their payload arrives, so a border hung on a row would come and go with the
 data. **The switcher is a grid of chips, not a column of checkboxes**: each
 chip is a real checkbox laid over a `.seg-btn`-shaped label, tinted in its
 layer's own colour when on (never the source row's purple fill, which means
-pick-one), and `auto-fit` puts two to a row in the legend and all of them in
-one on the sheet. `--rail-fixed` is what the open stats section has to leave behind for
+pick-one), and `auto-fit` puts two to a row in the legend and four to a row
+on the sheet. `--rail-fixed` is what the open stats section has to leave behind for
 the rest of the right rail, the legend included; it has to grow when the
 legend does. It is a desktop measurement only -- a phone has no rails (see
 the sheet, below).
@@ -627,14 +631,29 @@ because attribution is not optional.
   how a test measuring angles off `latLngToLayerPoint` came to read 45 degrees
   on a smooth curve -- that method rounds to whole pixels, so use
   `map.project` whenever geometry is being measured rather than drawn.
-- **`networkIsContext()` is why the streets go to outline, and it has two
-  owners.** A dock in focus and the subway overlay both lay thin bright lines
-  over 21k plasma ones, which is a haystack rather than a comparison; the
-  subway is the worse case, because five of its line colours sit inside the
-  plasma ramp itself. Both ghost the network with ride view's own `EDGE_GHOST`
-  and leave it on screen in outline -- reading the overlay against where the
-  bike goes is the point of both layers -- and the slider still moves it, in
-  outline. Ride view outranks both: it owns the drawn edges whenever it is up.
+- **`networkIsContext()` is why the streets go to outline, and it has three
+  owners.** A dock in focus, the subway overlay and the bike lanes all lay
+  bright lines over 21k plasma ones, which is a haystack rather than a
+  comparison; the subway is the worse case, because five of its line colours
+  sit inside the plasma ramp itself. All three ghost the network with ride
+  view's own `EDGE_GHOST` and leave it on screen in outline -- reading the
+  overlay against where the bike goes is the point of each layer -- and the
+  slider still moves it, in outline. Ride view outranks all of them: it owns
+  the drawn edges whenever it is up.
+- **Bike lanes describe the city, so they count towards nothing.** Like
+  Citibike trips and Desire Lines they stay out of `edge_counts`, `coverage`
+  and `features[]`, in `properties.bike_lanes` alone. DOT keeps a lane's
+  history -- an upgrade retires the old record and the new one names it in
+  `prevbikeid` -- so the layer draws the network standing on the slider's
+  later date, and a lane's `first` is the date by which **half of it was
+  ridden while it existed**: a street ridden before its lane was painted does
+  not light the lane. Lanes are matched per sample point (12 m, 25 degrees of
+  parallel), never per OSM edge: one 2 km edge such as a bridge path is
+  covered by several short DOT records, none of which covers half of it. A
+  before/after "did the new lane change the routes" comparison was built and
+  rejected -- a placebo on unchanged lanes moved as much, and the big jumps
+  were moves, not lanes ([why](findings/bike-lanes.md)). Don't put it on the
+  panel.
 - **The dock layer is meant to be explored, not read.** Markers resize with
   the same `filterLo`/`filterHi` range that filters the edges (`applyFilter`
   calls `applyDockFilter`), so the slider and time-lapse move them too. The

@@ -159,6 +159,10 @@ NTA_CACHE_PATH = CACHE_DIR / "nta_boundaries.geojson"
 # endpoints. Written by hand like the Citibike export, summarised on every
 # later run; absent on any checkout that has not run the tool.
 SUBWAY_NETWORK_PATH = CACHE_DIR / "dream_subway" / "od_network.json"
+# NYC DOT's bike routes, current and retired, fetched by cli.main and refetched
+# when stale (bikelanes.MAX_AGE_DAYS). Describes the city, not the rides, so it
+# is not in _processing_config() either.
+BIKE_LANES_CACHE_PATH = CACHE_DIR / "nyc_bike_routes.geojson"
 
 
 RENDER_CACHE_FORMAT = "hw-name-v1"  # bump invalidates render_cache.pkl (rebuilt from the graph)

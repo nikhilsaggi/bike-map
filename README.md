@@ -36,7 +36,8 @@ The pipeline exports a compressed GeoJSON that powers an interactive
   rest of the screen is map
 - Date-range slider with time-lapse playback (watch the network grow)
 - A layer switcher under the legend: the pass-frequency network, the Citibike
-  docks and the neighborhoods, one checkbox each. Only the network starts on.
+  docks, the neighborhoods, Desire Lines and the bike lanes, one chip each.
+  Only the network starts on.
   Switching it off leaves the other layers against the basemap alone; a ride
   put on screen still draws, the way it already draws outside the date filter
 - Collapsible stats panel with total rides, edges covered, and street
@@ -60,6 +61,13 @@ The pipeline exports a compressed GeoJSON that powers an interactive
 - A Neighborhoods stats section rolling those up per borough — 44.0% of
   Manhattan's streets ridden against 5.2% of Queens', both hidden inside one
   citywide 11.8% ([why](findings/neighborhoods.md))
+- Optional bike lane layer: NYC DOT's network as it stood on the date on
+  screen — the dataset keeps every lane's history, so the slider and the
+  time-lapse build the lanes as they were built — coloured protected, painted
+  or shared. A lane is drawn bright once half of it had been ridden while it
+  was there, and the key under the switcher says how many of the miles on
+  screen that is. Click one for its type each way, when it was built, and
+  what it replaced ([how a lane counts as ridden](findings/bike-lanes.md))
 - Optional Citibike dock layer: markers sized by how much a dock was used in
   the date range on screen, so the slider and the time-lapse move them the way
   they move the streets. Click one to see where its trips actually went. The
@@ -335,6 +343,7 @@ refreshes on its own schedule:
 | Street graph | every run, extending itself when a ride leaves the area it covers |
 | Citibike trips and dock locations | a manual export, then `python -m bike_routes.ingest.citibike <file>` ([Usage](#usage), step 4) |
 | Neighborhood boundaries | nothing — fetched once; delete `cache/nta_boundaries.geojson` to fetch again |
+| Bike lanes | every run, once the cached copy is 90 days old (NYC DOT publishes about once a year) |
 | Desire Lines | `od.py`, `odpairs.py`, `odnet.py` in [`tools/dream_subway/`](tools/dream_subway/README.md); check the line names after |
 | The image at the top of this file | `python tools/render_readme_map.py` |
 
@@ -399,6 +408,9 @@ part of it; `findings/` holds what they found:
 - [Rebuilding the graph without Overpass](findings/graph-rebuild-offline.md) —
   recovering an invalidated graph during an outage from the responses osmnx
   already cached, and why a Geofabrik extract is the wrong tool for it
+- [Bike lanes](findings/bike-lanes.md) — matching DOT's lanes to the ridden
+  streets, what "ridden" means for a lane that was built mid-way through the
+  history, and why the layer does not claim new lanes changed the routes
 - [Desire Lines: a subway fitted to the rides](findings/dream-subway.md) —
   `tools/dream_subway/`, a hypothetical network drawn from where rides begin
   and end, and why fitting it to the streets they ride instead made it worse
@@ -458,6 +470,9 @@ gitignored):
 - `cache/nta_boundaries.geojson` — NYC neighborhood boundaries, downloaded
   once from NYC Open Data on the first run and never refreshed; delete it and
   the map ships without the neighborhood layer until the next run
+- `cache/nyc_bike_routes.geojson` — NYC DOT's bike routes, current and
+  retired, from NYC Open Data; refetched once it is 90 days old, and kept if
+  the refetch fails
 - `cache/<40 hex>.json` — osmnx's own Overpass response cache, one file per
   query. Not written by this pipeline, and the only reason
   `tools/rebuild_graph_from_cache.py` can rebuild the graph while Overpass is
