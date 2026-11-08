@@ -1064,109 +1064,22 @@ def _top_stretches(
     return best(fastest=True), best(fastest=False)
 
 
-def _busiest_stretches(
-    state: dict[str, Any],
-    edge_geom: dict[tuple[int, int], list[tuple[float, float]]],
-    edge_name: dict[tuple[int, int], str],
-) -> list[dict[str, Any]]:
-    """Rank stretches of one street by how many times all of them were ridden.
-
-    The unit the speed tabs rank, without their speed: one street, chained end
-    to end across the edges OSM split it into, but undirected -- passes are
-    the map's own counts, both ways together. Two rules make a row honest:
-
-    - A stretch is seeded at its busiest edge and runs on only while each
-      next edge was ridden at least ``config.BUSIEST_KEEP`` as often. Chaining
-      a whole avenue would rank its busiest block under the count of its
-      quietest, and passes cannot be summed along a street: that counts
-      block-crossings, the mistake the neighborhood panel's rides avoid.
-    - The printed count is the stretch's weakest edge, as in the speed tabs:
-      every part of it was ridden at least that often.
-
-    Seeds go busiest first, so a street's first stretch is its busiest, and
-    each street appears once. An edge is claimed only by a stretch long
-    enough to keep, so a short busy approach does not lock its edges out of
-    the longer stretch beside it.
-    """
-    counts = {
-        k: c
-        for k, c in traversal_counts(state).items()
-        if edge_name.get(k) and len(edge_geom.get(k) or ()) >= 2
-    }
-    at_point: dict[tuple[float, float], list[tuple[int, int]]] = {}
-    for k in sorted(counts):
-        for end in (edge_geom[k][0], edge_geom[k][-1]):
-            at_point.setdefault(_rounded(tuple(end)), []).append(k)
-
-    def from_point(k: tuple[int, int], p: tuple[float, float]) -> list[tuple[float, float]]:
-        coords = [tuple(c) for c in edge_geom[k]]
-        return coords if _rounded(coords[0]) == p else coords[::-1]
-
-    used: set[tuple[int, int]] = set()
-
-    def grow(chain: list[tuple[tuple[int, int], list[tuple[float, float]]]], floor: float) -> None:
-        name = edge_name[chain[0][0]]
-        taken = {k for k, _piece in chain}
-        while True:
-            end = _rounded(chain[-1][1][-1])
-            options = [
-                k
-                for k in at_point.get(end, ())
-                if k not in used and k not in taken and edge_name[k] == name and counts[k] >= floor
-            ]
-            if not options:
-                return
-            heading = _chord(chain[-1][1])[0]
-            k = min(options, key=lambda o: (_turn(heading, _chord(from_point(o, end))[0]), o))
-            chain.append((k, from_point(k, end)))
-            taken.add(k)
-
-    rows: list[dict[str, Any]] = []
-    seen: set[str] = set()
-    for seed in sorted(counts, key=lambda k: (-counts[k], k)):
-        name = edge_name[seed]
-        if seed in used or name in seen:
-            continue
-        floor = counts[seed] * config.BUSIEST_KEEP
-        chain = [(seed, [tuple(c) for c in edge_geom[seed]])]
-        grow(chain, floor)
-        chain = [(k, piece[::-1]) for k, piece in reversed(chain)]
-        grow(chain, floor)
-        total = sum(_line_len(piece) for _k, piece in chain)
-        if total < config.BUSIEST_MIN_M:
-            continue
-        used.update(k for k, _piece in chain)
-        seen.add(name)
-        middle = chain[len(chain) // 2][1]
-        mid = middle[len(middle) // 2]
-        rows.append(
-            {
-                "name": name,
-                "n": min(counts[k] for k, _piece in chain),
-                "m": round(total),
-                "at": [round(mid[0], 5), round(mid[1], 5)],
-            }
-        )
-    rows.sort(key=lambda r: (-r["n"], -r["m"], r["name"]))
-    return rows[: config.SPEED_STRETCH_N]
-
-
 def _speed_summary(
     edge_speed: dict[tuple[int, int], dict[str, Any]],
     edge_geom: dict[tuple[int, int], list[tuple[float, float]]],
     edge_name: dict[tuple[int, int], str],
-    state: dict[str, Any] | None = None,
+    busiest: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any] | None:
     """Top-level speed block: the rankings, plus what they were drawn from.
 
     Speeds are km/h, like every other figure in the payload; the map
     converts for display. ``busiest`` ranks stretches by passes rather than
-    speed (see _busiest_stretches); it shares the block because it shares the
-    unit and the tab strip.
+    speed (export._busiest_stretches, over the drawn features); it shares the
+    block because it shares the unit and the tab strip.
     """
     corridors = _top_corridors(edge_speed, edge_geom, edge_name)
     fastest, slowest = _top_stretches(edge_speed, edge_geom, edge_name)
-    busiest = _busiest_stretches(state, edge_geom, edge_name) if state else []
+    busiest = busiest or []
     if not corridors and not fastest and not busiest:
         return None
     measured = sum(

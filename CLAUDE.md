@@ -709,16 +709,21 @@ heading carries the *active* tab's rule, because one text describing three
 questions would describe the two a reader is not looking at. The heading
 itself is the tab's too -- "Speed", or "Passes" for Most ridden.
 
-- **Most ridden (`_busiest_stretches`) is the speed tabs' unit without their
-  speed**: one street chained end to end, undirected, on the map's own pass
-  counts. A stretch is seeded at its busiest edge and runs on only while each
-  next edge was ridden `BUSIEST_KEEP` (80%) as often, and prints its weakest
-  edge -- passes never sum along a street, which would count block-crossings.
-  Its floor is `BUSIEST_MIN_M` (100 m), not the speed tabs' 250: that guards a
-  timing measurement, and at 250 the busiest block on the map (143 m, the home
-  end of most rides) could not rank. An edge is claimed only by a stretch long
-  enough to keep, so a short busy approach does not lock out the stretch beside
-  it.
+- **Most ridden (`export._busiest_stretches`) ranks the drawn features, never
+  the graph's edges.** Its count has to be the one the map shows on hover, and
+  the merge is what makes the two differ: a street and its bike lane, or a
+  plaza path beside a roadway, are two parallel OSM ways, and a ride up one
+  and back down the other is two passes on the drawn corridor but one on each
+  edge. The first version ranked edges and put Broadway's 149-pass block at
+  88. Otherwise it is the speed tabs' unit without their speed: one street
+  chained end to end (features meet within `MERGE_CONNECT_M`), undirected,
+  seeded at its busiest feature and run on only while each next one was
+  ridden `BUSIEST_KEEP` (80%) as often, printing its weakest -- passes never
+  sum along a street, which would count block-crossings. Its floor is
+  `BUSIEST_MIN_M` (50 m), not the speed tabs' 250: that guards a timing
+  measurement, and a Manhattan avenue block is ~80 m. A feature is claimed
+  only by a stretch long enough to keep, so an intersection fragment does not
+  lock out the stretch beside it.
 
 - **A stretch is chained across edges, a corridor is not.** The median edge
   is 63 m and the floor is 250 m, so without chaining the second ranking

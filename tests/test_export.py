@@ -426,3 +426,68 @@ def test_citibike_trips_cite_the_ride_recorded_over_them(tmp_path, monkeypatch):
     # edges or their passes.
     assert props["total_edges"] == 1
     assert [f["properties"]["rides"] for f in data["features"]] == [[0]]
+
+
+# -- Most-ridden stretches, over the drawn features --------------------------
+
+
+def _feature(x0: float, x1: float, passes: int, sn: int = 0, y: float = 0.0) -> dict:
+    """A drawn feature from x0 to x1 m east, with `passes` entries in rides."""
+    return {
+        "geometry": {"coordinates": [list(lonlat(x0, y)), list(lonlat(x1, y))]},
+        "properties": {"rides": list(range(passes)), "sn": sn},
+    }
+
+
+NAMES = ["Kent Avenue", "Grand Street"]
+
+
+def test_busiest_chains_a_street_while_it_stays_busy():
+    # 10, 9, 8 are within 80% of 10; the 5 is not, so the stretch stops.
+    feats = [
+        _feature(0, 100, 9),
+        _feature(100, 200, 10),
+        _feature(300, 200, 8),
+        _feature(300, 400, 5),
+    ]
+    rows = export._busiest_stretches(feats, NAMES)
+    assert [(r["name"], r["n"], r["m"]) for r in rows] == [("Kent Avenue", 8, 300)]
+
+
+def test_busiest_counts_what_the_map_draws():
+    # A merged corridor's count is its rides array, one entry per pass --
+    # the hover's number, however the members underneath split it.
+    rows = export._busiest_stretches([_feature(0, 80, 149)], NAMES)
+    assert rows[0]["n"] == 149
+
+
+def test_busiest_never_chains_into_another_street():
+    feats = [_feature(0, 100, 10), _feature(100, 200, 10, sn=1), _feature(200, 300, 10, sn=1)]
+    rows = export._busiest_stretches(feats, NAMES)
+    assert {(r["name"], r["m"]) for r in rows} == {("Kent Avenue", 100), ("Grand Street", 200)}
+
+
+def test_busiest_joins_ends_the_merge_left_a_few_metres_apart():
+    near = [_feature(0, 100, 10), _feature(104, 200, 10)]
+    far = [_feature(0, 100, 10), _feature(120, 200, 10)]
+    assert export._busiest_stretches(near, NAMES)[0]["m"] == 196
+    assert export._busiest_stretches(far, NAMES)[0]["m"] == 100
+
+
+def test_busiest_drops_a_fragment_but_not_the_stretch_beside_it():
+    # A 20 m intersection fragment ridden 20 times cannot rank alone, and is
+    # not claimed by trying: the 10-pass stretch beside it takes it in.
+    feats = [
+        _feature(-20, 0, 20),
+        _feature(0, 100, 10),
+        _feature(100, 200, 10),
+        _feature(200, 300, 2),
+    ]
+    rows = export._busiest_stretches(feats, NAMES)
+    assert [(r["n"], r["m"]) for r in rows] == [(10, 220)]
+
+
+def test_busiest_skips_unnamed_features():
+    feat = _feature(0, 100, 10)
+    del feat["properties"]["sn"]
+    assert export._busiest_stretches([feat], NAMES) == []

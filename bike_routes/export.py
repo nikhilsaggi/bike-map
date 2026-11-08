@@ -6,6 +6,9 @@ import gzip
 import json
 from typing import Any
 
+import numpy as np
+from scipy.spatial import cKDTree
+
 from . import config
 from .bikelanes import _bike_lane_summary
 from .citibike import SOURCE_UNKNOWN, _citibike_summary, ride_sources
@@ -83,6 +86,108 @@ def _coverage_summary(
             hw: round(m / 1000, 1) for hw, m in sorted(excluded_m.items(), key=lambda kv: -kv[1])
         },
     }
+
+
+def _busiest_stretches(features: list[dict[str, Any]], names: list[str]) -> list[dict[str, Any]]:
+    """Rank stretches of one street by how many times all of them were ridden.
+
+    Over the drawn features, not the graph's edges, so a row's count is the
+    one the map shows on hover. The difference is the merge: OSM often maps a
+    street and its bike lane (or a plaza path beside a roadway) as two
+    parallel ways, and a ride up one and back down the other is two passes on
+    the drawn corridor but one on each edge. Ranked on edges, the busiest
+    corridors split their passes and fell down the list.
+
+    The unit is the speed tabs' -- one street, chained end to end -- but
+    undirected, and two rules keep the row honest:
+
+    - A stretch is seeded at its busiest feature and runs on only while each
+      next one was ridden at least ``config.BUSIEST_KEEP`` as often. Passes
+      cannot be summed along a street: that counts block-crossings, the
+      mistake the neighborhood panel's rides avoid. Where the street forks the
+      busier branch wins.
+    - The printed count is the stretch's least-ridden feature: every part of
+      it was ridden at least that often.
+
+    Features meet where their endpoints are within ``config.MERGE_CONNECT_M``,
+    the distance the merge itself leaves a joined corridor at. Seeds go
+    busiest first and each street appears once; a feature is claimed only by
+    a stretch long enough to keep, so a short busy fragment does not lock out
+    the stretch beside it.
+    """
+    feats = [
+        (names[f["properties"]["sn"]], f["geometry"]["coordinates"], len(f["properties"]["rides"]))
+        for f in features
+        if "sn" in f["properties"] and f["properties"]["rides"]
+    ]
+    if not feats:
+        return []
+    ends = np.array(
+        [
+            (p[0] * config.M_PER_LON, p[1] * config.M_PER_LAT)
+            for _name, coords, _n in feats
+            for p in (coords[0], coords[-1])
+        ]
+    )
+    parent = list(range(len(ends)))
+
+    def root(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    for i, j in sorted(cKDTree(ends).query_pairs(config.MERGE_CONNECT_M)):
+        parent[root(i)] = root(j)
+    node = [root(i) for i in range(len(ends))]
+    at_node: dict[int, list[int]] = {}
+    for fi in range(len(feats)):
+        for slot in (0, 1):
+            at_node.setdefault(node[2 * fi + slot], []).append(fi)
+
+    used: set[int] = set()
+    seen: set[str] = set()
+    rows = []
+    for seed in sorted(range(len(feats)), key=lambda i: (-feats[i][2], i)):
+        name = feats[seed][0]
+        if seed in used or name in seen:
+            continue
+        floor = feats[seed][2] * config.BUSIEST_KEEP
+        chain = [seed]
+        for slot in (1, 0):
+            here = node[2 * seed + slot]
+            while True:
+                options = [
+                    k
+                    for k in at_node.get(here, ())
+                    if k not in used
+                    and k not in chain
+                    and feats[k][0] == name
+                    and feats[k][2] >= floor
+                ]
+                if not options:
+                    break
+                k = max(options, key=lambda o: (feats[o][2], -o))
+                chain.append(k)
+                here = node[2 * k + 1] if node[2 * k] == here else node[2 * k]
+        total = sum(_geom_len_m(feats[k][1]) for k in chain)
+        if total < config.BUSIEST_MIN_M:
+            continue
+        used.update(chain)
+        seen.add(name)
+        longest = max(chain, key=lambda k: (_geom_len_m(feats[k][1]), -k))
+        coords = feats[longest][1]
+        mid = coords[len(coords) // 2]
+        rows.append(
+            {
+                "name": name,
+                "n": min(feats[k][2] for k in chain),
+                "m": round(total),
+                "at": [round(mid[0], 5), round(mid[1], 5)],
+            }
+        )
+    rows.sort(key=lambda r: (-r["n"], -r["m"], r["name"]))
+    return rows[: config.SPEED_STRETCH_N]
 
 
 def _export_geojson(
@@ -216,7 +321,12 @@ def _export_geojson(
             "citibike": _citibike_summary(state.get("ride_stats", {}), ride_id),
             "subway": _subway_summary(),
             "bike_lanes": _bike_lane_summary(edge_geom, state, all_dates, areas=areas),
-            "speed": _speed_summary(state.get("edge_speed", {}), edge_geom, edge_name or {}, state),
+            "speed": _speed_summary(
+                state.get("edge_speed", {}),
+                edge_geom,
+                edge_name or {},
+                _busiest_stretches(features, name_table),
+            ),
             "dates": all_dates,
             "rides": rides_meta,
             # The last day a ride was recorded, not when the pipeline ran: a
