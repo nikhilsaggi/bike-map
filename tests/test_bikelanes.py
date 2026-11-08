@@ -10,7 +10,7 @@ import time
 import pytest
 from conftest import lonlat
 
-from bike_routes import bikelanes, config, export
+from bike_routes import bikelanes, config, export, neighborhoods
 
 R1 = "2023-04-01_08-00-00_-0400.csv"
 R2 = "2024-06-01_08-00-00_-0400.csv"
@@ -240,3 +240,73 @@ def test_export_ships_the_block_from_the_cache(tmp_path, monkeypatch):
     with gzip.open(tmp_path / "rides.geojson.gz") as f:
         props = json.load(f)["properties"]
     assert props["bike_lanes"]["lines"][0][1] == props["dates"].index("2024-06-01")
+
+
+# -- Share of riding on a lane ----------------------------------------------
+
+
+def _areas(x0: float = -100.0, x1: float = 700.0) -> neighborhoods.Areas:
+    ring = [lonlat(x0, -100.0), lonlat(x1, -100.0), lonlat(x1, 100.0), lonlat(x0, 100.0)]
+    ring.append(ring[0])
+    return neighborhoods.Areas(
+        [
+            {
+                "properties": {"ntaname": "Testville", "boroname": "Brooklyn", "ntatype": "0"},
+                "geometry": {"type": "Polygon", "coordinates": [[list(c) for c in ring]]},
+            }
+        ]
+    )
+
+
+def _share(tmp_path, features, state=STATE, edge_geom=EDGE_GEOM, areas=None):
+    return bikelanes._bike_lane_summary(
+        edge_geom, state, DATES, _write(tmp_path, features), areas=areas or _areas()
+    )["by_year"]
+
+
+def test_no_boundaries_means_no_share(tmp_path):
+    out = bikelanes._bike_lane_summary(
+        EDGE_GEOM, STATE, DATES, _write(tmp_path, [_lane(STREET, bikeid=1, inst="2020-01-01")])
+    )
+    assert out["by_year"] is None
+
+
+def test_riding_on_a_standing_lane_counts_per_year(tmp_path):
+    # 300 m ridden once by R2 (2024) and once by R3 (2025), on a protected lane.
+    assert _share(tmp_path, [_lane(STREET, bikeid=1, inst="2020-01-01")]) == {
+        "2024": [300, 300, 300],
+        "2025": [300, 300, 300],
+    }
+
+
+def test_a_lane_counts_only_from_the_day_it_was_built(tmp_path):
+    out = _share(
+        tmp_path, [_lane(STREET, bikeid=1, inst="2025-01-01", cls="II", ft="Conventional")]
+    )
+    # Painted, so never protected; built between the two rides.
+    assert out == {"2024": [300, 0, 0], "2025": [300, 300, 0]}
+
+
+def test_several_short_records_add_up_along_one_long_edge(tmp_path):
+    # Two 150 m records end to end, each covering half of the 300 m edge and
+    # so neither enough alone.
+    halves = [
+        _lane([lonlat(0.0, 0.0), lonlat(150.0, 0.0)], bikeid=1, inst="2020-01-01"),
+        _lane([lonlat(150.0, 0.0), lonlat(300.0, 0.0)], bikeid=2, inst="2020-01-01"),
+    ]
+    assert _share(tmp_path, halves)["2024"] == [300, 300, 300]
+
+
+def test_riding_outside_the_city_counts_on_neither_side(tmp_path):
+    away = [lonlat(5000.0, 0.0), lonlat(5300.0, 0.0)]
+    edge_geom = {**EDGE_GEOM, (3, 4): away}
+    state = {**STATE, "edge_rides": {**STATE["edge_rides"], (3, 4): [R2]}}
+    out = _share(tmp_path, [_lane(STREET, bikeid=1, inst="2020-01-01")], state, edge_geom)
+    assert out["2024"] == [300, 300, 300]
+
+
+def test_passes_multiply_the_metres(tmp_path):
+    # R2 rode the street out and back: two passes, so 600 m that year.
+    state = {**STATE, "edge_traversals": {(1, 2): {R2: [1, 1]}}}
+    out = _share(tmp_path, [_lane(STREET, bikeid=1, inst="2020-01-01")], state)
+    assert out["2024"] == [600, 600, 600]

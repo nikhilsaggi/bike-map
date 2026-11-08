@@ -237,6 +237,9 @@ export const BIKE_LANE_BLOCK = {
     [2, -1, laneCoords(LANES.grand)],
     [3, 3, laneCoords(LANES.grand)],
   ],
+  // {year: [NYC metres, on a lane, on a protected lane]}: 2023 is 70% on a
+  // lane and 50% protected, 2024 50% and 30%, so all-time is 60% and 40%.
+  by_year: { 2023: [10000, 7000, 5000], 2024: [10000, 5000, 3000] },
 };
 
 const line = (lat) => ({

@@ -67,7 +67,9 @@ The pipeline exports a compressed GeoJSON that powers an interactive
   or shared. A lane is drawn bright once half of it had been ridden while it
   was there, and the key under the switcher says how many of the miles on
   screen that is. Click one for its type each way, when it was built, and
-  what it replaced ([how a lane counts as ridden](findings/bike-lanes.md))
+  what it replaced ([how a lane counts as ridden](findings/bike-lanes.md)).
+  The Years table and the Riding section give the share of NYC riding that was
+  on a bike lane standing at the time, and on a protected one
 - Optional Citibike dock layer: markers sized by how much a dock was used in
   the date range on screen, so the slider and the time-lapse move them the way
   they move the streets. Click one to see where its trips actually went. The

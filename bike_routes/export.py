@@ -190,8 +190,9 @@ def _export_geojson(
     # Neighborhoods, if the boundary cache is there. This also tags every
     # feature with the area it sits in, so the block has to be built after
     # the merge -- a corridor is placed by its own midpoint, not its members'.
+    areas = load_areas()
     neighborhoods = _neighborhood_summary(
-        load_areas(), edge_geom, edge_hw or {}, state, date_idx, features
+        areas, edge_geom, edge_hw or {}, state, date_idx, features
     )
 
     rides_per_year: dict[str, int] = {}
@@ -214,7 +215,7 @@ def _export_geojson(
             "weather": _weather_summary(state.get("ride_stats", {})),
             "citibike": _citibike_summary(state.get("ride_stats", {}), ride_id),
             "subway": _subway_summary(),
-            "bike_lanes": _bike_lane_summary(edge_geom, state, all_dates),
+            "bike_lanes": _bike_lane_summary(edge_geom, state, all_dates, areas=areas),
             "speed": _speed_summary(state.get("edge_speed", {}), edge_geom, edge_name or {}),
             "dates": all_dates,
             "rides": rides_meta,

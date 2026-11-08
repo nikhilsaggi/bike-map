@@ -35,9 +35,14 @@ from shapely.geometry import LineString, MultiLineString
 from shapely.ops import linemerge
 
 from . import config
+from .edge_speed import ride_traversals
+from .merge import _geom_len_m
+from .neighborhoods import _midpoint
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    from .neighborhoods import Areas
 
 # SoQL rather than the bulk export: the export endpoint was returning 503 while
 # this one answered. The limit is far above the ~30k rows the dataset holds,
@@ -174,6 +179,47 @@ def _ride_dates(
     return keys, dates
 
 
+def _sample(
+    lines: list[LineString],
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, list[int]]:
+    """Points every JOIN_STEP_M along each line, their tangents, and whose each is."""
+    owner, pts, ahead, behind = [], [], [], []
+    counts = [0] * len(lines)
+    for li, line in enumerate(lines):
+        n = max(2, math.ceil(line.length / JOIN_STEP_M) + 1)
+        d = np.linspace(0.0, line.length, n)
+        pts.append(shapely.line_interpolate_point(line, d))
+        ahead.append(shapely.line_interpolate_point(line, d + JOIN_TANGENT_M))
+        behind.append(shapely.line_interpolate_point(line, d - JOIN_TANGENT_M))
+        owner.append(np.full(n, li))
+        counts[li] = n
+    tangents = shapely.get_coordinates(np.concatenate(ahead)) - shapely.get_coordinates(
+        np.concatenate(behind)
+    )
+    return np.concatenate(pts), tangents, np.concatenate(owner), counts
+
+
+def _parallel_pairs(
+    pts: np.ndarray, tangents: np.ndarray, targets: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    """(point, target) pairs within JOIN_TOL_M and JOIN_ANGLE_DEG of parallel.
+
+    Either direction counts: a lane is ridden whichever way the bike went.
+    """
+    pi, ti = shapely.STRtree(targets).query(pts, predicate="dwithin", distance=JOIN_TOL_M)
+    if not len(pi):
+        return pi, ti
+    along = shapely.line_locate_point(targets[ti], pts[pi])
+    target_t = shapely.get_coordinates(
+        shapely.line_interpolate_point(targets[ti], along + JOIN_TANGENT_M)
+    ) - shapely.get_coordinates(shapely.line_interpolate_point(targets[ti], along - JOIN_TANGENT_M))
+    dot = np.abs(np.einsum("ij,ij->i", tangents[pi], target_t))
+    norm = np.linalg.norm(tangents[pi], axis=1) * np.linalg.norm(target_t, axis=1)
+    keep = norm > 0
+    keep[keep] = dot[keep] / norm[keep] >= math.cos(math.radians(JOIN_ANGLE_DEG))
+    return pi[keep], ti[keep]
+
+
 def _first_ridden(
     rows: list[dict[str, Any]],
     edge_geom: dict[tuple[int, int], Any],
@@ -191,46 +237,22 @@ def _first_ridden(
     if not keys or not rows:
         return out
     edges = np.array([_line_m(edge_geom[k]) for k in keys], dtype=object)
-    tree = shapely.STRtree(edges)
 
-    # Sample every record's parts at JOIN_STEP_M, remembering whose each is.
-    owner, pts, ahead, behind = [], [], [], []
+    parts = [(ri, part) for ri, row in enumerate(rows) for part in row["parts_m"]]
+    pts, tangents, part_of, part_n = _sample([part for _ri, part in parts])
+    owner = np.array([ri for ri, _part in parts])[part_of]
     per_row = [0] * len(rows)
-    for ri, row in enumerate(rows):
-        for part in row["parts_m"]:
-            n = max(2, math.ceil(part.length / JOIN_STEP_M) + 1)
-            d = np.linspace(0.0, part.length, n)
-            pts.append(shapely.line_interpolate_point(part, d))
-            ahead.append(shapely.line_interpolate_point(part, d + JOIN_TANGENT_M))
-            behind.append(shapely.line_interpolate_point(part, d - JOIN_TANGENT_M))
-            owner.append(np.full(n, ri))
-            per_row[ri] += n
-    pts_a = np.concatenate(pts)
-    owner_a = np.concatenate(owner)
-    lane_t = shapely.get_coordinates(np.concatenate(ahead)) - shapely.get_coordinates(
-        np.concatenate(behind)
-    )
-
-    pi, ei = tree.query(pts_a, predicate="dwithin", distance=JOIN_TOL_M)
-    if len(pi):
-        along = shapely.line_locate_point(edges[ei], pts_a[pi])
-        edge_t = shapely.get_coordinates(
-            shapely.line_interpolate_point(edges[ei], along + JOIN_TANGENT_M)
-        ) - shapely.get_coordinates(
-            shapely.line_interpolate_point(edges[ei], along - JOIN_TANGENT_M)
-        )
-        dot = np.abs(np.einsum("ij,ij->i", lane_t[pi], edge_t))
-        norm = np.linalg.norm(lane_t[pi], axis=1) * np.linalg.norm(edge_t, axis=1)
-        keep = norm > 0
-        keep[keep] = dot[keep] / norm[keep] >= math.cos(math.radians(JOIN_ANGLE_DEG))
-        pi, ei = pi[keep], ei[keep]
+    for (ri, _part), n in zip(parts, part_n, strict=True):
+        per_row[ri] += n
+    pi, ei = _parallel_pairs(pts, tangents, edges)
 
     # Earliest ride on a matching edge inside the record's lifetime, per point.
-    point_first = np.full(len(pts_a), np.iinfo(np.int64).max, dtype=np.int64)
+    # Points are grouped by record because _sample walks the parts in order.
+    point_first = np.full(len(pts), np.iinfo(np.int64).max, dtype=np.int64)
     lo = [bisect_left(all_dates, r["inst"]) for r in rows]
     hi = [bisect_left(all_dates, r["ret"]) if r["ret"] else len(all_dates) for r in rows]
     for p, e in zip(pi.tolist(), ei.tolist(), strict=True):
-        r = owner_a[p]
+        r = owner[p]
         days = edge_days[e]
         j = int(np.searchsorted(days, lo[r]))
         if j < len(days) and days[j] < hi[r] and days[j] < point_first[p]:
@@ -246,6 +268,79 @@ def _first_ridden(
     return out
 
 
+def _edge_cover(
+    rows: list[dict[str, Any]],
+    keys: list[tuple[int, int]],
+    edge_geom: dict[tuple[int, int], Any],
+) -> dict[tuple[int, int], list[tuple[int, float]]]:
+    """Per ridden edge, the lane records running along it and the share each covers.
+
+    The other direction from _first_ridden, and it has to be: one long edge
+    -- a bridge path -- is covered by several short DOT records, none of which
+    reaches half of it, so the shares are summed over whatever records are
+    standing on the date in question rather than tested one at a time.
+    """
+    parts = [(ri, part) for ri, row in enumerate(rows) for part in row["parts_m"]]
+    if not keys or not parts:
+        return {}
+    lanes = np.array([part for _ri, part in parts], dtype=object)
+    lane_row = np.array([ri for ri, _part in parts])
+    pts, tangents, edge_of, counts = _sample([_line_m(edge_geom[k]) for k in keys])
+    pi, li = _parallel_pairs(pts, tangents, lanes)
+    hits: dict[tuple[int, int], set[int]] = {}
+    for p, part in zip(pi.tolist(), li.tolist(), strict=True):
+        hits.setdefault((int(edge_of[p]), int(lane_row[part])), set()).add(p)
+    out: dict[tuple[int, int], list[tuple[int, float]]] = {}
+    for (e, ri), points in hits.items():
+        out.setdefault(keys[e], []).append((ri, len(points) / counts[e]))
+    return out
+
+
+def _riding_share(
+    rows: list[dict[str, Any]],
+    edge_geom: dict[tuple[int, int], list[tuple[float, float]]],
+    state: dict[str, Any],
+    areas: Areas | None,
+) -> dict[str, list[int]] | None:
+    """Metres of NYC riding per year: ``{year: [all, on a lane, on a protected lane]}``.
+
+    A pass is on a lane when the records standing on its ride's date cover
+    half of the edge, and on a protected one when class I records alone do.
+    Metres are edge length times passes -- an estimate that overstates a total
+    (a pass that clipped an edge is charged the whole edge) but mostly cancels
+    in a share, which is all the page prints. Only edges inside a NYC
+    neighborhood count on either side, because DOT maps nothing outside the
+    city; without the boundaries there is no share at all.
+    """
+    if areas is None:
+        return None
+    keys = [k for k in state.get("edge_rides", {}) if len(edge_geom.get(k) or ()) >= 2]
+    places = areas.locate([_midpoint(edge_geom[k]) for k in keys])
+    keys = [k for k, a in zip(keys, places, strict=True) if a >= 0]
+    cover = _edge_cover(rows, keys, edge_geom)
+    out: dict[str, list[float]] = {}
+    for key in keys:
+        length = _geom_len_m(edge_geom[key])
+        standing = cover.get(key, ())
+        for ride in set(state["edge_rides"][key]):
+            day = ride[:10]
+            lane = protected = 0.0
+            for ri, share in standing:
+                r = rows[ri]
+                if r["inst"] <= day and (r["ret"] is None or r["ret"] > day):
+                    lane += share
+                    if r["cls"] == "I":
+                        protected += share
+            m = length * ride_traversals(state, key, ride)
+            year = out.setdefault(ride[:4], [0.0, 0.0, 0.0])
+            year[0] += m
+            if lane >= RIDDEN_SHARE:
+                year[1] += m
+            if protected >= RIDDEN_SHARE:
+                year[2] += m
+    return {y: [round(v) for v in out[y]] for y in sorted(out)} or None
+
+
 def _rounded(line: LineString) -> list[list[float]]:
     coords = line.simplify(SIMPLIFY_DEG).coords
     return [[round(x, COORD_PRECISION), round(y, COORD_PRECISION)] for x, y in coords]
@@ -256,6 +351,7 @@ def _bike_lane_summary(
     state: dict[str, Any],
     all_dates: list[str],
     path: Path | None = None,
+    areas: Areas | None = None,
 ) -> dict[str, Any] | None:
     """Build the ``properties.bike_lanes`` block, or None without a cache.
 
@@ -264,6 +360,8 @@ def _bike_lane_summary(
     streets as indices into their tables, ``previous`` the index of the record
     it superseded or -1. ``lines`` is ``[version, first, coords]``: a record's
     geometry, split where its parts were first ridden on different dates.
+    ``by_year`` is the riding share (see _riding_share), None without the
+    neighborhood boundaries.
 
     Only records alive at some point between the first and last ride are
     drawn; the records they superseded are kept, undrawn, so a lane's panel
@@ -375,4 +473,5 @@ def _bike_lane_summary(
         "streets": streets,
         "versions": out_versions,
         "lines": lines,
+        "by_year": _riding_share(drawn, edge_geom, state, areas),
     }

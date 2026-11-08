@@ -649,7 +649,13 @@ because attribution is not optional.
   ridden while it existed**: a street ridden before its lane was painted does
   not light the lane. With the pass frequency off there is no riding on screen
   to read that against, so every lane draws alike and the key gives the
-  network's length instead. Lanes are matched per sample point (12 m, 25 degrees of
+  network's length instead.
+  `by_year` -- NYC metres ridden, on a lane, on a protected lane -- feeds the
+  Years table's "On lane" column and two Riding rows. It is matched the other
+  way round (edge to lanes, summing the cover of every record standing on the
+  ride's date), counts only edges inside a NYC neighborhood on both sides of
+  the share, and is edge length times passes: an overstatement as a total
+  that mostly cancels in a share, so never ship it as distance. Lanes are matched per sample point (12 m, 25 degrees of
   parallel), never per OSM edge: one 2 km edge such as a bridge path is
   covered by several short DOT records, none of which covers half of it. A
   before/after "did the new lane change the routes" comparison was built and

@@ -1,4 +1,4 @@
-import { test, expect, gotoMap, edgePoint } from './helpers.js';
+import { test, expect, gotoMap, edgePoint, openSection } from './helpers.js';
 import { buildFixture, BIKE_LANE_BLOCK, LANE_LAT, LANES } from './fixture.js';
 
 const withLanes = () => buildFixture({ bike_lanes: BIKE_LANE_BLOCK });
@@ -152,4 +152,32 @@ test.describe('bike lane layer', () => {
       await page.locator('#bl-check').uncheck();
       await expect(page.locator('#inspector')).toBeHidden();
     });
+
+  test('the Years table gains an On lane column, with protected in its title',
+    async ({ page }) => {
+      await gotoMap(page, withLanes());
+      await openSection(page, 'stat-years');
+      await expect(page.locator('#stat-years .year-head span').last()).toHaveText('On lane');
+      const cells = page.locator('#stat-years .year-row .y-lane');
+      await expect(cells).toHaveText(['70%', '50%']);
+      await expect(cells.nth(1)).toHaveAttribute('title',
+        "50% of 2024's NYC riding on a bike lane standing at the time, 30% on a protected one");
+    });
+
+  test('the Riding section gives the all-time shares', async ({ page }) => {
+    await gotoMap(page, withLanes());
+    await openSection(page, 'stat-riding');
+    const rows = page.locator('#stat-riding .r-row');
+    await expect(rows.filter({ hasText: 'On a bike lane' })).toContainText('60%');
+    await expect(rows.filter({ hasText: 'On a protected lane' })).toContainText('40%');
+  });
+
+  test('without the lane block neither appears', async ({ page }) => {
+    await gotoMap(page);
+    await openSection(page, 'stat-years');
+    await expect(page.locator('#stat-years .y-lane')).toHaveCount(0);
+    await expect(page.locator('#stat-years .year-head span')).toHaveCount(5);
+    await openSection(page, 'stat-riding');
+    await expect(page.locator('#stat-riding')).not.toContainText('bike lane');
+  });
 });

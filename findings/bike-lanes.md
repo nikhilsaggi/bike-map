@@ -51,6 +51,24 @@ up to the slider's later handle, the same way it fills the neighborhoods.
 At the time of writing, this put about 44% of the current lane network as
 ridden: about half of protected miles, and fewer painted and shared ones.
 
+## How much of the riding is on a lane
+
+The Years table and the Riding section give the share of riding inside NYC
+that was on a lane standing on the day of the ride. This takes the opposite
+match: for each ridden edge, the lane records running along it. An edge counts
+as on a lane when the records standing on the ride's date cover half of it
+between them. It counts as protected when class I records alone do. Each pass
+is charged the edge's length. That overstates a total, which is why the
+neighborhood distances do not use it, but the error mostly cancels in a share.
+Riding outside every NYC neighborhood counts on neither side, because DOT maps
+nothing there.
+
+At the time of writing it was about two thirds on a lane and 44% protected
+over all years. The protected share falls from about two thirds in 2021 to
+under a third in 2026. That is the riding moving off the Hudson River
+Greenway, the Central Park drives and the Midtown avenues onto Brooklyn
+streets, not lanes disappearing.
+
 ## Rejected: "new lanes changed the routes"
 
 Before any lane was drawn, the obvious question was whether a new lane pulled
