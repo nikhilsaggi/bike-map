@@ -80,6 +80,34 @@ test.describe('bike lane layer', () => {
       expect(await opacity(0)).toBe(0.22);
     });
 
+  test('with the pass frequency off every lane is drawn alike', async ({ page }) => {
+    await gotoMap(page, withLanes());
+    await page.locator('#bl-check').check();
+    await stepBack(page, 3);
+    await expect(page.locator('#date-hi')).toHaveText('2023-04-01');
+    const opacities = () => page.evaluate(() =>
+      blLines.filter((l) => map.hasLayer(l)).map((l) => l.options.opacity));
+    // Nothing ridden yet by the first date: both lanes dim.
+    expect(await opacities()).toEqual([0.22, 0.22]);
+
+    await page.locator('#rf-check').uncheck();
+    await expect.poll(opacities).toEqual([0.95, 0.95]);
+    await expect(page.locator('#bl-ridden')).toHaveText('1.0 mi of lanes on 2023-04-01');
+
+    await page.locator('#rf-check').check();
+    await expect.poll(opacities).toEqual([0.22, 0.22]);
+    await expect(page.locator('#bl-ridden')).toHaveText('0.0 of 1.0 mi ridden by 2023-04-01');
+  });
+
+  test('the key wraps inside the legend rather than widening it', async ({ page }) => {
+    await gotoMap(page, withLanes());
+    const width = () => page.locator('#legend').evaluate((el) => el.getBoundingClientRect().width);
+    const before = await width();
+    await page.locator('#bl-check').check();
+    await expect(page.locator('#bl-key')).toBeVisible();
+    expect(await width()).toBe(before);
+  });
+
   test('a lane opens its panel, with what it replaced', async ({ page }) => {
     await gotoMap(page, withLanes());
     await page.locator('#bl-check').check();

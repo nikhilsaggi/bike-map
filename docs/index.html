@@ -338,16 +338,17 @@
      violet sits outside the plasma ramp, ride view's cyan, the dock blue and
      the neighborhood tan, which is all the identity the chip needs. */
   #sw-toggle { --tint: #b9a9e8; }
-  /* DOT's own protected-lane green, which is also the layer's class I. */
-  #bl-toggle { --tint: #4ade80; }
+  /* The layer's protected-lane green. */
+  #bl-toggle { --tint: #0c9252; }
 
   /* -- Bike lanes ------------------------------------------------------ */
-  #legend-body #bl-key { margin-top: 6px; font-size: 10px; color: #888; }
+  /* contain: the key wraps inside the width the rest of the legend sets,
+     rather than widening the box to fit its swatches on one line. */
+  #legend-body #bl-key { margin-top: 6px; font-size: 10px; color: #888; contain: inline-size; }
   #legend-body #bl-key.hidden { display: none; }
   #legend-body .bl-swatches { display: flex; flex-wrap: wrap; gap: 2px 10px; }
   #legend-body .bl-swatch { display: inline-flex; align-items: center; gap: 4px; }
   #legend-body .bl-swatch i { display: inline-block; width: 12px; height: 0; border-top: 2px solid; }
-  #legend-body .bl-swatch i.dashed { border-top-style: dashed; }
   #legend-body #bl-ridden { margin-top: 3px; color: #aaa; }
   .bl-detail { min-width: 170px; }
   .bl-row { display: flex; justify-content: space-between; gap: 14px; font-size: 12px; }
@@ -3000,14 +3001,16 @@ function initSubway(sw) {
 // A lane is bright from the day half of it had been ridden *while it was
 // there* (the export's `first`), so a street ridden before it was painted
 // reads dim until the lane itself is ridden. Like the neighborhood fill this
-// is a running total and follows the slider's later handle alone.
+// is a running total and follows the slider's later handle alone. With the
+// pass frequency off there is no riding on screen to read the lanes against,
+// so every lane is drawn alike: the layer is then just the city's network.
 //
 // It describes the city, not the riding, so it never counts towards anything
 // the rest of the page measures; it ghosts the network the way the dock and
 // subway overlays do, because green and blue strokes over 21k plasma ones are
 // a haystack rather than a comparison.
 
-const BL_COLOURS = { I: '#4ade80', II: '#38bdf8', III: '#f5b342', L: '#9ca3af' };
+const BL_COLOURS = { I: '#0c9252', II: '#01b8ee', III: '#b35fa6', L: '#9ca3af' };
 const BL_LABELS = {
   I: 'Protected or off-street', II: 'Painted lane', III: 'Shared or signed route',
   L: 'Connector',
@@ -3040,7 +3043,6 @@ function blStyle(li, ridden) {
     color: BL_COLOURS[v[0]] || BL_COLOURS.L,
     weight: sel ? 5 : (ridden ? 2.8 : 1.3),
     opacity: sel ? 1 : (ridden ? 0.95 : 0.22),
-    dashArray: v[0] === 'III' ? '4 4' : null,
     lineCap: 'butt',
   };
 }
@@ -3056,20 +3058,21 @@ function applyLaneFilter(force = false) {
     const [vi, first] = blData.lines[i];
     const alive = blAlive(blData.versions[vi], day);
     const ridden = alive && first >= 0 && first <= hi;
-    const code = alive ? (ridden ? 2 : 1) : 0;
+    const code = alive ? (ridden || !routesOn ? 2 : 1) : 0;
     if (alive) { aliveM += blLen[i]; if (ridden) riddenM += blLen[i]; }
     if (!force && code === blShown[i]) continue;
     blShown[i] = code;
     const line = blLines[i];
     if (!code) { blLayer.removeLayer(line); continue; }
     if (!blLayer.hasLayer(line)) blLayer.addLayer(line);
-    line.setStyle(blStyle(i, ridden));
+    line.setStyle(blStyle(i, code === 2));
   }
   // A decimal only while the network is small enough to need one.
   const total = mi(aliveM / 1000);
   const fmt = x => (total < 10 ? x.toFixed(1) : Math.round(x).toLocaleString());
-  document.getElementById('bl-ridden').textContent =
-    `${fmt(mi(riddenM / 1000))} of ${fmt(total)} mi ridden by ${day}`;
+  document.getElementById('bl-ridden').textContent = routesOn
+    ? `${fmt(mi(riddenM / 1000))} of ${fmt(total)} mi ridden by ${day}`
+    : `${fmt(total)} mi of lanes on ${day}`;
 }
 
 // Dim under bright, so a ridden lane is never painted over by the unridden
@@ -3201,7 +3204,6 @@ function initBikeLanes(bl) {
     s.className = 'bl-swatch';
     const i = document.createElement('i');
     i.style.color = BL_COLOURS[cls];
-    if (cls === 'III') i.className = 'dashed';
     s.append(i, document.createTextNode(BL_LABELS[cls]));
     sw.appendChild(s);
   }
@@ -3209,7 +3211,8 @@ function initBikeLanes(bl) {
   const check = document.getElementById('bl-check');
   toggle.title =
     'NYC DOT bike lanes as built by the later date on the slider, ' +
-    'bright once half of a lane had been ridden while it was there';
+    'bright once half of a lane had been ridden while it was there ' +
+    '(all alike with the pass frequency off)';
   toggle.classList.remove('hidden');
   check.addEventListener('change', () => {
     if (check.checked) {
@@ -4150,6 +4153,9 @@ function initRouteLayer() {
     // What changes is what it has to ghost.
     if (rideView !== null) viewRide(rideView, dockTrace !== null);
     else applyFilter();
+    // The lanes read against the riding only while the riding is on screen.
+    // applyFilter already did this; ride view skips it.
+    paintLanes();
   });
 }
 

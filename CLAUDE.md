@@ -647,7 +647,9 @@ because attribution is not optional.
   `prevbikeid` -- so the layer draws the network standing on the slider's
   later date, and a lane's `first` is the date by which **half of it was
   ridden while it existed**: a street ridden before its lane was painted does
-  not light the lane. Lanes are matched per sample point (12 m, 25 degrees of
+  not light the lane. With the pass frequency off there is no riding on screen
+  to read that against, so every lane draws alike and the key gives the
+  network's length instead. Lanes are matched per sample point (12 m, 25 degrees of
   parallel), never per OSM edge: one 2 km edge such as a bridge path is
   covered by several short DOT records, none of which covers half of it. A
   before/after "did the new lane change the routes" comparison was built and
