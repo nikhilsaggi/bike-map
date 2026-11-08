@@ -216,7 +216,7 @@ def _export_geojson(
             "citibike": _citibike_summary(state.get("ride_stats", {}), ride_id),
             "subway": _subway_summary(),
             "bike_lanes": _bike_lane_summary(edge_geom, state, all_dates, areas=areas),
-            "speed": _speed_summary(state.get("edge_speed", {}), edge_geom, edge_name or {}),
+            "speed": _speed_summary(state.get("edge_speed", {}), edge_geom, edge_name or {}, state),
             "dates": all_dates,
             "rides": rides_meta,
             # The last day a ride was recorded, not when the pipeline ran: a

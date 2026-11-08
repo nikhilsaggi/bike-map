@@ -213,6 +213,15 @@ SPEED_CORRIDOR_N = 10  # corridors listed in the stats panel
 # pool (tools/speed_consistency.py --sweep).
 SPEED_STRETCH_PASSES = 5  # passes needed in ONE direction before a chunk joins a stretch
 SPEED_STRETCH_N = 8  # stretches listed per tab, fastest and slowest
+# The most-ridden tab chains a street's edges only while each was ridden at
+# least this share as often as the stretch's busiest one; the row prints the
+# weakest, so this bounds how far below the busiest block the number can sit.
+BUSIEST_KEEP = 0.8
+# Shorter than this is an intersection fragment, not a stretch. Lower than
+# the speed tabs' SPEED_CORRIDOR_MIN_M, which guards a timing measurement: a
+# pass count needs no such margin, and at 250 m the busiest block on the map
+# -- 143 m ridden 213 times -- could not rank.
+BUSIEST_MIN_M = 100.0
 # Traversal counting reuses the speed pass detector, but must not inherit its
 # split at recording gaps: a rider who stops mid-block for five minutes rode
 # that block once.  Two same-direction passes on one edge are the same

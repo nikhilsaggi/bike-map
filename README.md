@@ -24,6 +24,10 @@ The pipeline exports a compressed GeoJSON that powers an interactive
 - Stretches that ride the same way every time: the fastest and the slowest,
   ranked on one direction so a one-way street can be ranked at all
   ([how it works](findings/stretch-pace.md))
+- The most-ridden stretch of each street, both ways together: a stretch runs
+  on while every block of it was ridden at least 80% as often as its busiest,
+  and the row gives its least-ridden part, so "95 passes" means every part of
+  it, end to end
 - Hover for the pass count, click for the full list of ride dates
 - Detail (street, dock or neighborhood) opens in a panel docked to the left
   edge rather than a popup over the feature it describes: it covers no map,

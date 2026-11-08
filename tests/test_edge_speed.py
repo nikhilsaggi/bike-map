@@ -721,3 +721,60 @@ def test_assign_ignores_fixes_beyond_snap_distance(tmp_path, monkeypatch):
     # The 400 m excursion is unassigned, so no single run spans the full edge.
     rec = st["edge_speed"].get(EDGE)
     assert rec is None or rec["c"][0][edge_speed._FWD] < 100
+
+
+# -- Most-ridden stretches ----------------------------------------------------
+
+
+def _passes(edges: dict[tuple[int, int], int]) -> dict:
+    """A state where each edge was ridden by one ride that many times."""
+    ride = "2024-01-05_08-00-00_-0500.csv"
+    return {
+        "edge_rides": {k: [ride] for k in edges},
+        "edge_traversals": {k: {ride: [n, 0]} for k, n in edges.items()},
+    }
+
+
+# Four 100 m blocks of one street running east, the third stored backwards.
+BLOCKS = {
+    (1, 2): [lonlat(0.0, 0.0), lonlat(100.0, 0.0)],
+    (2, 3): [lonlat(100.0, 0.0), lonlat(200.0, 0.0)],
+    (3, 4): [lonlat(300.0, 0.0), lonlat(200.0, 0.0)],
+    (4, 5): [lonlat(300.0, 0.0), lonlat(400.0, 0.0)],
+}
+KENT = dict.fromkeys(BLOCKS, "Kent Avenue")
+
+
+def test_busiest_chains_a_street_while_it_stays_busy():
+    # 10, 9, 8 are all within 80% of 10; the 5 is not, so the stretch stops.
+    state = _passes({(1, 2): 9, (2, 3): 10, (3, 4): 8, (4, 5): 5})
+    rows = edge_speed._busiest_stretches(state, BLOCKS, KENT)
+    assert len(rows) == 1  # one row per street
+    assert rows[0]["name"] == "Kent Avenue"
+    assert rows[0]["n"] == 8  # its least-ridden part
+    assert rows[0]["m"] == 300  # across the block stored the other way round
+
+
+def test_busiest_never_chains_into_another_street():
+    state = _passes({(1, 2): 10, (2, 3): 10, (3, 4): 10, (4, 5): 10})
+    names = {**KENT, (3, 4): "Grand Street", (4, 5): "Grand Street"}
+    rows = edge_speed._busiest_stretches(state, BLOCKS, names)
+    assert {(r["name"], r["m"]) for r in rows} == {("Kent Avenue", 200), ("Grand Street", 200)}
+
+
+def test_busiest_drops_a_fragment_but_not_the_stretch_beside_it():
+    # A 50 m approach ridden 20 times is too short to rank alone. Its edge
+    # stays free, so the 10-pass stretch beside it ranks.
+    geom = {**BLOCKS, (0, 1): [lonlat(-50.0, 0.0), lonlat(0.0, 0.0)]}
+    names = {**KENT, (0, 1): "Kent Avenue"}
+    state = _passes({(0, 1): 20, (1, 2): 10, (2, 3): 10, (3, 4): 2, (4, 5): 2})
+    rows = edge_speed._busiest_stretches(state, geom, names)
+    assert [(r["n"], r["m"]) for r in rows] == [(10, 250)]
+
+
+def test_speed_summary_carries_busiest_only_with_state():
+    state = _passes({(1, 2): 9, (2, 3): 10, (3, 4): 8, (4, 5): 5})
+    summary = edge_speed._speed_summary({}, BLOCKS, KENT, state)
+    assert summary["busiest"][0]["n"] == 8
+    assert summary["busiest_keep"] == config.BUSIEST_KEEP
+    assert edge_speed._speed_summary({}, BLOCKS, KENT) is None

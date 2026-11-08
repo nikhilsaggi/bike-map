@@ -490,3 +490,51 @@ test.describe('stretch pace', () => {
     await expect(page.locator('#speed-title .cb-help')).toHaveCount(1);
   });
 });
+
+// The same unit as the pace tabs -- a stretch of one street -- ranked by how
+// often all of it was ridden rather than how fast. 402 m is 0.25 mi.
+test.describe('most ridden', () => {
+  const BUSIEST = {
+    ...SPEED_BLOCK,
+    busiest: [
+      { name: 'Home Block', n: 213, m: 143, at: [-73.97, 40.7305] },
+      { name: 'Long Avenue', n: 95, m: 402, at: [-73.98, 40.7305] },
+    ],
+    busiest_keep: 0.8,
+    busiest_min_m: 100.0,
+  };
+
+  test('is the fourth tab, ranked by passes with the unit on the number',
+    async ({ page }) => {
+      await gotoMap(page, buildFixture({ speed: BUSIEST }));
+      await openSection(page, STREETS);
+      expect(await page.locator('#speed-tabs .seg-btn').allTextContents())
+        .toEqual(['Fastest', 'Slowest', 'Faster one way', 'Most ridden']);
+      await tab(page, 'Most ridden');
+      await expect(page.locator('#speed-title')).toHaveText(/^Passes/);
+      expect(await page.locator('#speed-list .sp-name').allTextContents())
+        .toEqual(['Home Block', 'Long Avenue']);
+      expect(await page.locator('#speed-list .sp-gap').allTextContents())
+        .toEqual(['213passes', '95passes']);
+      expect(await page.locator('#speed-list .sp-dir').allTextContents()).toEqual(['', '']);
+      await expect(page.locator('#speed-list .sp-detail').nth(1))
+        .toHaveText('over 0.25 mi, every part ridden 95+ times');
+    });
+
+  test('its row circles the stretch on the map like a pace row', async ({ page }) => {
+    await gotoMap(page, buildFixture({ speed: BUSIEST }));
+    await openSection(page, STREETS);
+    await tab(page, 'Most ridden');
+    await page.locator('#speed-list .sp-row').first().click();
+    await expect.poll(() => page.evaluate(() => speedMarker && speedMarker.getLatLng().lat))
+      .toBeCloseTo(40.7305, 4);
+  });
+
+  test('going back to a speed tab puts the heading back', async ({ page }) => {
+    await gotoMap(page, buildFixture({ speed: BUSIEST }));
+    await openSection(page, STREETS);
+    await tab(page, 'Most ridden');
+    await tab(page, 'Fastest');
+    await expect(page.locator('#speed-title')).toHaveText(/^Speed/);
+  });
+});

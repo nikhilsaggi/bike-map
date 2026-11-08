@@ -251,7 +251,7 @@
      ranking that compares a stretch with its own opposite direction cannot
      be named in six -- "One way" fitted and meant the opposite, since that
      tab is the one that needs a street ridden both ways. */
-  #speed-tabs { display: flex; gap: 3px; margin: 3px 0 5px; }
+  #speed-tabs { display: flex; flex-wrap: wrap; gap: 3px; margin: 3px 0 5px; }
   #speed-tabs .seg-btn { flex: 0 1 auto; padding: 3px 7px; }
   /* The unit belongs to the number, not to the header: three tabs print
      three different mph -- a pace, a pace, and a gap between two of them --
@@ -1508,6 +1508,21 @@ const SPEED_TABS = [
       `(${ftFloor(s)} ft+, ridden ${s.split_n}+ times each way), these have ` +
       `the widest gaps.`,
   },
+  {
+    // Not a speed, but the same unit -- a stretch of one street -- so it
+    // shares the strip rather than starting a block of its own.
+    id: 'busiest', label: 'Most ridden', heading: 'Passes', unit: 'passes',
+    rows: s => s.busiest,
+    value: r => r.n,
+    format: v => v.toLocaleString(),
+    detail: r => `over ${(mi(r.m / 1000)).toFixed(2)} mi, every part ridden ${r.n}+ times`,
+    help: s =>
+      `The most-ridden stretch of each street, both directions together. A ` +
+      `stretch runs on while each block was ridden at least ` +
+      `${Math.round(100 * s.busiest_keep)}% as often as its busiest, and the ` +
+      `count is its least-ridden part. ` +
+      `${Math.round(mi(s.busiest_min_m / 1000) * 5280)} ft+.`,
+  },
 ];
 let speedTab = SPEED_TABS[0].id;
 let speedData = null;
@@ -1562,7 +1577,7 @@ function renderSpeed(speed) {
 function renderSpeedList() {
   const tab = SPEED_TABS.find(t => t.id === speedTab);
   const title = document.getElementById('speed-title');
-  title.textContent = 'Speed';   // drops a mark left by an earlier render
+  title.textContent = tab.heading || 'Speed';   // drops a mark left by an earlier render
   title.appendChild(helpMark(tab.help(speedData)));
 
   const list = document.getElementById('speed-list');
@@ -1573,8 +1588,9 @@ function renderSpeedList() {
     row.className = 'sp-row';
     row.innerHTML =
       `<span class="sp-name"></span>` +
-      `<span class="sp-dir">${r.dir}</span>` +
-      `<span class="sp-gap">${tab.value(r).toFixed(1)}<span class="sp-unit">mph</span></span>`;
+      `<span class="sp-dir">${r.dir || ''}</span>` +
+      `<span class="sp-gap">${(tab.format || (v => v.toFixed(1)))(tab.value(r))}` +
+      `<span class="sp-unit">${tab.unit || 'mph'}</span></span>`;
     // textContent, not innerHTML: this is an OSM street name.
     row.querySelector('.sp-name').textContent = r.name;
     row.querySelector('.sp-name').title = r.name;

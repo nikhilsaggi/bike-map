@@ -249,7 +249,7 @@ def test_export_ranks_a_one_way_stretch_the_corridor_list_cannot(tmp_path, monke
     assert [s["name"] for s in speed["slowest"]] == ["Kent Avenue"]
 
 
-def test_export_omits_speed_without_a_qualifying_stretch(tmp_path, monkeypatch):
+def test_export_ranks_no_speed_without_a_qualifying_stretch(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(config, "GEOJSON_OUTPUT_PATH", tmp_path / "docs" / "rides.geojson.gz")
 
@@ -270,7 +270,11 @@ def test_export_omits_speed_without_a_qualifying_stretch(tmp_path, monkeypatch):
     export._export_geojson({(1, 2): geom}, state, None, {(1, 2): "Kent Avenue"})
     with gzip.open(tmp_path / "docs" / "rides.geojson.gz") as f:
         data = json.load(f)
-    assert data["properties"]["speed"] is None
+    speed = data["properties"]["speed"]
+    # Neither speed ranking has anything to say; the most-ridden one does,
+    # since a pass count needs no timing to stand on.
+    assert speed["corridors"] == speed["fastest"] == speed["slowest"] == []
+    assert [r["name"] for r in speed["busiest"]] == ["Kent Avenue"]
 
 
 def test_export_ignores_unnamed_corridors(tmp_path, monkeypatch):

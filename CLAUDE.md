@@ -700,13 +700,25 @@ about half of what ranks there was never ridden the other way
 ranked stretch is chained speed chunks: the export ships a name per *drawn
 feature* (below), which is a different unit and cannot rebuild one.
 
-**All three rank stretches of street, so they share one list and one tab
-strip** (`#speed-tabs`, Fastest / Slowest / Faster one way), not a block each: two
+**All four rank stretches of street, so they share one list and one tab
+strip** (`#speed-tabs`, Fastest / Slowest / Faster one way / Most ridden), not a block each: two
 stacked lists outgrew the section between them, and a reader had to scroll
 past one ranking to learn the next existed. A tab reads its own array and
 never re-ranks; a tab with an empty array is not offered; and the (?) on the
 heading carries the *active* tab's rule, because one text describing three
-questions would describe the two a reader is not looking at.
+questions would describe the two a reader is not looking at. The heading
+itself is the tab's too -- "Speed", or "Passes" for Most ridden.
+
+- **Most ridden (`_busiest_stretches`) is the speed tabs' unit without their
+  speed**: one street chained end to end, undirected, on the map's own pass
+  counts. A stretch is seeded at its busiest edge and runs on only while each
+  next edge was ridden `BUSIEST_KEEP` (80%) as often, and prints its weakest
+  edge -- passes never sum along a street, which would count block-crossings.
+  Its floor is `BUSIEST_MIN_M` (100 m), not the speed tabs' 250: that guards a
+  timing measurement, and at 250 the busiest block on the map (143 m, the home
+  end of most rides) could not rank. An edge is claimed only by a stretch long
+  enough to keep, so a short busy approach does not lock out the stretch beside
+  it.
 
 - **A stretch is chained across edges, a corridor is not.** The median edge
   is 63 m and the floor is 250 m, so without chaining the second ranking
